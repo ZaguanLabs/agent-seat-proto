@@ -9,6 +9,9 @@ All notable changes to this project are documented here.
 - Planned an S0 `agent-seat-settings` application for safe, human-facing
   provider policy editing, shared validation, reviewable changes, and explicit
   active-versus-saved state without adding another runtime authority.
+- Selected GTK 4 for the standalone Settings executable and documented its
+  security-centered interaction model, native accessibility requirements,
+  policy-state rail, visual system, and dependency boundary.
 
 ### Changed
 

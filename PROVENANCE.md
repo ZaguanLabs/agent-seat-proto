@@ -133,3 +133,9 @@ The S0 settings application requirements and authority boundaries are original
 planning work derived from this repository's existing strict configuration and
 provider architecture. No external product code, schema, fixture, comments, or
 prose was used.
+
+The Settings interaction and visual design is original work. GTK 4 toolkit
+selection uses the official gtk-rs documentation at
+<https://gtk-rs.org/gtk4-rs/stable/latest/docs/gtk4/> as a public technical
+input. No code or asset was copied from that documentation, and no Nobox source
+or design artifact was consulted.
