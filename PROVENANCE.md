@@ -121,6 +121,12 @@ The settings transaction API and its filesystem process tests are original
 work. They use the safe Rustix wrappers for Linux `flock`, `renameat2` exchange,
 and no-replace behavior; Rustix provenance and licensing are recorded above.
 
+The typed settings draft and public installed-application catalog are original
+work derived from the provider's existing strict policy and T3 discovery code.
+The catalog continues to use only the XDG and Desktop Entry standards recorded
+above. No new dependency, external schema, or other product implementation was
+used.
+
 ## Settings application roadmap
 
 The S0 settings application requirements and authority boundaries are original

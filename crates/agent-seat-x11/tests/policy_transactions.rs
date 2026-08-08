@@ -7,7 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 
-use agent_seat_x11::{read_policy, replace_policy};
+use agent_seat_proto::{ApplicationId, Capability};
+use agent_seat_x11::{ClientScope, LaunchMode, read_policy, replace_policy};
 
 static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(1);
 
@@ -94,6 +95,82 @@ fn valid_policy_replacement_is_atomic_private_and_recoverable() {
         .mode()
         & 0o777;
     assert_eq!(lock_mode, 0o600);
+}
+
+#[test]
+fn typed_draft_edits_render_and_commit_through_the_exact_policy_validator() {
+    let directory = FixtureDir::new("draft");
+    let original = "enabled = false\n";
+    let path = directory.policy(original);
+    let snapshot = read_policy(&path).expect("read draft source");
+    let mut draft = snapshot.draft();
+
+    assert!(!draft.is_enabled());
+    assert_eq!(draft.resource_limits(), (4, 1024, 2000));
+    assert_eq!(draft.grant_uid(), None);
+    assert_eq!(draft.capabilities(), []);
+    assert_eq!(draft.observation(), (ClientScope::None, false));
+    assert_eq!(draft.launch_mode(), LaunchMode::Deny);
+
+    let unchanged_limits = draft.resource_limits();
+    assert!(draft.set_resource_limits(0, 1024, 2000).is_err());
+    assert_eq!(draft.resource_limits(), unchanged_limits);
+    assert!(
+        draft
+            .set_capabilities(vec![Capability::LaunchExecute])
+            .is_err()
+    );
+    assert_eq!(draft.capabilities(), []);
+
+    draft.set_enabled(true);
+    draft
+        .set_resource_limits(8, 2048, 750)
+        .expect("valid resource edit");
+    draft
+        .set_capabilities(vec![
+            Capability::ObserveStructure,
+            Capability::ObserveTitles,
+            Capability::LaunchList,
+            Capability::LaunchExecute,
+        ])
+        .expect("complete capability edit");
+    draft
+        .set_observation(ClientScope::CurrentWorkspace, true)
+        .expect("valid observation edit");
+    let brave = ApplicationId::new("brave-browser.desktop").expect("Brave desktop ID");
+    draft
+        .set_launch(
+            LaunchMode::AllowListed,
+            vec![brave.clone()],
+            Vec::new(),
+            false,
+        )
+        .expect("valid launch edit");
+    assert!(
+        draft
+            .set_launch(
+                LaunchMode::AllowListed,
+                vec![brave.clone(), brave],
+                Vec::new(),
+                false,
+            )
+            .is_err()
+    );
+    assert_eq!(draft.launch_allow().len(), 1);
+
+    let rendered = draft.render().expect("render validated policy");
+    assert!(rendered.starts_with("# Managed by agent-seat-settings."));
+    let replaced = replace_policy(&snapshot, &rendered).expect("commit rendered policy");
+    let saved = replaced.draft();
+    assert!(saved.is_enabled());
+    assert_eq!(saved.resource_limits(), (8, 2048, 750));
+    assert_eq!(saved.observation(), (ClientScope::CurrentWorkspace, true));
+    assert_eq!(saved.launch_mode(), LaunchMode::AllowListed);
+    assert_eq!(saved.launch_allow().len(), 1);
+    assert_eq!(
+        fs::read_to_string(previous(&path)).expect("read draft recovery policy"),
+        original
+    );
 }
 
 #[test]

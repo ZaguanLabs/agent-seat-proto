@@ -14,10 +14,11 @@ use std::time::Duration;
 use agent_seat_proto::{ApplicationId, BoundedList, Capability, MAX_APPLICATIONS};
 use rustix::fs::{CWD, FlockOperation, Mode, OFlags, RenameFlags};
 use rustix::process::geteuid;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
-const MAX_CAPABILITIES: usize = 10;
+/// Maximum number of capability atoms in the provider policy grant.
+pub const MAX_POLICY_CAPABILITIES: usize = 10;
 const DEFAULT_MAX_SESSIONS: u8 = 4;
 const MAX_SESSIONS: u8 = 32;
 const DEFAULT_MAX_REQUESTS: u16 = 1024;
@@ -26,6 +27,19 @@ const DEFAULT_IO_TIMEOUT_MS: u32 = 2_000;
 const MIN_IO_TIMEOUT_MS: u32 = 50;
 const MAX_IO_TIMEOUT_MS: u32 = 10_000;
 const TRANSACTION_ATTEMPTS: u8 = 16;
+
+/// Minimum accepted concurrent-session policy limit.
+pub const MIN_POLICY_SESSIONS: u8 = 1;
+/// Maximum accepted concurrent-session policy limit.
+pub const MAX_POLICY_SESSIONS: u8 = MAX_SESSIONS;
+/// Minimum accepted requests-per-session policy limit.
+pub const MIN_POLICY_REQUESTS: u16 = 1;
+/// Maximum accepted requests-per-session policy limit.
+pub const MAX_POLICY_REQUESTS: u16 = MAX_REQUESTS;
+/// Minimum accepted policy I/O timeout in milliseconds.
+pub const MIN_POLICY_IO_TIMEOUT_MS: u32 = MIN_IO_TIMEOUT_MS;
+/// Maximum accepted policy I/O timeout in milliseconds.
+pub const MAX_POLICY_IO_TIMEOUT_MS: u32 = MAX_IO_TIMEOUT_MS;
 
 static NEXT_TRANSACTION: AtomicU64 = AtomicU64::new(1);
 
@@ -120,6 +134,7 @@ pub struct PolicySnapshot {
     enabled: bool,
     device: u64,
     inode: u64,
+    draft: PolicyDraft,
 }
 
 impl PolicySnapshot {
@@ -140,19 +155,38 @@ impl PolicySnapshot {
     pub const fn is_enabled(&self) -> bool {
         self.enabled
     }
+
+    /// Returns an independently editable typed copy of this policy.
+    #[must_use]
+    pub fn draft(&self) -> PolicyDraft {
+        self.draft.clone()
+    }
+}
+
+/// Typed, bounded provider policy suitable for a human-facing editor.
+///
+/// Grouped setters validate a complete prospective policy before changing the
+/// draft. Rendering also passes through the provider's exact strict validator.
+#[derive(Clone, Debug)]
+pub struct PolicyDraft {
+    raw: RawConfig,
 }
 
 #[derive(Clone, Debug)]
 struct Grant {
     uid: u32,
-    capabilities: BoundedList<Capability, MAX_CAPABILITIES>,
+    capabilities: BoundedList<Capability, MAX_POLICY_CAPABILITIES>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+/// Client visibility selected by the saved observation policy.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ClientScope {
+pub enum ClientScope {
+    /// Hide all clients.
     None,
+    /// Expose clients on the current workspace only.
     CurrentWorkspace,
+    /// Expose clients across all workspaces.
     AllWorkspaces,
 }
 
@@ -168,12 +202,16 @@ struct Observation {
     titles: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+/// Application admission mode selected by the saved launch policy.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum LaunchMode {
+pub enum LaunchMode {
+    /// Deny every application.
     #[default]
     Deny,
+    /// Admit only canonical desktop IDs in the allow-list.
     AllowListed,
+    /// Admit every launchable installed entry except denied IDs.
     AllowInstalled,
 }
 
@@ -203,6 +241,180 @@ impl LaunchPolicy {
             LaunchMode::AllowListed => self.allow.contains(application),
             LaunchMode::AllowInstalled => true,
         }
+    }
+}
+
+impl PolicyDraft {
+    /// Reports whether this draft requests provider activation.
+    #[must_use]
+    pub const fn is_enabled(&self) -> bool {
+        self.raw.enabled
+    }
+
+    /// Sets the explicit provider activation switch.
+    pub const fn set_enabled(&mut self, enabled: bool) {
+        self.raw.enabled = enabled;
+    }
+
+    /// Returns `(max_sessions, max_requests_per_session, io_timeout_ms)`.
+    #[must_use]
+    pub const fn resource_limits(&self) -> (u8, u16, u32) {
+        (
+            self.raw.max_sessions,
+            self.raw.max_requests_per_session,
+            self.raw.io_timeout_ms,
+        )
+    }
+
+    /// Replaces all resource limits as one validated edit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a value is outside the provider's accepted
+    /// ranges. The draft is unchanged on error.
+    pub fn set_resource_limits(
+        &mut self,
+        max_sessions: u8,
+        max_requests_per_session: u16,
+        io_timeout_ms: u32,
+    ) -> Result<(), String> {
+        let mut candidate = self.raw.clone();
+        candidate.max_sessions = max_sessions;
+        candidate.max_requests_per_session = max_requests_per_session;
+        candidate.io_timeout_ms = io_timeout_ms;
+        self.replace_if_valid(candidate)
+    }
+
+    /// Returns the UID attached to the grant, or `None` when no grant exists.
+    #[must_use]
+    pub fn grant_uid(&self) -> Option<u32> {
+        self.raw.grant.as_ref().map(|grant| grant.uid)
+    }
+
+    /// Returns the granted capability atoms in saved order.
+    #[must_use]
+    pub fn capabilities(&self) -> &[Capability] {
+        self.raw
+            .grant
+            .as_ref()
+            .map_or(&[], |grant| grant.capabilities.as_slice())
+    }
+
+    /// Replaces the grant with capabilities for the current effective UID.
+    ///
+    /// This method does not add prerequisite capabilities implicitly.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for too many, duplicate, or dependency-incomplete
+    /// capability atoms. The draft is unchanged on error.
+    pub fn set_capabilities(&mut self, capabilities: Vec<Capability>) -> Result<(), String> {
+        let capabilities = BoundedList::new(capabilities).map_err(|error| error.to_string())?;
+        let mut candidate = self.raw.clone();
+        candidate.grant = Some(RawGrant {
+            uid: geteuid().as_raw(),
+            capabilities,
+        });
+        self.replace_if_valid(candidate)
+    }
+
+    /// Removes the peer grant and all of its capabilities.
+    pub fn clear_grant(&mut self) {
+        self.raw.grant = None;
+    }
+
+    /// Returns the configured client scope and title-content switch.
+    #[must_use]
+    pub const fn observation(&self) -> (ClientScope, bool) {
+        (self.raw.observation.clients, self.raw.observation.titles)
+    }
+
+    /// Replaces observation settings as one validated edit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the prospective complete policy is invalid. The
+    /// draft is unchanged on error.
+    pub fn set_observation(&mut self, clients: ClientScope, titles: bool) -> Result<(), String> {
+        let mut candidate = self.raw.clone();
+        candidate.observation = RawObservation { clients, titles };
+        self.replace_if_valid(candidate)
+    }
+
+    /// Returns the configured application admission mode.
+    #[must_use]
+    pub const fn launch_mode(&self) -> LaunchMode {
+        self.raw.launch.mode
+    }
+
+    /// Returns canonical desktop IDs in the launch allow-list.
+    #[must_use]
+    pub fn launch_allow(&self) -> &[ApplicationId] {
+        self.raw.launch.allow.as_slice()
+    }
+
+    /// Returns canonical desktop IDs in the launch deny-list.
+    #[must_use]
+    pub fn launch_deny(&self) -> &[ApplicationId] {
+        self.raw.launch.deny.as_slice()
+    }
+
+    /// Reports whether user-owned desktop entries may be admitted.
+    #[must_use]
+    pub const fn allows_user_entries(&self) -> bool {
+        self.raw.launch.allow_user_entries
+    }
+
+    /// Replaces the complete launch policy as one validated edit.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for oversized, duplicate, non-canonical, overlapping,
+    /// or mode-incompatible application lists. The draft is unchanged on
+    /// error.
+    pub fn set_launch(
+        &mut self,
+        mode: LaunchMode,
+        allow: Vec<ApplicationId>,
+        deny: Vec<ApplicationId>,
+        allow_user_entries: bool,
+    ) -> Result<(), String> {
+        let allow = BoundedList::new(allow).map_err(|error| error.to_string())?;
+        let deny = BoundedList::new(deny).map_err(|error| error.to_string())?;
+        let mut candidate = self.raw.clone();
+        candidate.launch = RawLaunch {
+            mode,
+            allow,
+            deny,
+            allow_user_entries,
+        };
+        self.replace_if_valid(candidate)
+    }
+
+    /// Renders normalized TOML accepted by the provider's exact validator.
+    ///
+    /// The original snapshot remains available for a before/after comparison;
+    /// rendering a draft never writes the policy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails or the rendered policy does not
+    /// pass the provider's bounded strict parser and semantic validation.
+    pub fn render(&self) -> Result<String, String> {
+        let body = toml::to_string_pretty(&self.raw)
+            .map_err(|error| format!("cannot render provider policy: {error}"))?;
+        let source = format!(
+            "# Managed by agent-seat-settings. Review changes before saving.\n\
+             # The provider must be restarted before saved changes become active.\n\n{body}"
+        );
+        validate_source(&source, geteuid().as_raw())?;
+        Ok(source)
+    }
+
+    fn replace_if_valid(&mut self, candidate: RawConfig) -> Result<(), String> {
+        candidate.clone().validate(geteuid().as_raw())?;
+        self.raw = candidate;
+        Ok(())
     }
 }
 
@@ -266,7 +478,7 @@ impl Config {
         }
         let source =
             String::from_utf8(bytes).map_err(|_| format!("{} is not UTF-8", path.display()))?;
-        let (enabled, config) = validate_source(&source, uid)
+        let (enabled, config, raw) = validate_source(&source, uid)
             .map_err(|error| format!("invalid {}: {error}", path.display()))?;
         Ok((
             PolicySnapshot {
@@ -275,6 +487,7 @@ impl Config {
                 enabled,
                 device: metadata.dev(),
                 inode: metadata.ino(),
+                draft: PolicyDraft { raw },
             },
             config,
         ))
@@ -669,7 +882,7 @@ pub(crate) fn create_first_run_config(path: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     enabled: bool,
@@ -687,7 +900,7 @@ struct RawConfig {
     launch: RawLaunch,
 }
 
-fn validate_source(source: &str, provider_uid: u32) -> Result<(bool, Config), String> {
+fn validate_source(source: &str, provider_uid: u32) -> Result<(bool, Config, RawConfig), String> {
     if source.len() as u64 > MAX_CONFIG_BYTES {
         return Err(format!(
             "candidate exceeds the {MAX_CONFIG_BYTES}-byte configuration bound"
@@ -695,8 +908,8 @@ fn validate_source(source: &str, provider_uid: u32) -> Result<(bool, Config), St
     }
     let raw: RawConfig = toml::from_str(source).map_err(|error| error.to_string())?;
     let enabled = raw.enabled;
-    let config = raw.validate(provider_uid)?;
-    Ok((enabled, config))
+    let config = raw.clone().validate(provider_uid)?;
+    Ok((enabled, config, raw))
 }
 
 impl RawConfig {
@@ -732,12 +945,12 @@ impl RawConfig {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawGrant {
     uid: u32,
     #[serde(default)]
-    capabilities: BoundedList<Capability, MAX_CAPABILITIES>,
+    capabilities: BoundedList<Capability, MAX_POLICY_CAPABILITIES>,
 }
 
 impl RawGrant {
@@ -790,7 +1003,7 @@ impl RawGrant {
     }
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawObservation {
     #[serde(default = "default_client_scope")]
@@ -799,7 +1012,7 @@ struct RawObservation {
     titles: bool,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawLaunch {
     #[serde(default)]

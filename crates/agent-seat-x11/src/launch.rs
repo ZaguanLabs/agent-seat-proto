@@ -18,7 +18,8 @@ use agent_seat_proto::{
 
 use crate::config::LaunchPolicy;
 
-const MAX_CATALOG_ENTRIES: usize = 4_096;
+/// Maximum launchable applications returned by installed-entry discovery.
+pub const MAX_INSTALLED_APPLICATIONS: usize = 4_096;
 const MAX_SCANNED_PATHS: usize = 16_384;
 const MAX_DIRECTORY_DEPTH: usize = 16;
 const MAX_DESKTOP_BYTES: u64 = 64 * 1024;
@@ -180,6 +181,30 @@ fn discover(policy: &LaunchPolicy) -> Result<Vec<CatalogEntry>, Failure> {
     if !policy.allows_any() {
         return Ok(Vec::new());
     }
+    Ok(discover_all()?
+        .into_iter()
+        .filter(|entry| policy.permits(&entry.descriptor.id, entry.descriptor.user_entry))
+        .collect())
+}
+
+/// Discovers the bounded set of desktop entries this provider can launch.
+///
+/// Results use the same XDG roots, desktop-entry parser, locale selection,
+/// executable resolution, user-entry shadowing, and launchability checks as
+/// the runtime provider. They are ordered by canonical desktop ID and are not
+/// filtered by the current launch allow/deny policy.
+///
+/// # Errors
+///
+/// Returns an error when XDG environment values are unsafe or a discovery
+/// resource bound is exceeded.
+pub fn installed_applications() -> Result<Vec<ApplicationDescriptor>, String> {
+    discover_all()
+        .map(|catalog| catalog.into_iter().map(|entry| entry.descriptor).collect())
+        .map_err(|failure| failure.message.to_owned())
+}
+
+fn discover_all() -> Result<Vec<CatalogEntry>, Failure> {
     let mut catalog = Vec::new();
     let mut seen = HashSet::new();
     let current_desktops = current_desktops()?;
@@ -193,13 +218,11 @@ fn discover(policy: &LaunchPolicy) -> Result<Vec<CatalogEntry>, Failure> {
             if !seen.insert(id.clone()) {
                 continue;
             }
-            if catalog.len() == MAX_CATALOG_ENTRIES {
+            if catalog.len() == MAX_INSTALLED_APPLICATIONS {
                 return Err(Failure::too_large("application catalog exceeds its bound"));
             }
             if let Some(entry) = read_entry(&path, id, root.user_entry, &current_desktops) {
-                if policy.permits(&entry.descriptor.id, root.user_entry) {
-                    catalog.push(entry);
-                }
+                catalog.push(entry);
             }
         }
     }

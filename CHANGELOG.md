@@ -12,6 +12,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `agent-seat-x11` 0.1.8 exposes the bounded S0 settings model and application
+  catalog: validated grouped policy edits, normalized exact-parser TOML,
+  published editor bounds, and the provider's own launchable XDG entries
+  without opening X11 or consulting the active provider. Process tests cover
+  typed edit-to-atomic-commit flow and isolated catalog discovery.
 - `agent-seat-x11` 0.1.7 exposes the provider-owned S0 policy transaction core:
   validated snapshots, stale-edit and concurrent-writer refusal, atomic Linux
   exchange, private mode-0600 replacement and recovery files, rollback on
