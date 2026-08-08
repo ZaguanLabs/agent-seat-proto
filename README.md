@@ -22,6 +22,33 @@ separate optional profiles and are not core-release promises.
 The current provider target is a local Linux X11 session. Other Unix peer
 credential mechanisms and non-X11 backends are not yet supported.
 
+## First run
+
+Run the provider once from your X11 desktop session:
+
+```sh
+agent-seat-x11
+```
+
+If no configuration exists, the command creates a private, extensively
+commented template at `$XDG_CONFIG_HOME/agent-seat/config.toml`, falling back
+to `$HOME/.config/agent-seat/config.toml`, and exits without connecting to X11.
+The template contains the current UID, explains every setting and capability,
+and remains disabled until the user explicitly changes `enabled = false` to
+`enabled = true`.
+
+After reviewing the policy, validate and start it:
+
+```sh
+agent-seat-x11 --check-config
+agent-seat-x11
+```
+
+The provider runs in the foreground. Add `agent-seat-x11 &` to Openbox
+autostart after validating the policy. See [the provider guide](docs/provider.md)
+for the complete configuration and security model. `agent-seat-x11 --help`
+also describes the first-run flow and command-line options.
+
 The first supported source release is product tag `v0.1.0`. Its component
 versions are `agent-seat-proto` 0.1.1, `agent-seat-mcp` 0.1.1, and
 `agent-seat-x11` 0.1.4; crate versions and the wire revision are intentionally

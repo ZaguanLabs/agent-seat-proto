@@ -1,9 +1,9 @@
 //! Strict, bounded standalone provider configuration.
 
 use std::env;
-use std::fs::{self, File};
-use std::io::Read as _;
-use std::os::unix::fs::MetadataExt as _;
+use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::io::{Read as _, Write as _};
+use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -20,6 +20,75 @@ const MAX_REQUESTS: u16 = 4096;
 const DEFAULT_IO_TIMEOUT_MS: u32 = 2_000;
 const MIN_IO_TIMEOUT_MS: u32 = 50;
 const MAX_IO_TIMEOUT_MS: u32 = 10_000;
+
+const FIRST_RUN_TEMPLATE_PREFIX: &str = r#"# agent-seat-x11 configuration
+#
+# This file was created on the first run of agent-seat-x11. The provider did
+# not start. Review this policy, then change `enabled` to true when ready.
+# Run `agent-seat-x11 --check-config` after every edit.
+#
+# The provider is a local authority: every capability below permits the MCP
+# companion to observe or affect your X11 session. Keep only permissions you
+# intend to grant. Unknown fields, duplicate values, and unsafe combinations
+# are rejected instead of being ignored.
+
+# Required safety switch. The generated policy remains inactive until you
+# explicitly enable it.
+enabled = false
+
+# Resource limits. These defaults are suitable for an ordinary single-user
+# desktop. Accepted ranges are shown next to each setting.
+max_sessions = 4                 # 1..32 concurrent connections
+max_requests_per_session = 1024  # 1..4096 requests per connection
+io_timeout_ms = 2000             # 50..10000 milliseconds
+
+[grant]
+# Only a local socket peer whose kernel-reported UID equals this value can use
+# the grant. This value was filled from the UID that created this file.
+uid = "#;
+
+const FIRST_RUN_TEMPLATE_SUFFIX: &str = r#"
+
+# The generated policy grants only basic, title-free structure observation.
+# Uncomment capabilities deliberately. `observe_titles`, `observe_events`,
+# and all `manage_*` capabilities require `observe_structure`.
+# `launch_execute` requires `launch_list`.
+capabilities = [
+  "observe_structure",
+  # "observe_titles",     # Read window titles; also set titles = true below.
+  # "observe_events",     # Poll bounded desktop change events.
+  # "manage_activate",    # Ask the window manager to activate a client.
+  # "manage_close",       # Ask a client to close politely.
+  # "manage_workspace",   # Switch workspaces or move a client between them.
+  # "manage_state",       # Change supported EWMH client states.
+  # "manage_geometry",    # Move or resize a client frame.
+  # "launch_list",        # List applications admitted by launch policy.
+  # "launch_execute",     # Start an admitted desktop entry without a shell.
+]
+
+[observation]
+# `none` hides every client, `current_workspace` limits visibility to the
+# active workspace, and `all_workspaces` exposes clients across workspaces.
+clients = "current_workspace"
+
+# Titles are exposed only when this is true AND `observe_titles` is granted.
+titles = false
+
+[launch]
+# `deny` exposes and launches nothing.
+# `allow_listed` admits only desktop IDs listed in `allow`.
+# `allow_installed` admits every valid discovered desktop entry except `deny`.
+mode = "deny"
+
+# Canonical desktop IDs end in `.desktop`. `allow` must stay empty unless mode
+# is `allow_listed`; an ID cannot appear in both lists.
+allow = []
+deny = []
+
+# User desktop entries below $XDG_DATA_HOME/applications are separately denied
+# by default, even in an allowing mode. System entries remain discoverable.
+allow_user_entries = false
+"#;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Config {
@@ -203,6 +272,39 @@ pub(crate) fn default_path() -> Result<PathBuf, String> {
         return Err("HOME must be absolute".to_owned());
     }
     Ok(home.join(".config/agent-seat/config.toml"))
+}
+
+pub(crate) fn create_first_run_config(path: &Path) -> Result<bool, String> {
+    let parent = path.parent().ok_or_else(|| {
+        format!(
+            "configuration path {} has no parent directory",
+            path.display()
+        )
+    })?;
+    let mut directory = DirBuilder::new();
+    directory.recursive(true).mode(0o700);
+    directory.create(parent).map_err(|error| {
+        format!(
+            "cannot create configuration directory {}: {error}",
+            parent.display()
+        )
+    })?;
+
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true).mode(0o600);
+    let mut file = match options.open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(error) => return Err(format!("cannot create {}: {error}", path.display())),
+    };
+    let uid = geteuid().as_raw();
+    let source = format!("{FIRST_RUN_TEMPLATE_PREFIX}{uid}{FIRST_RUN_TEMPLATE_SUFFIX}");
+    if let Err(error) = file.write_all(source.as_bytes()) {
+        drop(file);
+        let _ = fs::remove_file(path);
+        return Err(format!("cannot write {}: {error}", path.display()));
+    }
+    Ok(true)
 }
 
 #[derive(Deserialize)]

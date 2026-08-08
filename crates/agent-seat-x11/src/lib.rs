@@ -20,6 +20,29 @@ use std::time::Duration;
 
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 
+const HELP: &str = r#"agent-seat-x11 - local Agent Seat authority for X11
+
+USAGE:
+  agent-seat-x11 [OPTIONS]
+
+OPTIONS:
+  --config PATH   Read an existing configuration at an absolute path
+  --socket PATH   Use an absolute socket path instead of XDG runtime discovery
+  --check-config  Validate policy without connecting to X11 or creating a socket
+  -h, --help      Print this help
+
+FIRST RUN:
+  When run with no options, a missing default configuration is created at
+  $XDG_CONFIG_HOME/agent-seat/config.toml, or
+  $HOME/.config/agent-seat/config.toml when XDG_CONFIG_HOME is unset.
+
+  The generated file is mode 0600, extensively commented, and disabled.
+  Review its capabilities, set enabled = true, validate it with
+  agent-seat-x11 --check-config, then run agent-seat-x11 again.
+
+  The provider runs in the foreground inside the X11 desktop session.
+  Explicit --config paths are never created or overwritten."#;
+
 /// Runs the foreground provider until SIGINT, SIGTERM, or selection loss.
 ///
 /// # Errors
@@ -30,16 +53,22 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
     let options = match Options::parse(arguments)? {
         Command::Run(options) => options,
         Command::Help => {
-            println!(
-                "agent-seat-x11 [--config PATH] [--socket PATH] [--check-config]\n\n\
-                 Foreground Tier 0 provider. Configuration defaults to\n\
-                 $XDG_CONFIG_HOME/agent-seat/config.toml (or ~/.config).\n\
-                 The provider starts only when strict configuration contains enabled = true."
-            );
+            println!("{HELP}");
             return Ok(());
         }
     };
+    let creates_first_run_config =
+        options.config.is_none() && options.socket.is_none() && !options.check_config;
     let config_path = options.config.unwrap_or(config::default_path()?);
+    if creates_first_run_config && config::create_first_run_config(&config_path)? {
+        println!(
+            "Created first-run configuration at {}.\n\
+             The provider has not started. Review the documented policy, set enabled = true,\n\
+             then run `agent-seat-x11 --check-config` and start the provider again.",
+            config_path.display()
+        );
+        return Ok(());
+    }
     let config = Arc::new(config::Config::load(&config_path)?);
     if options.check_config {
         println!("{}: valid and enabled", config_path.display());

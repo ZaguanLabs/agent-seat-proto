@@ -736,6 +736,117 @@ fn configuration_check_is_strict_explicit_and_desktop_free() {
 }
 
 #[test]
+fn help_explains_options_first_run_and_configuration_safety() {
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+        .arg("--help")
+        .output()
+        .expect("provider help");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "--config PATH",
+        "--socket PATH",
+        "--check-config",
+        "FIRST RUN",
+        "$XDG_CONFIG_HOME/agent-seat/config.toml",
+        "mode 0600",
+        "enabled = true",
+        "Explicit --config paths are never created or overwritten",
+    ] {
+        assert!(stdout.contains(expected), "help omitted {expected:?}");
+    }
+}
+
+#[test]
+fn first_run_creates_documented_disabled_private_config_without_x11() {
+    let directory = FixtureDir::new("first-run");
+    let first = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+        .env("XDG_CONFIG_HOME", &directory.0)
+        .env_remove("DISPLAY")
+        .output()
+        .expect("first provider run");
+    assert!(first.status.success());
+    let stdout = String::from_utf8_lossy(&first.stdout);
+    assert!(stdout.contains("Created first-run configuration"));
+    assert!(stdout.contains("provider has not started"));
+
+    let config = directory.0.join("agent-seat/config.toml");
+    let source = fs::read_to_string(&config).expect("read generated config");
+    assert!(source.contains("enabled = false"));
+    assert!(source.contains(&format!("uid = {}", geteuid().as_raw())));
+    assert!(source.contains("every capability below permits"));
+    assert!(source.contains("\"observe_structure\""));
+    assert!(source.contains("# \"manage_close\""));
+    assert!(source.contains("mode = \"deny\""));
+    let mode = fs::metadata(&config)
+        .expect("generated config metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o600);
+    let directory_mode = fs::metadata(config.parent().expect("config parent"))
+        .expect("generated config directory metadata")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(directory_mode, 0o700);
+
+    let second = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+        .env("XDG_CONFIG_HOME", &directory.0)
+        .env_remove("DISPLAY")
+        .output()
+        .expect("second provider run");
+    assert!(!second.status.success());
+    assert!(String::from_utf8_lossy(&second.stderr).contains("provider is disabled"));
+    assert_eq!(
+        fs::read_to_string(&config).expect("reread generated config"),
+        source
+    );
+
+    fs::write(
+        &config,
+        source.replacen("enabled = false", "enabled = true", 1),
+    )
+    .expect("enable generated config");
+    let checked = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+        .arg("--check-config")
+        .env("XDG_CONFIG_HOME", &directory.0)
+        .env_remove("DISPLAY")
+        .output()
+        .expect("validate generated config");
+    assert!(checked.status.success());
+    assert!(String::from_utf8_lossy(&checked.stdout).contains("valid and enabled"));
+}
+
+#[test]
+fn explicit_missing_config_is_not_created() {
+    let directory = FixtureDir::new("explicit-missing-config");
+    let config = directory.0.join("custom.toml");
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+        .args(["--config", config.to_str().expect("config path UTF-8")])
+        .env_remove("DISPLAY")
+        .output()
+        .expect("provider with explicit missing config");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot inspect"));
+    assert!(!config.exists());
+}
+
+#[test]
+fn check_config_does_not_create_a_missing_default() {
+    let directory = FixtureDir::new("check-missing-config");
+    let output = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+        .arg("--check-config")
+        .env("XDG_CONFIG_HOME", &directory.0)
+        .env_remove("DISPLAY")
+        .output()
+        .expect("check missing default config");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot inspect"));
+    assert!(!directory.0.join("agent-seat/config.toml").exists());
+}
+
+#[test]
 fn no_wm_lifecycle_policy_ownership_and_stale_recovery() {
     let xvfb = Xvfb::start();
     let directory = FixtureDir::new("foundation");

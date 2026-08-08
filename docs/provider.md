@@ -1,6 +1,6 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core. `agent-seat-x11` 0.1.4 owns lifecycle, policy, local
+Status: T3 Tier 0 core. `agent-seat-x11` 0.1.5 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -48,6 +48,46 @@ The default file is `$XDG_CONFIG_HOME/agent-seat/config.toml`, falling back to
 `$HOME/.config/agent-seat/config.toml`. It must be an absolute-path regular
 file owned by the provider's effective UID and must not be writable by group
 or others. The file is UTF-8, at most 65,536 bytes, and rejects unknown fields.
+
+### First run
+
+Run `agent-seat-x11` with no options from the intended provider account. If
+the default file does not exist, the command:
+
+1. creates the `agent-seat` configuration directory where necessary;
+2. creates `config.toml` with mode 0600 without replacing any existing file;
+3. fills `grant.uid` from the process's effective UID;
+4. writes a commented template describing every setting and capability; and
+5. exits successfully without connecting to X11 or creating a socket.
+
+```sh
+agent-seat-x11
+# Created first-run configuration at /home/example/.config/agent-seat/config.toml.
+# The provider has not started. Review the documented policy, set enabled = true,
+# then run `agent-seat-x11 --check-config` and start the provider again.
+```
+
+The generated template is deliberately disabled. Its uncommented policy grants
+only title-free structure observation on the current workspace after the user
+changes `enabled = false` to `enabled = true`. Observation of titles or events,
+window management, and application launch remain commented out. Each optional
+capability is documented next to the corresponding entry.
+
+Review the file, enable only the required permissions, and then validate it:
+
+```sh
+${EDITOR:-vi} "${XDG_CONFIG_HOME:-$HOME/.config}/agent-seat/config.toml"
+agent-seat-x11 --check-config
+agent-seat-x11
+```
+
+First-run creation applies only to a no-option invocation and the discovered
+default path. `--check-config` remains read-only, while `--config PATH`
+requires an absolute path to an existing file; neither creates or overwrites a
+configuration. Subsequent ordinary runs also never modify an existing default
+configuration.
+
+### Policy reference
 
 The smallest enabled, deny-by-default configuration is:
 

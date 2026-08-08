@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Changed
+
+- `agent-seat-x11` 0.1.5 now creates a private, disabled, extensively commented
+  policy template on first use of the default configuration path, reports the
+  exact next steps without touching X11, and provides complete first-run help
+  and setup documentation. Explicit configuration paths remain non-creating.
+
 ## 0.1.0 - 2026-08-08
 
 ### Added

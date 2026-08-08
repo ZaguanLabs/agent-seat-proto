@@ -105,3 +105,10 @@ this repository. It uses the public X11 core, Security, Composite, XTEST, and
 RECORD extension specifications and the public AT-SPI 2 API documentation
 linked from that document. No implementation source or fixture from Nobox or
 another Agent Seat product was consulted or imported.
+
+## First-run configuration workflow
+
+The generated configuration template, creation behavior, CLI guidance,
+documentation, and process tests are original work written for this
+repository from its existing strict provider policy. No external product code,
+schema, fixture, comments, or prose was used.
