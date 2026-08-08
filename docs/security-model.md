@@ -1,12 +1,17 @@
 # Security model
 
-Status: E1 boundary. Feature-specific analysis expands before each
+Status: T0 foundation. Feature-specific analysis expands before each
 implementation milestone.
 
-E1 supplies strict bounded wire decoding and an authority-free companion. It
-does not yet supply a policy boundary because the T0 provider is not
-implemented. A companion can request capabilities but cannot grant them, and
-it never treats descriptive peer metadata as identity.
+E1 supplies strict bounded wire decoding and an authority-free companion. A
+companion can request capabilities but cannot grant them, and it never treats
+descriptive peer metadata as identity.
+
+T0 supplies the policy boundary: a private pathname socket, kernel
+`SO_PEERCRED` UID, strict owner-controlled configuration, explicit same-user
+grant, bounded sessions, and atomic selection ownership. It deliberately
+provides no cross-user isolation and no protection from another process that
+already has the session owner's X11 authority.
 
 The standalone provider is a policy boundary against accidental overreach,
 malformed peers, and a compromised translator. It is not an isolation boundary

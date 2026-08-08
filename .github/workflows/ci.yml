@@ -22,7 +22,7 @@ jobs:
       - name: Install Rust 1.85
         run: rustup toolchain install 1.85.0 --profile minimal --component clippy,rustfmt
       - name: Install isolated X server
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends xvfb
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends openbox xterm xvfb
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Lint

@@ -47,3 +47,18 @@ upstreams are <https://github.com/serde-rs/serde>,
 <https://github.com/serde-rs/json>, and <https://github.com/psychon/x11rb>.
 Exact resolved versions and transitive dependencies are recorded in
 `Cargo.lock`.
+
+## T0 provider foundation
+
+The provider configuration, runtime socket, ownership, session, and lifecycle
+tests are original work written for this repository. X11 selection behavior
+uses the ICCCM reference above; later EWMH work follows the freedesktop.org
+specification at <https://specifications.freedesktop.org/wm-spec/latest/>.
+Openbox and Xvfb are executed only as external black-box test processes.
+
+New direct runtime dependencies are `toml` 0.8 (MIT OR Apache-2.0) for strict
+configuration, Rustix 1 (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT)
+for safe kernel peer credentials and process identity, and `signal-hook` 0.3
+(Apache-2.0 OR MIT) for safe shutdown flags. Their canonical upstreams are
+<https://github.com/toml-rs/toml>, <https://github.com/bytecodealliance/rustix>,
+and <https://github.com/vorner/signal-hook>.

@@ -1,0 +1,260 @@
+//! Strict, bounded standalone provider configuration.
+
+use std::env;
+use std::fs::{self, File};
+use std::io::Read as _;
+use std::os::unix::fs::MetadataExt as _;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+use agent_seat_proto::{BoundedList, Capability};
+use rustix::process::geteuid;
+use serde::Deserialize;
+
+const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+const MAX_CAPABILITIES: usize = 10;
+const DEFAULT_MAX_SESSIONS: u8 = 4;
+const MAX_SESSIONS: u8 = 32;
+const DEFAULT_MAX_REQUESTS: u16 = 1024;
+const MAX_REQUESTS: u16 = 4096;
+const DEFAULT_IO_TIMEOUT_MS: u32 = 2_000;
+const MIN_IO_TIMEOUT_MS: u32 = 50;
+const MAX_IO_TIMEOUT_MS: u32 = 10_000;
+
+#[derive(Clone, Debug)]
+pub(crate) struct Config {
+    max_sessions: usize,
+    max_requests: u16,
+    io_timeout: Duration,
+    grant: Option<Grant>,
+}
+
+#[derive(Clone, Debug)]
+struct Grant {
+    uid: u32,
+    capabilities: BoundedList<Capability, MAX_CAPABILITIES>,
+}
+
+impl Config {
+    pub(crate) fn load(path: &Path) -> Result<Self, String> {
+        if !path.is_absolute() {
+            return Err("configuration path must be absolute".to_owned());
+        }
+        let path_metadata = fs::symlink_metadata(path)
+            .map_err(|error| format!("cannot inspect {}: {error}", path.display()))?;
+        if !path_metadata.file_type().is_file() {
+            return Err(format!("{} is not a regular file", path.display()));
+        }
+        let file =
+            File::open(path).map_err(|error| format!("cannot open {}: {error}", path.display()))?;
+        let metadata = file
+            .metadata()
+            .map_err(|error| format!("cannot inspect open {}: {error}", path.display()))?;
+        if metadata.dev() != path_metadata.dev() || metadata.ino() != path_metadata.ino() {
+            return Err(format!("{} changed while it was opened", path.display()));
+        }
+        let uid = geteuid().as_raw();
+        if metadata.uid() != uid || metadata.mode() & 0o022 != 0 {
+            return Err(format!(
+                "{} must be owned by UID {uid} and not writable by group or others",
+                path.display()
+            ));
+        }
+        if metadata.len() > MAX_CONFIG_BYTES {
+            return Err(format!(
+                "{} exceeds the {MAX_CONFIG_BYTES}-byte configuration bound",
+                path.display()
+            ));
+        }
+        let capacity = usize::try_from(metadata.len().min(MAX_CONFIG_BYTES))
+            .map_err(|_| "platform cannot address the bounded configuration size".to_owned())?;
+        let capacity = capacity
+            .checked_add(1)
+            .ok_or_else(|| "platform cannot address the bounded configuration size".to_owned())?;
+        let mut bytes = Vec::with_capacity(capacity);
+        file.take(MAX_CONFIG_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+        if bytes.len() as u64 > MAX_CONFIG_BYTES {
+            return Err(format!(
+                "{} exceeds the {MAX_CONFIG_BYTES}-byte configuration bound",
+                path.display()
+            ));
+        }
+        let source =
+            std::str::from_utf8(&bytes).map_err(|_| format!("{} is not UTF-8", path.display()))?;
+        let raw: RawConfig = toml::from_str(source)
+            .map_err(|error| format!("invalid {}: {error}", path.display()))?;
+        raw.validate(uid)
+    }
+
+    pub(crate) const fn max_sessions(&self) -> usize {
+        self.max_sessions
+    }
+
+    pub(crate) const fn max_requests(&self) -> u16 {
+        self.max_requests
+    }
+
+    pub(crate) const fn io_timeout(&self) -> Duration {
+        self.io_timeout
+    }
+
+    pub(crate) fn granted<'a>(
+        &'a self,
+        uid: u32,
+        requested: impl Iterator<Item = &'a Capability>,
+    ) -> Option<Vec<Capability>> {
+        let grant = self.grant.as_ref().filter(|grant| grant.uid == uid)?;
+        Some(
+            requested
+                .copied()
+                .filter(|capability| grant.capabilities.contains(capability))
+                .collect(),
+        )
+    }
+}
+
+pub(crate) fn default_path() -> Result<PathBuf, String> {
+    if let Some(base) = env::var_os("XDG_CONFIG_HOME") {
+        let base = PathBuf::from(base);
+        if !base.is_absolute() {
+            return Err("XDG_CONFIG_HOME must be absolute".to_owned());
+        }
+        return Ok(base.join("agent-seat/config.toml"));
+    }
+    let home = env::var_os("HOME").ok_or_else(|| {
+        "neither XDG_CONFIG_HOME nor HOME is available for configuration discovery".to_owned()
+    })?;
+    let home = PathBuf::from(home);
+    if !home.is_absolute() {
+        return Err("HOME must be absolute".to_owned());
+    }
+    Ok(home.join(".config/agent-seat/config.toml"))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawConfig {
+    enabled: bool,
+    #[serde(default = "default_max_sessions")]
+    max_sessions: u8,
+    #[serde(default = "default_max_requests")]
+    max_requests_per_session: u16,
+    #[serde(default = "default_io_timeout_ms")]
+    io_timeout_ms: u32,
+    #[serde(default)]
+    grant: Option<RawGrant>,
+}
+
+impl RawConfig {
+    fn validate(self, provider_uid: u32) -> Result<Config, String> {
+        if !self.enabled {
+            return Err("provider is disabled; set enabled = true explicitly".to_owned());
+        }
+        if self.max_sessions == 0 || self.max_sessions > MAX_SESSIONS {
+            return Err(format!("max_sessions must be in 1..={MAX_SESSIONS}"));
+        }
+        if self.max_requests_per_session == 0 || self.max_requests_per_session > MAX_REQUESTS {
+            return Err(format!(
+                "max_requests_per_session must be in 1..={MAX_REQUESTS}"
+            ));
+        }
+        if !(MIN_IO_TIMEOUT_MS..=MAX_IO_TIMEOUT_MS).contains(&self.io_timeout_ms) {
+            return Err(format!(
+                "io_timeout_ms must be in {MIN_IO_TIMEOUT_MS}..={MAX_IO_TIMEOUT_MS}"
+            ));
+        }
+        let grant = self
+            .grant
+            .map(|grant| grant.validate(provider_uid))
+            .transpose()?;
+        Ok(Config {
+            max_sessions: usize::from(self.max_sessions),
+            max_requests: self.max_requests_per_session,
+            io_timeout: Duration::from_millis(u64::from(self.io_timeout_ms)),
+            grant,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawGrant {
+    uid: u32,
+    #[serde(default)]
+    capabilities: BoundedList<Capability, MAX_CAPABILITIES>,
+}
+
+impl RawGrant {
+    fn validate(self, provider_uid: u32) -> Result<Grant, String> {
+        if self.uid != provider_uid {
+            return Err(format!(
+                "grant.uid must equal the provider's effective UID {provider_uid}"
+            ));
+        }
+        if self
+            .capabilities
+            .iter()
+            .enumerate()
+            .any(|(index, capability)| self.capabilities[..index].contains(capability))
+        {
+            return Err("grant capabilities must not contain duplicates".to_owned());
+        }
+        Ok(Grant {
+            uid: self.uid,
+            capabilities: self.capabilities,
+        })
+    }
+}
+
+const fn default_max_sessions() -> u8 {
+    DEFAULT_MAX_SESSIONS
+}
+
+const fn default_max_requests() -> u16 {
+    DEFAULT_MAX_REQUESTS
+}
+
+const fn default_io_timeout_ms() -> u32 {
+    DEFAULT_IO_TIMEOUT_MS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn disabled_unknown_and_unbounded_values_are_rejected() {
+        for source in [
+            "enabled = false",
+            "enabled = true\nunknown = 1",
+            "enabled = true\nmax_sessions = 0",
+            "enabled = true\nmax_sessions = 33",
+            "enabled = true\nio_timeout_ms = 49",
+            "enabled = true\nmax_requests_per_session = 4097",
+        ] {
+            let accepted = toml::from_str::<RawConfig>(source)
+                .is_ok_and(|raw| raw.validate(geteuid().as_raw()).is_ok());
+            assert!(!accepted, "accepted {source:?}");
+        }
+    }
+
+    #[test]
+    fn grants_match_kernel_uid_and_intersect_requests() {
+        let uid = geteuid().as_raw();
+        let raw: RawConfig = toml::from_str(&format!(
+            "enabled = true\n[grant]\nuid = {uid}\ncapabilities = [\"observe_structure\"]"
+        ))
+        .expect("parse fixture");
+        let config = raw.validate(uid).expect("validate fixture");
+        assert_eq!(
+            config.granted(
+                uid,
+                [Capability::ObserveStructure, Capability::ManageClose].iter()
+            ),
+            Some(vec![Capability::ObserveStructure])
+        );
+        assert_eq!(config.granted(uid + 1, [].iter()), None);
+    }
+}

@@ -23,3 +23,10 @@ All notable changes to this project are documented here.
   structured failures.
 - Added malformed, oversized, revision-refusal, process-boundary, lazy-startup,
   and isolated-X11 discovery coverage for the E1 exit gate.
+- Implemented the `agent-seat-x11` 0.1.1 T0 provider foundation with explicit
+  strict configuration, same-user kernel credential grants, bounded sessions,
+  private stale-socket recovery, atomic per-screen selection ownership, clean
+  withdrawal, and typed status/refusal/unsupported results.
+- Added bare-Xvfb and Openbox process tests for lifecycle, duplicate refusal,
+  stale recovery, peer denial, slow-client eviction, selection loss, clean
+  shutdown, and window-manager survival after provider failure.

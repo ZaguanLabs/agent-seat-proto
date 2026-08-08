@@ -1,7 +1,7 @@
 # Product roadmap
 
-Status: E0 and E1 complete; T0 is next. Milestones are sequential; optional profiles
-do not delay the Tier 0 core release. E0 evidence is recorded in
+Status: E0, E1, and T0 complete; T1 is next. Milestones are sequential;
+optional profiles do not delay the Tier 0 core release. E0 evidence is recorded in
 [`e0-verification.md`](e0-verification.md).
 
 ## Goals
@@ -51,6 +51,11 @@ End result: malformed/oversized process tests, strict round trips, revision
 refusal, desktop-free MCP startup, and isolated-X11 discovery all pass.
 
 ## T0 — provider foundation
+
+Status: complete, 2026-08-08. `agent-seat-x11` 0.1.1 provides strict explicit
+configuration, same-user kernel credential grants, bounded sessions, private
+socket recovery, atomic selection ownership, clean withdrawal, and isolated
+Openbox/no-WM lifecycle coverage. Backend features remain empty until T1.
 
 Implement explicit enablement, strict configuration, local peer credentials,
 deny-by-default grants, bounded sessions, the private socket, and atomic
