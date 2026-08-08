@@ -1,0 +1,12 @@
+[package]
+name = "agent-seat-proto"
+description = "Bounded wire types for the Agent Seat Protocol"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[lints]
+workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "agent-seat-x11"
+description = "Standalone Tier 0 X11 Agent Seat provider"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[lints]
+workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "agent-seat-mcp"
+description = "Authority-free MCP companion for Agent Seat providers"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+publish = false
+
+[lints]
+workspace = true
