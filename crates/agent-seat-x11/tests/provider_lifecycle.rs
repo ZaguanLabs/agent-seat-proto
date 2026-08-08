@@ -443,6 +443,48 @@ fn intern(connection: &RustConnection, name: &[u8]) -> u32 {
         .atom
 }
 
+fn start_openbox(display: &str) -> Child {
+    let mut child = Command::new("openbox")
+        .env("DISPLAY", display)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Openbox is required by the provider gate");
+    let (connection, screen) = x11rb::connect(Some(display)).expect("Openbox readiness X11");
+    let root = connection.setup().roots[screen].root;
+    let check_atom = intern(&connection, b"_NET_SUPPORTING_WM_CHECK");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let owner = connection
+            .get_property(false, root, check_atom, AtomEnum::WINDOW, 0, 1)
+            .expect("Openbox check request")
+            .reply()
+            .expect("Openbox check reply")
+            .value32()
+            .and_then(|mut values| values.next());
+        let ready = owner.is_some_and(|owner| {
+            connection
+                .get_property(false, owner, check_atom, AtomEnum::WINDOW, 0, 1)
+                .ok()
+                .and_then(|cookie| cookie.reply().ok())
+                .and_then(|reply| reply.value32().and_then(|mut values| values.next()))
+                == Some(owner)
+        });
+        if ready {
+            return child;
+        }
+        if let Some(status) = child.try_wait().expect("Openbox startup status") {
+            panic!("Openbox exited before EWMH readiness: {status}");
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Openbox did not publish a valid EWMH check"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn wait_snapshot(
     stream: &mut UnixStream,
     next_id: &mut u64,
@@ -717,14 +759,7 @@ fn selection_loss_stops_the_provider_and_removes_its_socket() {
 #[test]
 fn provider_crash_does_not_take_down_openbox() {
     let xvfb = Xvfb::start();
-    let mut openbox = Command::new("openbox")
-        .env("DISPLAY", &xvfb.display)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Openbox is required by the T0 gate");
-    thread::sleep(Duration::from_millis(200));
+    let mut openbox = start_openbox(&xvfb.display);
     assert!(openbox.try_wait().expect("Openbox status").is_none());
 
     let directory = FixtureDir::new("openbox");
@@ -753,14 +788,7 @@ fn provider_crash_does_not_take_down_openbox() {
 #[test]
 fn openbox_snapshots_and_diffs_converge_across_client_lifecycle() {
     let xvfb = Xvfb::start();
-    let mut openbox = Command::new("openbox")
-        .env("DISPLAY", &xvfb.display)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Openbox is required by the T1 gate");
-    thread::sleep(Duration::from_millis(200));
+    let mut openbox = start_openbox(&xvfb.display);
 
     let directory = FixtureDir::new("observation");
     let config = write_observer_config(&directory.0, "all_workspaces", true);
@@ -885,14 +913,7 @@ fn openbox_snapshots_and_diffs_converge_across_client_lifecycle() {
 #[test]
 fn current_workspace_scope_hides_titles_and_rekeys_returning_clients() {
     let xvfb = Xvfb::start();
-    let mut openbox = Command::new("openbox")
-        .env("DISPLAY", &xvfb.display)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Openbox is required by the T1 gate");
-    thread::sleep(Duration::from_millis(200));
+    let mut openbox = start_openbox(&xvfb.display);
 
     let directory = FixtureDir::new("scope");
     let config = write_observer_config(&directory.0, "current_workspace", false);
