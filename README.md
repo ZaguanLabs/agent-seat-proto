@@ -5,8 +5,8 @@ between desktop providers and authority-free agent companions. The repository
 is owned from its first commit by
 [`ZaguanLabs`](https://github.com/ZaguanLabs).
 
-The project is in its E0 bootstrap milestone. It does not yet implement or
-claim a wire revision. The three reserved deliverables are:
+The E0 bootstrap is complete and E1 protocol work is next. The project does not
+yet implement or claim a wire revision. The three reserved deliverables are:
 
 - `agent-seat-proto`: display-server-neutral wire types and framing only;
 - `agent-seat-mcp`: a generic MCP translator with no policy authority; and

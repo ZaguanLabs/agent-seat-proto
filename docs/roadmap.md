@@ -1,7 +1,8 @@
 # Product roadmap
 
-Status: E0 bootstrap. Milestones are sequential; optional profiles do not
-delay the Tier 0 core release.
+Status: E0 complete; E1 is next. Milestones are sequential; optional profiles
+do not delay the Tier 0 core release. E0 evidence is recorded in
+[`e0-verification.md`](e0-verification.md).
 
 ## Goals
 
@@ -25,6 +26,8 @@ delay the Tier 0 core release.
   part of the core profile.
 
 ## E0 — bootstrap
+
+Status: complete, 2026-08-08.
 
 Create the canonical ZaguanLabs repository, project policies, crate boundaries,
 specification outline, source gate, and administration controls. No wire
