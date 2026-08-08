@@ -8,12 +8,14 @@ is owned from its first commit by
 E1 and the T0--T3 Tier 0 core are complete. The project implements strict Agent
 Seat wire revision 3, a generic MCP `2025-11-25` companion, and a standalone
 provider with bounded EWMH observation, freshness-checked management, and
-policy-controlled desktop-entry launch. The three deliverables are:
+policy-controlled desktop-entry launch. The four deliverables are:
 
 - `agent-seat-proto`: display-server-neutral wire types and framing only;
-- `agent-seat-mcp`: a generic MCP translator with no policy authority; and
+- `agent-seat-mcp`: a generic MCP translator with no policy authority;
 - `agent-seat-x11`: a standalone Tier 0 provider for unmodified EWMH window
-  managers such as Openbox.
+  managers such as Openbox; and
+- `agent-seat-settings`: a human-facing policy editor with display-independent
+  validation, inspection, and recovery commands plus a GTK 4 interface.
 
 The Tier 0 core provides bounded observation, supported EWMH management,
 and controlled desktop-entry launch. Capture, input, and accessibility are
@@ -49,6 +51,18 @@ autostart after validating the policy. See [the provider guide](docs/provider.md
 for the complete configuration and security model. `agent-seat-x11 --help`
 also describes the first-run flow and command-line options.
 
+The Settings command can inspect and recover policy without a display:
+
+```sh
+agent-seat-settings --check
+agent-seat-settings --print
+agent-seat-settings --restore-previous
+```
+
+Run `agent-seat-settings` with no command to open its GTK interface. The
+current 0.1.0 milestone establishes the strict command/model foundation and
+initial shell; the complete S0 controls remain in progress.
+
 The first supported source release is product tag `v0.1.0`. Its component
 versions are `agent-seat-proto` 0.1.1, `agent-seat-mcp` 0.1.1, and
 `agent-seat-x11` 0.1.4; crate versions and the wire revision are intentionally
@@ -57,7 +71,8 @@ separate identities.
 ## Build
 
 Rust 1.85 or newer is required. The repository pins its minimum toolchain for
-the ordinary source gate:
+the ordinary source gate. Building the Settings interface also requires GTK 4
+development files (`libgtk-4-dev` on Debian-family systems):
 
 ```sh
 cargo fmt --all --check

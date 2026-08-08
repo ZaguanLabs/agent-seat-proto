@@ -2,6 +2,7 @@
 members = [
     "crates/agent-seat-mcp",
     "crates/agent-seat-proto",
+    "crates/agent-seat-settings",
     "crates/agent-seat-x11",
 ]
 resolver = "3"
@@ -27,4 +28,5 @@ serde_json = "1"
 signal-hook = "0.3"
 toml = "0.8"
 toml_edit = "0.22"
+gtk = { package = "gtk4", version = "=0.10.3" }
 x11rb = "0.14"

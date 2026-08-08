@@ -39,15 +39,26 @@ refuses stale or concurrent edits, and retains the previous private policy.
 These APIs do not connect to X11, open the provider socket, or alter the policy
 active in a running process.
 
+## `agent-seat-settings`
+
+This executable is a human-facing editor, not a provider. Its
+display-independent model depends on `agent-seat-x11` for the exact policy
+schema, XDG catalog, and atomic writes. Its GTK 4 shell may present and review
+drafts but never connects to X11 directly, opens the provider socket, exposes
+MCP tools, or changes a running grant. Terminal check, print, and recovery
+commands execute without initializing GTK.
+
 ## Dependency direction
 
 ```text
-agent-seat-mcp ──> agent-seat-proto <── agent-seat-x11
+agent-seat-mcp ──> agent-seat-proto <── agent-seat-x11 <── agent-seat-settings
                                            │
                                            ├── X11/EWMH realization
                                            ├── grants and scope
-                                           └── XDG launch policy
+                                           └── XDG launch and saved policy
 ```
 
-The protocol crate never points outward. The two processes share protocol
-types, not policy or backend state. No crate depends on Nobox.
+The protocol crate never points outward. The companion and provider share
+protocol types, not policy or backend state. Settings deliberately depends on
+the provider library's non-runtime policy API so validation cannot drift. No
+crate depends on Nobox.

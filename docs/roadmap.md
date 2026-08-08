@@ -154,7 +154,10 @@ bounded settings draft and the provider's read-only launchable XDG application
 catalog. Version 0.1.9 preserves policy comments through typed edits and
 exposes default creation and recovery discovery. The initial interaction and
 visual design selects GTK 4 without libadwaita; see
-[settings-design.md](settings-design.md).
+[settings-design.md](settings-design.md). `agent-seat-settings` 0.1.0 adds the
+display-independent model, strict check/print/recovery commands, and initial
+GTK shell; the complete graphical controls and active-state reporting remain
+in progress.
 
 Add a standalone `agent-seat-settings` application that makes the strict
 provider policy approachable without weakening it. The application should

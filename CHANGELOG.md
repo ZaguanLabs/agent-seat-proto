@@ -6,6 +6,10 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added `agent-seat-settings` 0.1.0 with a display-independent policy session
+  model, exact check and print commands, recoverable `.previous` exchange,
+  strict CLI parsing, default-policy creation for the GTK entry path, and an
+  initial native GTK 4 shell. Complete graphical controls remain in progress.
 - Planned an S0 `agent-seat-settings` application for safe, human-facing
   provider policy editing, shared validation, reviewable changes, and explicit
   active-versus-saved state without adding another runtime authority.

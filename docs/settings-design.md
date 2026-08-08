@@ -15,10 +15,11 @@ but they do not replace explanations.
 ## Toolkit decision
 
 Use GTK 4 through the official safe `gtk4-rs` bindings, in a separate
-`agent-seat-settings` crate. Target the GTK 4.0 API floor unless a later design
-requirement justifies a higher feature gate. The bindings' documented minimum
-Rust version is 1.83, below this workspace's Rust 1.85 baseline:
-<https://gtk-rs.org/gtk4-rs/stable/latest/docs/gtk4/>.
+`agent-seat-settings` crate. Pin binding version 0.10.3 and target the GTK 4.0
+API floor unless a later design requirement justifies a higher feature gate.
+That release's declared minimum Rust version is 1.83, below this workspace's
+Rust 1.85 baseline:
+<https://crates.io/crates/gtk4/0.10.3>.
 
 GTK provides native text, focus, keyboard navigation, input methods, scaling,
 theme integration, and accessibility semantics on X11 without implementing a

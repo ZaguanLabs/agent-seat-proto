@@ -138,6 +138,16 @@ prose was used.
 
 The Settings interaction and visual design is original work. GTK 4 toolkit
 selection uses the official gtk-rs documentation at
-<https://gtk-rs.org/gtk4-rs/stable/latest/docs/gtk4/> as a public technical
-input. No code or asset was copied from that documentation, and no Nobox source
-or design artifact was consulted.
+<https://crates.io/crates/gtk4/0.10.3> and GTK documentation at
+<https://docs.gtk.org/gtk4/> as public technical inputs. No code or asset was
+copied from that documentation, and no Nobox source or design artifact was
+consulted.
+
+The Settings model, command parser, process tests, and initial GTK shell are
+original work written for this repository. The direct GUI dependency is
+`gtk4` 0.10.3 (MIT) from <https://github.com/gtk-rs/gtk4-rs>; it declares Rust
+1.83 and is pinned for the workspace's Rust 1.85 baseline. The dynamically
+linked GTK 4 system toolkit is LGPL-2.1-or-later and documented at
+<https://docs.gtk.org/gtk4/>. Exact Rust transitive versions are locked in
+`Cargo.lock`. No external implementation, schema, fixture, prose, or visual
+asset was copied.
