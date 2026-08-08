@@ -1,8 +1,7 @@
 # T5 activity broker deployment contract
 
-Status: candidate deployment review, 2026-08-08. This document does not
-approve the broker, allocate a protocol revision, or authorize implementation.
-It refines the privileged candidate in
+Status: experimental authority and implementation approved, 2026-08-08;
+deployment remains gated. This document refines the privileged candidate in
 [`t5-input-reconsideration.md`](t5-input-reconsideration.md) and records the
 remaining stop condition.
 
@@ -21,8 +20,10 @@ contract. A false unlocked hint would leave the broker armed across an
 automatic lock. The separate
 [`t5-lock-state-study.md`](t5-lock-state-study.md) identifies a narrow
 display-manager foreground-session transition as a candidate, but it remains
-unproven. Until that integration is tested and approved, no broker or Tier 0
-input implementation begins.
+unproven. The experimental broker therefore requires a separate inherited
+eligibility channel and permanently fails closed if that evidence is absent,
+changes, or is lost. No supported Tier 0 input deployment begins until a
+trusted producer for that channel passes the remaining gates.
 
 ## Supported deployment candidate
 
@@ -38,14 +39,16 @@ The candidate is deliberately narrower than the Tier 0 core:
 Non-systemd systems, remote sessions, nested X servers, software keyboards,
 accessibility input, ambiguous seats, and sessions without trusted lock state
 remain unsupported. This optional baseline does not change the core product's
-portable revision-3 behavior.
+released revision-3 core behavior. The experimental source extension allocates
+revision 4 rather than changing revision 3 in place.
 
 ## Components and authority
 
 ### Administrator enrollment tool
 
-A separately packaged, short-lived tool runs only through an explicit root
-invocation. It may:
+A separately packaged, short-lived tool exposes read-only inspection and inert
+unit rendering without privilege. Its installation and lifecycle commands run
+only through an explicit root invocation. The tool may:
 
 - enumerate udev metadata and evdev capabilities without reading event data;
 - create or replace a root-owned enrollment record and runtime service
@@ -60,13 +63,155 @@ edit Agent Seat provider policy, grant an Agent Seat capability, enable itself
 from package presets, or remain resident. Settings, the provider, the MCP
 companion, and the first-run workflow never invoke it.
 
+### Current inspection, rendering, and verification preflight
+
+`agent-seat-activity-enroll inspect --seat seat0`, `render`, and `verify`
+implement the unprivileged review portion of this boundary. They enumerate
+canonical `eventN` entries from `/sys/class/input`, verify the matching direct
+character nodes and stable udev/sysfs identity twice, and ask the fixed
+`/usr/bin/udevadm` for only the bounded input-class, seat, topology, and
+hardware-identity properties below.
+Device count, command runtime, command output, property set, paths, values,
+and report contents are bounded and strictly parsed.
+
+The `inspect` command prints a deterministic review candidate containing
+device nodes, canonical sysfs paths, coarse classes, and whether identity is
+serial-backed or topology-only. The `render` command
+requires an explicit nonzero UID, bounded logind session ID, and normalized
+absolute path that does not already exist. It writes the exact current set as
+four inert unit files, `initial-input-set.v1`, `enrolled-device-set.v1`, and
+`REVIEW.txt` in a new mode-0700 directory; files are mode 0600 and are never
+overwritten. It fixes
+the installed executable paths to `/usr/bin`, maps only the reviewed relevant
+nodes to broker `OpenFile=` entries, and records every bounded canonical
+`/sys/class/input/event*` mapping in the separate human-readable manifest. The
+manifest contains paths only, never event packets or device names.
+
+The `verify` command regenerates the expected bundle from a fresh double-
+checked seat enumeration. It requires a direct current-user-owned mode-0700
+directory containing exactly the seven expected UTF-8 filenames. Every entry
+must be one-link, direct, current-user-owned, mode 0600, within the fixed size
+bound, unchanged while read, and byte-identical to the newly rendered UID,
+session, device set, and unit sources. Extra, missing, replaced, symlinked,
+permission-weakened, stale, or modified content fails verification. The
+enumeration itself stops as soon as the fixed file-count bound is exceeded.
+
+None of these three preflight commands opens a device, reads an event, retains
+raw values, installs a unit, starts a service, changes permissions, or edits
+provider policy. A successful inspection, render, or verification is therefore
+evidence for review, not authorization to arm input. The relevant-device
+record is bounded to 64 KiB and 32 sorted entries and has a strict canonical
+parser.
+
+`install --confirm-install` is a separate root-only transaction. It repeats the
+current-seat inspection, verifies the review as owned by the enrolled UID,
+requires the packaged broker and guard executables to be direct, root-owned,
+one-link, executable, and not group/world writable, and publishes only new
+mode-0600 root-owned files. No existing unit or enrollment file is replaced.
+Publishing uses no-follow exclusive temporary files, synchronized contents,
+no-replace renames, and exact rollback of files created by that transaction.
+It does not reload, start, or enable anything.
+
+`arm --confirm-arm` again inspects the seat, reconstructs the expected bytes,
+and requires the installed three-file enrollment and four unit files to match
+exactly before a bounded `daemon-reload` and one broker-service start. It does
+not enable startup. `stop` names only those four UID-bound units. `purge
+--confirm-purge` stops them, refuses unexpected enrollment content, removes
+only the seven exact root-owned files and now-empty UID directory, then reloads
+the manager. These transactions have passed isolated filesystem fault and
+rollback tests; they have not yet been exercised against an installed host.
+
+## Permission model
+
+The inspection command and running eligibility guard need no elevated
+privilege and no input-device group. The installed guard does require PID 1 to
+pass the reviewed root-owned mode-0600 input-class manifest read-only; it never
+opens that pathname or an event node itself. On systems where event nodes are
+`root:input` mode 0660, the enrolled desktop user deliberately remains outside
+`input`. Adding that
+user would give every process in the desktop session continuous access to all
+keyboard and pointer events, including events unrelated to Agent Seat.
+
+The dynamic broker identity also has no `input` supplementary group. The system
+manager performs the one administrative operation that ordinary Unix
+permissions forbid: it opens each reviewed event node read-only and passes only
+those exact descriptors with `OpenFile=`. The broker cannot open the same node
+again or discover additional nodes through that authority.
+
+For isolated developer experiments, an administrator could place a dedicated,
+non-login broker account in `input` or make `input` its primary group. That is
+not the supported profile: it grants broad retained device authority, defeats
+exact-descriptor confinement, still requires separate descriptor plumbing,
+and must never be suggested for the desktop user's account. Removing the group
+membership and starting a fresh login session are required after such an
+experiment.
+
+Concretely, do **not** run `usermod -aG input "$USER"`. If a developer chooses
+the unsupported fallback, distribution-specific account tools must create a
+separate system account with no login shell or home and add only that account
+to the group owning `/dev/input/event*` (commonly `input`). Root access is
+required for that account/group change. The broker must run as that dedicated
+identity, and the administrator must remove the membership after the test.
+This fallback is not available to the normal `DynamicUser=yes` profile and is
+not a substitute for systemd 253 `OpenFile=` support.
+
+## Current eligibility guard
+
+`agent-seat-eligibility-guard` is a separate unprivileged process with no
+input-event-node or X11 access. It accepts one socket-activated private local
+eligibility listener, authenticates the connecting service-manager UID,
+subscribes to logind signals
+and the kernel kobject-uevent group, reconciles every live canonical
+`/sys/class/input/event*` mapping against the bounded root-owned manifest, and
+then checks the exact enrolled session UID and seat, active-seat identity,
+local X11 user class/state, lock hint, and system sleep/shutdown state. It emits
+only `eligible` or one terminal `ineligible` frame.
+
+Any login1 property signal in the bounded namespace latches the guard off
+conservatively. login1 owner replacement or D-Bus loss closes the channel and
+makes broker evidence unavailable. Any valid input-subsystem uevent after the
+subscription latches `ineligible`; truncated, malformed, non-kernel, oversized,
+or unreadable uevent evidence closes the channel. The monitor is nonblocking,
+bounded to 16 KiB and 128 fields, and checked after each at-most-10-millisecond
+logind polling interval. It receives device lifecycle metadata, never evdev
+event packets, keys, buttons, or coordinates.
+
+The manifest is capped at 64 KiB and 256 sorted mappings. The guard accepts it
+only through an inherited descriptor for a one-link mode-0600 regular file
+owned by the already authenticated service-manager peer. The rendered system
+profile fixes that peer to UID 0, so its installed manifest is root-owned; an
+ordinary-user owner is accepted only when that UID is explicitly selected for
+a non-production local test. The guard verifies the file unchanged while
+reading and strictly rejects unknown revisions, duplicate or noncanonical
+event numbers, malformed paths, trailing data, and bounds violations. A
+persistent add, remove, or event reindex between review and guard startup
+changes the mapping; a change concurrent with the scan is caught by the
+already-open uevent monitor.
+
+The current manifest-reconciling guard passed a live active-session handshake
+as an explicitly ordinary-user local test. It now also passes that handshake
+under the hardened transient profile: the service consumed the freshly
+rendered manifest at fd 3, opened the real kernel uevent subscription, reached
+the one re-exposed system-bus socket, and evaluated the real local X11 session.
+The root-owned installed profile has passed parser, rendering, unit-syntax, and
+rootless negative-authority tests but has not yet run as an installed
+`DynamicUser` service. No installed add/remove/change transition has been
+exercised. This does not make generic Openbox supported: `LockedHint=false`
+remains insufficient by itself, and the LightDM transition ordering still
+needs the hostile lock/unlock tests below.
+
 ### System service manager
 
 PID 1 is the existing trusted OS component that opens each enrolled event node
-read-only with `OpenFile=` and passes the descriptors to the service. The same
-mechanism may pass a pre-connected, policy-restricted session-state channel and
-the socket unit passes the provider listener. Passed descriptors do not grant
-the broker permission to open another device or socket.
+read-only with `OpenFile=`. It passes the exact installed relevant-device
+record at fd 3 and the event descriptors starting at fd 4. It separately
+passes the exact installed input-class manifest read-only to the guard. For the
+broker, PID 1 connects the guard endpoint to standard input with
+`StandardInput=file:` and places the socket-activated provider listener on
+standard output with `StandardOutput=socket`. The broker safely duplicates
+those standard descriptors and never reconstructs a connected socket from an
+arbitrary raw descriptor. Passed descriptors do not grant either process
+permission to open another device or socket.
 
 `OpenFile=` was added in systemd 253. The profile must refuse older managers;
 it must not fall back to root execution, an input group, broad ACLs, or direct
@@ -74,13 +219,18 @@ provider device access.
 
 ### Runtime activity broker
 
-The long-running broker uses a dedicated static system account with no login
-shell, home directory, supplementary groups, or capabilities. It receives
-only:
+The long-running broker uses a service-manager allocated dynamic UID with no
+login shell, home directory, supplementary groups, or capabilities. It
+receives only:
 
 - the exact enrolled read-only evdev descriptors;
-- one socket-activated provider listener; and
-- the minimum read-only session-state source approved by the lock-state gate.
+- one preconnected eligibility stream on standard input; and
+- one socket-activated provider listener on standard output.
+
+The eligibility stream must deliver one complete fixed frame within two
+seconds. Timeout, partial data, closure, poll failure, or malformed data aborts
+startup. After a usable initial decision, any later channel ambiguity is
+terminal and cannot reassert readiness.
 
 It reads events only to advance an epoch or enter a stopped/unavailable state.
 It never sends or stores event type, code, value, coordinate, device identity,
@@ -97,10 +247,11 @@ selection discovery does not expand.
 ## Explicit installation and enablement
 
 The broker is a separate optional package, not a dependency of the Tier 0 core
-packages. Installation creates disabled unit templates, the dedicated system
-account, root-owned configuration directories, and documentation. It applies
-no enable preset, udev permission rule, input-group membership, provider grant,
-or Settings change.
+packages. Installation creates disabled unit templates, root-owned
+configuration directories, and documentation. Runtime identities are
+allocated by `DynamicUser=yes`; installation creates no account. It applies no
+enable preset, udev permission rule, input-group membership, provider grant, or
+Settings change.
 
 Enrollment is a distinct administrator action that names exactly:
 
@@ -143,11 +294,20 @@ deployment unsupported if it can operate the local session.
 
 ### Stable enrollment
 
-The root-owned enrollment record stores a bounded canonical sysfs path and the
-minimum immutable identity needed to detect replacement for every node. Raw
-event data, current key state, human-readable device names, and `/dev/input`
-minor numbers are not stored as identity. The exact record format remains
-unallocated until this deployment contract is approved.
+The candidate `enrolled-device-set.v1` record stores each relevant event
+number, bounded canonical sysfs path, coarse classes, udev `ID_PATH`, selected
+bus/vendor/model/revision IDs, the kernel's complete event-capability and input-
+property bitmaps, and `ID_SERIAL_SHORT` when available. Raw event
+data, current key state, human-readable device names, derived non-unique serial
+labels, and `/dev/input` minor numbers are not stored as identity.
+
+Serial-backed entries can additionally detect a changed device identifier at
+the same topology. Entries without `ID_SERIAL_SHORT` remain topology-only for
+hardware identity, but the input promise requires coverage rather than device
+attestation: current topology, classes, all kernel event-capability bitmaps,
+and the complete event-node set must still match. A serial-less replacement
+with any observable input difference is rejected; an exact clone is coverage-
+equivalent and does not reduce the broker's ability to stop on its events.
 
 At every arm or restart, the administrator tool resolves the enrolled records
 against a fresh enumeration. The current relevant set must equal the enrolled
@@ -155,7 +315,7 @@ set exactly. Missing, additional, replaced, ambiguous, relative, symlink-raced,
 or over-bound entries stop startup. The tool then creates a runtime-only unit
 definition with one read-only `OpenFile=` entry per resolved event node.
 
-The broker validates every inherited descriptor before readiness:
+The deployment must validate every inherited descriptor before readiness:
 
 - descriptor count and names equal the enrollment record;
 - each descriptor is read-only, nonblocking, and a Linux input event device;
@@ -163,17 +323,43 @@ The broker validates every inherited descriptor before readiness:
 - evdev capability bits still classify the device as relevant; and
 - initial key/button state and input queues are safe and synchronized.
 
-The broker has `DevicePolicy=strict` with no `DeviceAllow=` entry. It therefore
-cannot open an event node itself even if discretionary file permissions would
-otherwise allow it. The inherited descriptors are the complete authority.
+The current preflight renders and byte-verifies the bounded device identity
+and capability record, including changed same-path serial or capability
+evidence, and resamples relevant evidence before returning. Installation and
+arming freshly bind that evidence to exact installed bytes. The broker reads
+the installed record through fd 3 and verifies that each inherited descriptor
+is an evdev device with exactly the recorded capability and property bitmaps,
+checks initial key/button state, drains its initial queue, and enters a bounded
+quiet interval. The guard separately validates the complete current input-class
+mapping. The remaining installed gates are descriptor identity/placement under
+the real manager, confinement-negative tests, and hostile device lifecycle
+tests. Until they pass, the service source is not a supported deployment. The
+broker has `DevicePolicy=strict` with no `DeviceAllow=` entry,
+so it cannot open an event node itself even if discretionary file permissions
+would otherwise allow it. The inherited descriptors are its complete device
+authority.
 
 ### Hotplug and replacement
 
-The broker never adds a descriptor at runtime. It watches the bounded udev and
-sysfs view needed to detect changes and periodically resamples it before a
-status reply. Any add, remove, change, identity mismatch, descriptor hangup,
-read failure, or set mismatch advances the epoch, makes state unavailable, and
-closes all event descriptors.
+The broker never adds a descriptor at runtime. Descriptor hangup or read
+failure advances the epoch, makes state unavailable, and closes all event
+descriptors. Independently, the eligibility guard now subscribes to kernel
+kobject uevents before calculating initial eligibility. Any input-subsystem
+add, remove, change, or other valid lifecycle action observed after that point
+latches eligibility off. Notification truncation, malformed framing, a
+non-kernel sender, receive failure, or notification loss fails closed.
+
+The guard now also rejects a current complete class mapping that differs from
+the rendered manifest, after opening its notification subscription and before
+initial eligibility. This catches persistent set changes before startup and
+notifications during the scan. It does not prove immutable identity when a
+device was replaced with the same eventual mapping before subscription.
+Installation and arming now transactionally bind fresh bundle verification to
+installed bytes, but PID 1 still opens descriptors only during the subsequent
+service start. Installed tests must also prove that
+real kernel input uevents reach the confined guard and cause terminal broker
+unavailability. Until those remaining checks pass, runtime device completeness
+is unsupported.
 
 Recovery requires a fresh administrator arm. If the same enrolled identities
 resolve safely, the service manager opens a new exact set. Otherwise explicit
@@ -234,10 +420,10 @@ status reply. `SYN_DROPPED`, partial packets, impossible state, queue overflow,
 or timestamp/order ambiguity latch `unavailable`; the broker never attempts to
 reconstruct what happened for Agent Seat.
 
-Activity during `arming` restarts the quiet interval. No event contents leave
-the process. Once `stopped` or `unavailable`, provider IPC cannot rearm, clear,
-or downgrade the state. Administrative restart is the only initial recovery
-path.
+Activity during `arming` latches `stopped`; ambiguous or lost evidence latches
+`unavailable`. No event contents leave the process. Once `stopped` or
+`unavailable`, provider IPC cannot rearm, clear, or downgrade the state.
+Administrative restart is the only initial recovery path.
 
 ## Provider IPC
 
@@ -247,11 +433,12 @@ accepts one bounded provider connection; kernel peer credentials must match
 the enrolled UID. Same-user X11 is not an isolation boundary, so process names,
 executable paths, environment, and client-supplied PIDs do not authenticate.
 
-The protocol is separately versioned from Agent Seat wire revision 3. It has a
-small fixed frame bound and only two operations:
-
-- open with the claimed opaque session identifier; and
-- read current broker instance, state, epoch, and a coarse closed reason.
+The protocol is separately versioned from Agent Seat wire revision 4. It has a
+small fixed frame bound and one operation: read current broker instance, state,
+epoch, and a coarse closed reason. The current experiment authenticates the
+provider's enrolled numeric UID with kernel peer credentials. Binding the
+broker to a separately verified opaque session identity remains part of the
+eligibility-producer deployment gate.
 
 There is no event subscription, device list, activity timestamp, raw value,
 history, clear, rearm, configure, enumerate, launch, or injection operation.
@@ -270,12 +457,13 @@ names, session activity timing, or successful status queries.
 The service definition must name and test each mechanism rather than rely on a
 hardening score. The candidate minimum is:
 
-- `User=` and `Group=` set to the dedicated account, with no supplementary
-  groups, capabilities, setuid transition, or writable home;
+- `DynamicUser=yes`, with no persistent account, supplementary groups,
+  capabilities, setuid transition, or writable home;
 - exact read-only `OpenFile=` descriptors supplied by PID 1;
 - `DevicePolicy=strict` and no device allow-list;
-- all network families disabled and only pre-opened/socket-activated local
-  descriptors available;
+- for the activity broker, all network families disabled and only
+  the preconnected standard-input eligibility stream, standard-output
+  socket-activated provider listener, and exact event descriptors available;
 - a read-only filesystem namespace exposing only the executable, dynamic
   loader/libraries, bounded udev/sysfs/session evidence, and runtime socket;
 - `/home`, Xauthority locations, X11 filesystem and abstract sockets, other
@@ -290,10 +478,25 @@ hardening score. The candidate minimum is:
 - fixed memory, task, descriptor, frame, queue, CPU, and watchdog bounds with
   core dumps disabled.
 
+The current units place a read-only empty filesystem over `/run`; the guard
+then bind-mounts only `/run/dbus/system_bus_socket` back into its namespace.
+Both mark the entire filesystem non-executable and reopen only the packaged
+executable and system library directories needed by the dynamic loader. The
+steady-state processes are single-task, but `TasksMax=2` is required because
+systemd briefly needs a second task to construct an unprivileged namespace;
+the value 1 failed startup with `status=226/NAMESPACE` on systemd 258.
+
 The exact unit directives depend on the approved session/lock channel and must
 be exercised on every supported systemd/kernel combination. Namespace or
 seccomp setup failure is a service-start failure, never a warning followed by
 reduced confinement.
+
+The eligibility guard is a separate authority with `AF_UNIX` for its fixed
+local channel and `AF_NETLINK` only for the kernel kobject-uevent group. It
+runs in a private network namespace and receives no internet address family,
+input-event descriptor, or raw input packet. Its installed negative tests must
+prove those distinctions rather than treating the broker's stricter network
+rule as if it applied to both processes.
 
 Negative tests run the installed unit and prove that it cannot create or
 connect an X11 socket, open any input node, execute a supplied fixture, read an
@@ -301,6 +504,21 @@ ordinary user's process/environment/home/runtime metadata, create a network or
 device socket, write outside its private runtime state, or send raw event data.
 Tests also prove that inherited event descriptors remain readable despite the
 device-open denial and that no unexpected descriptor survives startup.
+
+The current explicit rootless systemd-258 probe covers both profiles with a
+single-process hostile executable. It proves exact inherited read-only evidence
+survives while home, unrelated runtime, other-process, input-node, host-socket,
+new network-socket, desktop-environment, and direct-exec attempts fail. For the
+guard it additionally proves that only the explicitly re-exposed system-bus
+socket remains reachable. This is useful evidence for the directives and found
+a real `TasksMax=1` startup defect, but it does not exercise `DynamicUser=yes`
+or the production system manager. The installed negative test remains open.
+An additional explicit live guard probe passes under the same hardened
+rootless profile against the current sysfs mapping, kernel uevent group, and
+logind session. Every individual owner, seat, foreground, active, local, type,
+class, state, unlocked, awake, and not-shutting-down predicate also has a
+direct fail-closed unit case. Destructive transitions and the production
+identity remain reserved for the isolated full-system suite.
 
 ## Upgrade and removal
 
@@ -310,11 +528,11 @@ but never automatically rearms. Unknown or migrated policy requires a new
 administrator review. Runtime instance IDs, sockets, descriptors, and generated
 unit fragments are never preserved across upgrade.
 
-Ordinary package removal stops and disables the units, removes runtime state,
-and removes the dedicated account only when the package manager can do so
-safely. Root-owned enrollment remains inert for review. An explicit purge may
-remove it after showing the exact path. Removal never edits provider policy or
-another package's udev rules and never leaves group membership or device ACLs.
+Ordinary package removal stops and disables the units and removes runtime
+state. There is no persistent broker or guard account to remove. Root-owned
+enrollment remains inert for review. An explicit purge may remove it after
+showing the exact path. Removal never edits provider policy or another
+package's udev rules and never leaves group membership or device ACLs.
 
 ## Approval ledger
 
@@ -322,19 +540,27 @@ another package's udev rules and never leaves group membership or device ACLs.
   and the broker is unprivileged with exact inherited descriptors.
 - **Administrator action:** candidate pass. Package install, enrollment, arm,
   rearm, and reenrollment are distinct and never driven by Agent Seat peers.
-- **Device completeness:** candidate, needs deterministic enumeration and
-  hotplug tests. Exact-set enrollment is fail closed but not yet proven.
-- **Retained privilege and confinement:** candidate, needs an installable unit
-  and negative tests on the compatibility matrix.
-- **IPC minimization:** candidate pass at design level; schema remains
-  unallocated and implementation is forbidden.
+- **Device completeness:** candidate. Bounded deterministic current-set
+  inspection, hostile metadata parsing, exact inert unit rendering, and
+  byte-exact current-set verification are implemented. New-only privileged
+  publication, exact installed-byte arm verification, rollback, and scoped
+  purge are fixture-tested. The guard compares the complete initial input-class
+  manifest after subscribing and latches off on bounded later input-subsystem
+  kernel notifications. Runtime descriptor placement and installed hotplug
+  tests remain.
+- **Retained privilege and confinement:** candidate. Rootless hostile probes
+  pass both profiles and preserve only their intended inherited/system-bus
+  channels. Installed `DynamicUser` negative tests on the compatibility matrix
+  remain.
+- **IPC minimization:** experimental implementation pass. Fixed status and
+  eligibility frames expose no event, device, coordinate, or timestamp data.
 - **Session activity and VT lifecycle:** candidate, needs deterministic logind
   tests without `TakeControl()`.
 - **Lock lifecycle:** fail. A display-manager foreground-session transition is
   a design candidate, but its ordering and failure behavior have not passed
   isolated full-system tests. Generic Openbox remains unsupported.
-- **Overall deployment gate:** fail until every item passes. No code milestone
-  is authorized.
+- **Overall deployment gate:** fail until every item passes. Experimental code
+  and explicit administrator transactions do not authorize a support claim.
 
 ## Standards consulted
 
@@ -342,10 +568,17 @@ another package's udev rules and never leaves group membership or device ACLs.
   <https://docs.kernel.org/input/event-codes.html>
 - udev dynamic device and permission model:
   <https://www.freedesktop.org/software/systemd/man/latest/udev.html>
+- Linux netlink kobject-uevent transport and loss semantics:
+  <https://man7.org/linux/man-pages/man7/netlink.7.html>
+- Linux kernel kobject-uevent broadcast implementation:
+  <https://github.com/torvalds/linux/blob/master/lib/kobject_uevent.c>
 - libinput udev seat and input properties:
   <https://wayland.freedesktop.org/libinput/doc/latest/device-configuration-via-udev.html>
 - systemd service `OpenFile=` descriptor passing:
   <https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html>
+- systemd standard-stream and socket-activation descriptor placement:
+  <https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html>
+  and <https://www.freedesktop.org/software/systemd/man/latest/systemd.socket.html>
 - systemd device access controls:
   <https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html>
 - systemd process and filesystem confinement:

@@ -1,12 +1,12 @@
 # T5 input reconsideration
 
-Status: threat-model review, 2026-08-08. The ordinary-X11 stop decision still
-holds. This review identifies one candidate architecture, but does not approve
-its new privileged authority or allocate a wire revision.
+Status: authority and narrow experimental implementation approved, 2026-08-08.
+The ordinary-X11 stop decision and deployment gates still hold. Revision 4
+exercises one broker-gated pointer movement without claiming installed support.
 
-This document is a stop sign with approval gates, not an implementation plan.
-Neither interest in T5 nor acceptance of this review authorizes broker code,
-new device permissions, XTEST calls, protocol allocation, or an install-time
+This document remains the stop contract for deployment. Approval authorized
+bounded broker and XTEST experiments, not device permissions, enrollment,
+automatic enablement, click/keyboard calls, or a supported install-time
 service. Observation, management, and launch remain the shippable Tier 0
 profile if the gates cannot be passed without weakening the promise below.
 
@@ -73,8 +73,12 @@ agent-seat-x11:
     candidate: XTEST only while an approved input profile is active
     forbidden: evdev, uinput, broker administration, raw activity details
 
+eligibility guard:
+    required: bounded logind state, root-owned initial class map, kernel lifecycle
+    forbidden: event-node reads, raw input packets, X11, MCP, launch, injection
+
 candidate enrollment tool:
-    required: explicit root device metadata review and broker unit lifecycle
+    required: unprivileged review; explicit root install and broker lifecycle
     forbidden: event reads, X11, provider policy, grants, resident service
 
 candidate activity broker:
@@ -285,7 +289,8 @@ the contract is not implementable yet and T5 remains stopped.
 
 ## Approval gates
 
-No revision-4 schema or implementation begins until all of these are accepted:
+The revision-4 experiment provides evidence for these gates, but no supported
+deployment begins until every remaining item is accepted:
 
 - **Authority gate:** approve or reject the new system broker and its raw-input
   risk; ordinary user-group or broad ACL access is not the substitute.
@@ -304,8 +309,8 @@ No revision-4 schema or implementation begins until all of these are accepted:
 - **Test-first gate:** approve deterministic hostile fixtures and land their
   failure contracts before XTEST realization.
 
-If any gate cannot be met, T5 remains unsupported. The existing revision-3
-feature list and MCP surface do not change.
+If any gate cannot be met, T5 remains unsupported. The released revision-3
+core remains unchanged; experimental revision 4 is not a compatibility claim.
 
 The governing rule is: Tier 0 must never acquire extra machine authority merely
 to imitate a guarantee that Tier 1 gets naturally from owning the display

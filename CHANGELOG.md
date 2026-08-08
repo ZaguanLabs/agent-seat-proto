@@ -6,6 +6,71 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added the experimental revision-4 `pointer.move` vertical slice: an
+  authority-free MCP tool, strict provider grant/config boundary, live
+  target-relative hit testing, one-action XTEST realization, and qualified
+  queued/interrupted results with isolated Openbox coverage.
+- Added `agent-seat-activity-broker` 0.1.0 with fixed status and eligibility
+  frames, verified Unix peers, exact inherited evdev descriptors, initial
+  held-key/queued-event refusal, activity and `SYN_DROPPED` latching, and no
+  X11, launch, MCP, policy, or injection authority.
+- Added inert enrollment-rendered systemd service/socket sources. They require
+  a persistent single broker, explicit arm cycle, read-only inherited
+  eligibility/device descriptors, strict device and socket confinement, and
+  pass local `systemd-analyze verify`; no enrollment or enablement is shipped.
+- Added `agent-seat-activity-enroll inspect`, an unprivileged, read-only
+  preflight that reports the exact current `seat0` evdev candidate from bounded
+  sysfs and selected udev metadata. It never opens an input device, writes an
+  enrollment, renders or installs units, starts a service, or changes policy.
+- Added unprivileged `agent-seat-activity-enroll render`. It writes the exact
+  inspected device set as inert, private systemd unit sources and a prominent
+  review record in a new directory, refuses overwrite, and never installs,
+  enables, or starts anything. Normal deployment needs no desktop-user or
+  broker membership in the broad input-device group.
+- Added unprivileged `agent-seat-activity-enroll verify`. It regenerates the
+  current candidate and rejects a review bundle unless its bounded file set,
+  direct-file metadata, private ownership/modes, UID, session, device set, and
+  bytes still match exactly; it changes no file or service.
+- Added the unprivileged `agent-seat-eligibility-guard`. It subscribes to
+  logind and the kernel kobject-uevent group before checking the exact session,
+  seat, UID, type, class, activity, remote, lock-hint, sleep, and shutdown
+  state; emits only the fixed eligibility frame; and permanently fails closed
+  on input-subsystem lifecycle changes, malformed or lost device evidence,
+  state signals, login1 replacement, D-Bus loss, or a non-enrolled peer. It
+  receives no input-event packets or device descriptors.
+- Added a strict, human-readable initial input-class manifest covering every
+  bounded `/sys/class/input/event*` mapping, not only the devices selected for
+  broker descriptors. PID 1 passes the installed root-owned mode-0600 manifest
+  read-only; after subscribing to kernel uevents, the guard reconciles the live
+  mapping and refuses eligibility on mismatch or concurrent change.
+- Added a separate bounded `enrolled-device-set.v1` review record for relevant
+  devices. It binds canonical paths and classes to selected udev topology and
+  hardware identity, records a short serial only when present, strictly
+  round-trips its private format, and labels serial-less evidence as
+  topology-only instead of claiming indistinguishable replacement detection.
+- Added explicit root-only `install`, `arm`, `stop`, and `purge` enrollment
+  transactions. Installation freshly verifies the current seat and the
+  UID-owned review, requires packaged root-controlled executables, publishes
+  only new private root-owned files with rollback, and never enables or starts
+  a service. Arming freshly verifies the installed bytes before one bounded
+  service start; stopping and purging name only the exact UID-bound units and
+  files. Fixture tests cover refusal, unexpected files, and partial-publication
+  rollback without modifying the host.
+- Added an explicit rootless systemd confinement gate for both runtime
+  authorities. A single-process hostile fixture proves exact inherited
+  read-only evidence remains available while home/runtime/process metadata,
+  input paths, host sockets, new network sockets, desktop environment, and
+  direct execution are denied; the guard alone retains its exact system-bus
+  socket. The test exposed and fixed a startup failure caused by `TasksMax=1`:
+  the bounded value is now 2 so systemd can construct the namespace before the
+  one-task process begins.
+- Added an explicit live rootless guard gate. Under the hardened transient
+  profile it consumes a freshly rendered complete input-class manifest through
+  fd 3, opens the real kernel uevent subscription, reaches the single
+  re-exposed system-bus socket, authenticates its peer, and evaluates the
+  current local X11 session. The eleven session/system predicates are also
+  reduced to a bounded value object and tested one failure at a time.
+
 - Completed `agent-seat-settings` 0.1.1 with native GTK 4 controls for explicit
   activation, every capability and dependency, observation scope and titles,
   the searchable provider-identical application catalog, bounded limits, an
@@ -29,6 +94,33 @@ All notable changes to this project are documented here.
   policy-state rail, visual system, and dependency boundary.
 
 ### Changed
+
+- Patch-bumped `agent-seat-activity-broker` to 0.1.10 for exact bundle
+  verification, the documented unprivileged pre-installation workflow,
+  fail-closed runtime input-device lifecycle monitoring, and initial input
+  class-set reconciliation. Manifest ownership is bound to the already
+  authenticated service-manager peer: the rendered system profile fixes that
+  peer to UID 0, while an ordinary user can exercise the same guard path in an
+  explicitly non-production local test. Version 0.1.6 added the strict
+  reviewed-device identity record and same-path changed-identity refusal;
+  version 0.1.7 binds every relevant device to the complete kernel capability
+  bitmap, rejects changed coverage evidence, and resamples relevant udev and
+  capability evidence before inspection succeeds. Version 0.1.8 adds the
+  explicit privileged file/service transactions and passes the root-owned
+  device record to the runtime for descriptor-to-enrollment capability checks.
+  Version 0.1.9 adds executable and `/run` isolation plus the hostile rootless
+  systemd confinement proof. Version 0.1.10 adds live hardened guard startup
+  against real logind, sysfs, and kernel lifecycle evidence; installed
+  `DynamicUser` testing remains gated.
+- Rewired the broker's inherited sockets without raw-descriptor conversion:
+  PID 1 connects eligibility to standard input, places the socket-activated
+  provider listener on standard output, passes the exact enrolled-device record
+  at fd 3, and starts event descriptors at fd 4. The initial eligibility frame
+  now has a two-second bounded wait, and timeout, partial data, hangup, or
+  malformed data fails closed.
+- Planned an R0 standards track that separates the display-neutral normative
+  contract and assurance tiers from backend conformance profiles and
+  non-normative reference implementations.
 
 - `agent-seat-settings` 0.1.3 preserves the bounded allow-list when switching
   among application admission modes and across saves. The provider consults

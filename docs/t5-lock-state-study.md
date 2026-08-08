@@ -1,8 +1,8 @@
 # T5 lock-state integration study
 
-Status: candidate integration review, 2026-08-08. This document does not
-approve the activity broker, authorize implementation, or add input support.
-It refines the lock-lifecycle stop condition in
+Status: candidate integration review, 2026-08-08. Broker experiments are now
+approved, but this document does not approve a lock integration or supported
+input deployment. It refines the lock-lifecycle stop condition in
 [`t5-broker-deployment.md`](t5-broker-deployment.md).
 
 ## Verdict

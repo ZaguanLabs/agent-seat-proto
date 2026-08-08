@@ -22,7 +22,7 @@ act on their structured fields.
 
 ## Tools
 
-The companion publishes twelve closed-object schemas:
+The companion publishes thirteen closed-object schemas:
 
 - `seat_status`
 - `desktop_snapshot`
@@ -36,8 +36,9 @@ The companion publishes twelve closed-object schemas:
 - `client_geometry`
 - `applications_list`
 - `application_launch`
+- `pointer_move`
 
-Each maps one-to-one to a typed revision-3 call. Results contain matching JSON
+Each maps one-to-one to a typed revision-4 call. Results contain matching JSON
 in `structuredContent` and a text block for clients that do not consume
 structured results. A wire error sets `isError: true` without converting its
 stable code or retry action into English control flow.

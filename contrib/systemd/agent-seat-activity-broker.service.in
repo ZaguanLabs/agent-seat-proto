@@ -1,0 +1,68 @@
+# Enrollment renders this source as one uniquely named persistent .service unit.
+# It is deliberately not installable or runnable with placeholders intact.
+[Unit]
+Description=Agent Seat physical-activity broker connection
+Documentation=https://github.com/ZaguanLabs/agent-seat-proto
+Requires=@SOCKET_UNIT@
+Requires=@ELIGIBILITY_SOCKET_UNIT@
+After=@SOCKET_UNIT@ @ELIGIBILITY_SOCKET_UNIT@
+StartLimitIntervalSec=infinity
+StartLimitBurst=1
+
+[Service]
+Type=exec
+DynamicUser=yes
+StandardInput=file:@ELIGIBILITY_PATH@
+StandardOutput=socket
+StandardError=journal
+ExecStart=@BROKER_EXEC@ --uid @PROVIDER_UID@ --device-set-fd 3 @EVENT_FD_ARGS@
+OpenFile=@DEVICE_SET_PATH@:enrolled-device-set:read-only
+@EVENT_OPEN_FILES@
+
+# Passed descriptors are usable, but the process cannot open devices or sockets.
+DevicePolicy=strict
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=none
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# The dedicated account retains no machine-administration authority.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+
+# Only the executable, loader, own process descriptors, and inherited FDs are needed.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+UnsetEnvironment=DISPLAY XAUTHORITY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS SSH_AUTH_SOCK
+TemporaryFileSystem=/run:ro
+NoExecPaths=/
+ExecPaths=@BROKER_EXEC@ -/usr/lib -/usr/lib64 -/lib -/lib64
+
+# Bounds are part of the service contract, not tuning suggestions.
+UMask=0077
+TasksMax=2
+LimitNOFILE=64
+LimitCORE=0
+MemoryMax=32M
+CPUQuota=10%
+KillMode=mixed
+CollectMode=inactive-or-failed
+Restart=no

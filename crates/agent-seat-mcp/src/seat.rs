@@ -65,6 +65,7 @@ impl Seat {
             Capability::ManageGeometry,
             Capability::LaunchList,
             Capability::LaunchExecute,
+            Capability::InputPointer,
         ])
         .map_err(|error| internal(error.to_string()))?;
         let hello = ClientMessage::Hello(Hello {

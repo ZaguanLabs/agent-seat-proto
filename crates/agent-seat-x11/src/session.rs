@@ -45,7 +45,7 @@ pub(crate) fn run(
         return close(
             &mut stream,
             ErrorCode::IncompatibleRevision,
-            "exact Agent Seat revision 3 is required",
+            "exact Agent Seat revision 4 is required",
         );
     }
     let Some(granted) = config.granted(uid, hello.requested.iter()) else {
@@ -58,6 +58,14 @@ pub(crate) fn run(
     let granted = BoundedList::new(granted)
         .map_err(|error| format!("configured grant exceeded wire bounds: {error}"))?;
     let session = SessionId::new(session_number);
+    let mut features = vec![
+        Feature::EwmhObservation,
+        Feature::EwmhManagement,
+        Feature::DesktopLaunch,
+    ];
+    if config.broker().is_some() {
+        features.extend([Feature::InputInjection, Feature::HumanActivity]);
+    }
     let welcome = Welcome {
         protocol: text::<128>(PROTOCOL_NAME)?,
         revision: PROTOCOL_REVISION,
@@ -68,12 +76,8 @@ pub(crate) fn run(
         },
         backend: Backend::X11Ewmh,
         assurance: Assurance::Tier0,
-        features: BoundedList::new(vec![
-            Feature::EwmhObservation,
-            Feature::EwmhManagement,
-            Feature::DesktopLaunch,
-        ])
-        .map_err(|error| format!("provider feature list exceeded wire bounds: {error}"))?,
+        features: BoundedList::new(features)
+            .map_err(|error| format!("provider feature list exceeded wire bounds: {error}"))?,
         granted: granted.clone(),
         limits: Limits {
             request_frame_bytes: MAX_REQUEST_FRAME_BYTES as u32,
@@ -184,6 +188,7 @@ fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
                 | Call::ClientWorkspace(_)
                 | Call::ClientState(_)
                 | Call::ClientGeometry(_)
+                | Call::PointerMove(_)
         ) || granted.contains(&agent_seat_proto::Capability::ObserveStructure))
         && (!matches!(call, Call::ApplicationLaunch(_))
             || granted.contains(&agent_seat_proto::Capability::LaunchList))
@@ -252,6 +257,26 @@ fn provider_call(
             launch_application(&arguments.application, granted, config, launcher, observer)
                 .map(Reply::Launched)
                 .map_err(CallFailure::Launch)
+        }
+        Call::PointerMove(arguments) => {
+            let Some((broker_socket, broker_peer_uid)) = config.broker() else {
+                return protocol_error(
+                    ErrorCode::Unavailable,
+                    Retry::Reconnect,
+                    "activity broker is not configured",
+                );
+            };
+            observer_for(observer, granted, config)
+                .and_then(|observer| {
+                    observer.pointer_move(
+                        arguments,
+                        broker_socket,
+                        broker_peer_uid,
+                        config.io_timeout(),
+                    )
+                })
+                .map(Reply::Input)
+                .map_err(CallFailure::Observation)
         }
     };
     match result {

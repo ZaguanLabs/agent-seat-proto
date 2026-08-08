@@ -108,6 +108,19 @@ another Agent Seat product was consulted or imported.
 
 ## T5 input reconsideration
 
+### Maintainer-requested prior-art comparison
+
+On 2026-08-08, after the revision-4 pointer path, broker, guard, device
+inspection, and inert bundle renderer had been independently implemented and
+tested, the maintainer explicitly requested a read of
+`../nobox/docs/agent-seat-tier-complexity.md`. The document was used only as a
+high-level comparison checklist for the already-recorded distinction between
+an integrated display authority and an external Tier 0 observer. No Nobox
+implementation, schema, test, fixture, comment, service definition, or prose
+was copied, translated, or adapted; no Agent Seat wire or runtime behavior was
+derived from it. Subsequent work continues to use this repository's approved
+contract, public standards, and independently observed process behavior.
+
 The T5 threat-model review in `docs/t5-input-reconsideration.md` is original
 work derived from this repository's public roadmap and security model. Its
 technical inputs are the public XTEST specification already recorded above,
@@ -116,8 +129,8 @@ the Linux kernel evdev and uinput documentation at
 <https://docs.kernel.org/input/uinput.html>, and the systemd-logind D-Bus API
 at
 <https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html>.
-No Nobox source, schema, test, fixture, comments, or prose was consulted or
-adapted. The review adds no code or dependency.
+No Nobox source, schema, test, fixture, comments, or prose was consulted during
+its authorship or adapted. The review adds no code or dependency.
 
 The later process-authority inventory, deployment questions,
 negative-authority requirements, hostile-test ordering, and governing Tier 0
@@ -141,6 +154,98 @@ upstream LightDM project and `dm-tool` documentation linked from
 compatibility candidate; no LightDM or Nobox implementation, schema, test,
 fixture, comments, or prose was copied or adapted. The study adds no code,
 service definition, schema, fixture, or dependency.
+
+The revision-4 pointer-move gate, broker framing/runtime, inert systemd unit
+sources, and hostile tests are original implementation work from the approved
+repository threat contract. Standards-derived inputs are Linux evdev event and
+`SYN_DROPPED` semantics, XTEST fake-input semantics, Unix peer credentials,
+and systemd 253+ `OpenFile=`, socket activation, and execution/resource-control
+directives linked from `docs/t5-broker-deployment.md`. The new direct runtime
+dependency is `evdev` 0.13.2 (Apache-2.0 OR MIT) from
+<https://github.com/emberian/evdev>. No Nobox code, schema, test, fixture,
+comments, service definition, or prose was consulted during implementation or
+adapted.
+
+The read-only enrollment inspection command is original work based on the
+public Linux sysfs device view and the documented `udevadm info` query surface.
+It requests only the input-class and seat properties listed in the deployment
+contract, validates a fixed absolute `/usr/bin/udevadm` result, and adds no
+dependency. No Nobox enumeration code, output, schema, fixture, or prose was
+consulted during implementation or adapted.
+
+The inert review-bundle renderer is original work over the repository's own
+systemd unit sources and inspection result. Its path, identifier, output-mode,
+no-overwrite, exact-descriptor, and unresolved-marker checks add no external
+dependency. No third-party enrollment implementation, schema, fixture, unit,
+or prose was consulted or adapted.
+
+The root-only install, arm, stop, and purge transactions are original work from
+the repository's administrator-action and fail-closed deployment contract.
+They use Rustix's safe filesystem interfaces for no-follow exclusive creation,
+no-replace rename, exact unlink, and synchronization, plus fixed
+`/usr/bin/systemctl` process behavior. Their ownership, mode, file-set,
+rollback, timeout, and non-enablement tests use only private temporary fixture
+directories. No third-party installer, service controller, schema, fixture, or
+prose was consulted or adapted.
+
+The rootless confinement probe is an original single-process hostile fixture
+for the repository's own systemd unit contract. It exercises only public
+filesystem, process, socket, environment, inherited-descriptor, and transient
+user-manager behavior. It adds no product dependency and does not use another
+project's fixture, service, test language, or implementation.
+
+The live rootless guard gate is original integration work over the repository's
+own renderer, guard, unit contract, and fixed wire frame. It observes only the
+current public sysfs, kernel uevent, systemd user-manager, Unix peer-credential,
+and logind interfaces. It does not change the session, read an event node, or
+use another project's test or implementation.
+
+The exact bundle verifier is original work over that renderer and the fresh
+inspection result. Its direct-file, ownership, mode, link-count, size,
+identity-stability, exact-name, and byte-comparison checks use Rust standard
+filesystem metadata only and add no dependency. It does not incorporate any
+Nobox format, behavior, implementation, test, fixture, or prose.
+
+The eligibility guard is original work against the documented login1 D-Bus
+interfaces and D-Bus signal matching. It uses `dbus` 0.9 (Apache-2.0 OR MIT)
+and the system `libdbus`; this replaces a rejected 50-package pure-Rust D-Bus
+candidate with two locked packages. No LightDM, Nobox, locker, or session-guard
+implementation, schema, fixture, comments, or prose was consulted during
+implementation or adapted.
+
+Its later device-lifecycle monitor is original work against Linux netlink
+kobject-uevent documentation and the upstream kernel broadcast implementation.
+It uses the existing safe Rustix netlink wrappers, accepts only kernel-sender
+messages, bounds bytes and fields, and reduces all input-subsystem lifecycle
+metadata to terminal ineligibility. It does not read evdev packets or expose
+device metadata. No external broker or hotplug implementation, schema, test,
+fixture, comments, or prose was consulted or adapted.
+
+The strict initial input-class manifest and reconciliation are original work
+over the already inspected public `/sys/class/input` and canonical sysfs view.
+The small tab-delimited format is private deployment metadata, not Agent Seat
+wire protocol; it is bounded, revisioned, and implemented with the Rust
+standard library and existing Rustix dependency only. No external manifest,
+enrollment format, parser, fixture, service definition, comments, or prose was
+consulted or adapted.
+
+The broker standard-stream descriptor layout is original integration work
+against the public systemd `StandardInput=file:`, `StandardOutput=socket`,
+socket-activation, and `OpenFile=` contracts. Local transient user-manager
+services were used only to observe documented descriptor placement and Unix
+socket connection behavior. The broker duplicates inherited standard streams
+through safe Rustix APIs; no external broker implementation or raw-descriptor
+conversion pattern was copied or adapted.
+
+The reviewed relevant-device identity record is original work over selected
+properties from the already bounded `udevadm info` query. Its distinction
+between topology-only and serial-backed evidence follows the public Linux input
+model, where `phys` is a physical hierarchy path and `uniq` exists only when a
+device provides a unique identifier, plus udev's documented property database
+and path-based device identification. The later coverage-equivalence record
+uses the Linux input documentation's public `capabilities/` and `properties`
+sysfs bitmaps and adds no device access or dependency. No third-party
+enrollment record, parser, schema, fixture, or prose was copied or adapted.
 
 ## First-run configuration workflow
 

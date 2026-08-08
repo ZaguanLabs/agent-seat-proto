@@ -1,5 +1,6 @@
 //! Bounded per-session EWMH snapshots and convergent event diffs.
 
+mod input;
 mod manager;
 
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -195,7 +196,7 @@ impl Observer {
         })
     }
 
-    fn refresh(&mut self) -> Result<(), Failure> {
+    pub(super) fn refresh(&mut self) -> Result<(), Failure> {
         let raw = scan(
             &self.connection,
             self.root,
@@ -1041,7 +1042,7 @@ pub(crate) struct Failure {
 }
 
 impl Failure {
-    const fn unavailable(message: &'static str) -> Self {
+    pub(super) const fn unavailable(message: &'static str) -> Self {
         Self {
             code: ErrorCode::Unavailable,
             retry: Retry::Reconnect,
@@ -1061,7 +1062,7 @@ impl Failure {
         }
     }
 
-    const fn invalid(message: &'static str) -> Self {
+    pub(super) const fn invalid(message: &'static str) -> Self {
         Self {
             code: ErrorCode::InvalidArgument,
             retry: Retry::Never,

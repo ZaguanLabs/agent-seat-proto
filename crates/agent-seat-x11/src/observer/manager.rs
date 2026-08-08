@@ -332,7 +332,7 @@ impl Observer {
         }
     }
 
-    fn target(&self, request: TargetRequest) -> Result<Target, Failure> {
+    pub(super) fn target(&self, request: TargetRequest) -> Result<Target, Failure> {
         let Some(record) = self.record(request.client) else {
             return Err(Failure {
                 code: ErrorCode::NoSuchClient,
@@ -405,12 +405,12 @@ impl Observer {
     }
 }
 
-struct Target {
-    id: ClientId,
-    xid: u32,
-    frame: Option<Rect>,
-    states: Vec<ClientState>,
-    actions: Vec<ClientAction>,
+pub(super) struct Target {
+    pub(super) id: ClientId,
+    pub(super) xid: u32,
+    pub(super) frame: Option<Rect>,
+    pub(super) states: Vec<ClientState>,
+    pub(super) actions: Vec<ClientAction>,
 }
 
 struct Prepared {

@@ -1,7 +1,7 @@
 //! Process-boundary T0 lifecycle, policy, ownership, and isolation tests.
 
 use std::fs::{self, DirBuilder};
-use std::io::{BufRead as _, Read as _};
+use std::io::{BufRead as _, Read as _, Write as _};
 use std::num::NonZeroU64;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::os::unix::fs::PermissionsExt as _;
@@ -13,15 +13,16 @@ use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use agent_seat_activity_broker::{BrokerState, BrokerStatus, StopReason, read_status_request};
 use agent_seat_proto::{
     ApplicationId, ApplicationLaunchRequest, ApplicationListRequest, BoundedList, BoundedText,
     Call, Capability, ClientDescriptor, ClientGeometryRequest, ClientMessage, ClientState,
     ClientStateRequest, ClientWorkspaceRequest, DesktopSnapshot, Empty, ErrorCode, Event,
-    EventBatch, EventKind, Hello, MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES,
+    EventBatch, EventKind, Hello, InputTerminal, MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES,
     ManagementReply, Observation as ManagementObservation, Outcome, PROTOCOL_NAME,
-    PROTOCOL_REVISION, PeerInfo, PollRequest, ReadFrame, Rect, Reply, Request, RequestId, Sequence,
-    ServerMessage, StateAction, SubscribeRequest, TargetRequest, WorkspaceRequest, read_frame,
-    write_frame,
+    PROTOCOL_REVISION, PeerInfo, PointerMoveRequest, PollRequest, ReadFrame, Rect, Reply, Request,
+    RequestId, Sequence, ServerMessage, StateAction, SubscribeRequest, TargetRequest,
+    WorkspaceRequest, read_frame, write_frame,
 };
 use agent_seat_x11::{ActivePolicyStatus, active_policy_status, read_policy, replace_policy};
 use rustix::process::{Pid, Signal, geteuid, kill_process};
@@ -371,6 +372,40 @@ fn write_management_config(directory: &Path) -> PathBuf {
     )
     .expect("write management config");
     path
+}
+
+fn write_pointer_config(directory: &Path, broker_socket: &Path) -> PathBuf {
+    let path = write_config(
+        directory,
+        &["observe_structure", "observe_titles", "input_pointer"],
+        4,
+        2_000,
+    );
+    let source = fs::read_to_string(&path).expect("read base pointer config");
+    fs::write(
+        &path,
+        format!(
+            "{source}\n[observation]\nclients = \"all_workspaces\"\ntitles = true\n\
+             [input]\nbroker_socket = {:?}\nbroker_peer_uid = {}\n",
+            broker_socket,
+            geteuid().as_raw()
+        ),
+    )
+    .expect("write pointer config");
+    path
+}
+
+fn serve_broker(socket: &Path, statuses: Vec<BrokerStatus>) -> thread::JoinHandle<()> {
+    let listener = UnixListener::bind(socket).expect("bind broker fixture");
+    thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept broker fixture");
+        for status in statuses {
+            read_status_request(&mut stream).expect("read broker status request");
+            stream
+                .write_all(&status.encode())
+                .expect("write broker status response");
+        }
+    })
 }
 
 fn write_launch_config(directory: &Path) -> PathBuf {
@@ -1358,6 +1393,179 @@ fn current_workspace_scope_hides_titles_and_rekeys_returning_clients() {
     assert_ne!(returned.clients[0].id, first.id);
     assert_eq!(returned.clients[0].title, None);
 
+    client.destroy();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn pointer_move_is_broker_gated_target_relative_and_observed_on_x11() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("pointer-move");
+    let broker_socket = directory.0.join("activity.sock");
+    let ready = BrokerStatus {
+        instance: 41,
+        epoch: 7,
+        state: BrokerState::Ready,
+        reason: StopReason::None,
+    };
+    let broker = serve_broker(&broker_socket, vec![ready, ready, ready]);
+    let config = write_pointer_config(&directory.0, &broker_socket);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("pointer peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::InputPointer,
+            ],
+        ),
+        ServerMessage::Welcome(welcome)
+            if welcome.features.contains(&agent_seat_proto::Feature::InputInjection)
+                && welcome.features.contains(&agent_seat_proto::Feature::HumanActivity)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "pointer-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "pointer-target")
+        })
+    });
+    let observed_target = client_named(&observed, "pointer-target");
+    let expected = client
+        .connection
+        .translate_coordinates(client.window, client.root, 25, 30)
+        .expect("expected pointer coordinates request")
+        .reply()
+        .expect("expected pointer coordinates reply");
+
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::PointerMove(PointerMoveRequest {
+                target: target(&observed_target),
+                x: 25,
+                y: 30,
+            }),
+        ),
+        Outcome::Ok(Reply::Input(reply))
+            if reply.completed == 1
+                && reply.requested == 1
+                && reply.terminal == InputTerminal::Queued
+    ));
+    let pointer = client
+        .connection
+        .query_pointer(client.root)
+        .expect("query moved pointer request")
+        .reply()
+        .expect("query moved pointer reply");
+    assert_eq!(
+        (pointer.root_x, pointer.root_y),
+        (expected.dst_x, expected.dst_y)
+    );
+
+    broker.join().expect("broker fixture");
+    client.destroy();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn pointer_move_is_not_sent_when_activity_changes_under_the_x11_grab() {
+    assert_pointer_move_interrupted(StopReason::Activity, "pointer-activity");
+}
+
+#[test]
+fn pointer_move_is_not_sent_when_session_eligibility_changes() {
+    assert_pointer_move_interrupted(StopReason::EligibilityChanged, "pointer-eligibility");
+}
+
+fn assert_pointer_move_interrupted(reason: StopReason, label: &str) {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new(label);
+    let broker_socket = directory.0.join("activity.sock");
+    let ready = BrokerStatus {
+        instance: 53,
+        epoch: 11,
+        state: BrokerState::Ready,
+        reason: StopReason::None,
+    };
+    let stopped = BrokerStatus {
+        instance: 53,
+        epoch: 12,
+        state: BrokerState::Stopped,
+        reason,
+    };
+    let broker = serve_broker(&broker_socket, vec![ready, stopped, stopped]);
+    let config = write_pointer_config(&directory.0, &broker_socket);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("interrupted pointer peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::InputPointer,
+            ],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "interrupted-pointer-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "interrupted-pointer-target")
+        })
+    });
+    let observed_target = client_named(&observed, "interrupted-pointer-target");
+    client
+        .connection
+        .warp_pointer(NONE, client.root, 0, 0, 0, 0, 3, 4)
+        .expect("initial pointer request")
+        .check()
+        .expect("initial pointer position");
+    client.connection.sync().expect("initial pointer sync");
+
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::PointerMove(PointerMoveRequest {
+                target: target(&observed_target),
+                x: 25,
+                y: 30,
+            }),
+        ),
+        Outcome::Ok(Reply::Input(reply))
+            if reply.completed == 0
+                && reply.requested == 1
+                && reply.terminal == InputTerminal::Interrupted
+    ));
+    let pointer = client
+        .connection
+        .query_pointer(client.root)
+        .expect("query interrupted pointer request")
+        .reply()
+        .expect("query interrupted pointer reply");
+    assert_eq!((pointer.root_x, pointer.root_y), (3, 4));
+
+    broker.join().expect("interrupted broker fixture");
     client.destroy();
     let _ = openbox.kill();
     let _ = openbox.wait();

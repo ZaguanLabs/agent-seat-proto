@@ -1,4 +1,4 @@
-//! Strict revision-3 messages and core Tier 0 values.
+//! Strict revision-4 messages and core Tier 0 values.
 
 use serde::{Deserialize, Serialize};
 
@@ -225,6 +225,8 @@ pub enum Capability {
     LaunchList,
     /// Launch a policy-approved desktop entry.
     LaunchExecute,
+    /// Move the pointer only within an unobscured target.
+    InputPointer,
 }
 
 /// Functionality implemented by the current provider/backend.
@@ -404,6 +406,9 @@ pub enum Call {
     /// Launch one policy-approved desktop entry.
     #[serde(rename = "application.launch")]
     ApplicationLaunch(ApplicationLaunchRequest),
+    /// Move the pointer to a client-relative location.
+    #[serde(rename = "pointer.move")]
+    PointerMove(PointerMoveRequest),
 }
 
 impl Call {
@@ -420,6 +425,7 @@ impl Call {
             Self::ClientGeometry(_) => Capability::ManageGeometry,
             Self::ApplicationsList(_) => Capability::LaunchList,
             Self::ApplicationLaunch(_) => Capability::LaunchExecute,
+            Self::PointerMove(_) => Capability::InputPointer,
         }
     }
 }
@@ -437,6 +443,7 @@ impl Validate for Call {
             Self::ClientGeometry(value) => value.validate(),
             Self::ApplicationsList(value) => value.validate(),
             Self::ApplicationLaunch(value) => value.validate(),
+            Self::PointerMove(value) => value.validate(),
         }
     }
 }
@@ -685,6 +692,25 @@ impl Validate for ApplicationLaunchRequest {
     }
 }
 
+/// Client-relative pointer destination.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointerMoveRequest {
+    /// Fresh target whose live visible area must contain the destination.
+    #[serde(flatten)]
+    pub target: TargetRequest,
+    /// Horizontal offset from the current client origin.
+    pub x: u32,
+    /// Vertical offset from the current client origin.
+    pub y: u32,
+}
+
+impl Validate for PointerMoveRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()
+    }
+}
+
 /// One response paired to a request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -865,6 +891,8 @@ pub enum Reply {
     Applications(ApplicationPage),
     /// Spawn result and qualified correlation.
     Launched(LaunchReply),
+    /// Bounded input realization result.
+    Input(InputReply),
 }
 
 impl Validate for Reply {
@@ -877,7 +905,42 @@ impl Validate for Reply {
             Self::Management(value) => value.validate(),
             Self::Applications(value) => value.validate(),
             Self::Launched(value) => value.validate(),
+            Self::Input(value) => value.validate(),
         }
+    }
+}
+
+/// Terminal knowledge after one bounded input request.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InputTerminal {
+    /// Every reported action was queued and synchronized with X11.
+    Queued,
+    /// Broker or target evidence changed before the complete request.
+    Interrupted,
+}
+
+/// Qualified result for bounded, independently gated input actions.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct InputReply {
+    /// Actions queued and synchronized before the terminal observation.
+    pub completed: u16,
+    /// Total independently gated actions requested.
+    pub requested: u16,
+    /// What the provider knows at the request boundary.
+    pub terminal: InputTerminal,
+}
+
+impl Validate for InputReply {
+    fn validate(&self) -> Result<(), &'static str> {
+        if self.requested == 0 || self.completed > self.requested {
+            return Err("input action counts are invalid");
+        }
+        if matches!(self.terminal, InputTerminal::Queued) && self.completed != self.requested {
+            return Err("queued input result is incomplete");
+        }
+        Ok(())
     }
 }
 

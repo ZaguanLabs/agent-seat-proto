@@ -1,0 +1,37 @@
+[package]
+name = "agent-seat-activity-broker"
+description = "Fail-closed physical-seat activity broker for Agent Seat"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version = "0.1.10"
+publish = false
+
+[features]
+default = ["eligibility-guard", "runtime"]
+eligibility-guard = ["dep:dbus", "rustix/fs", "rustix/net"]
+runtime = ["dep:evdev", "rustix/event", "rustix/fs", "rustix/net", "rustix/process"]
+
+[dependencies]
+dbus = { workspace = true, optional = true }
+evdev = { workspace = true, optional = true }
+rustix.workspace = true
+
+[[bin]]
+name = "agent-seat-activity-broker"
+path = "src/main.rs"
+required-features = ["runtime"]
+
+[[bin]]
+name = "agent-seat-activity-enroll"
+path = "src/bin/agent-seat-activity-enroll.rs"
+required-features = ["runtime"]
+
+[[bin]]
+name = "agent-seat-eligibility-guard"
+path = "src/bin/agent-seat-eligibility-guard.rs"
+required-features = ["eligibility-guard"]
+
+[lints]
+workspace = true

@@ -5,21 +5,116 @@ between desktop providers and authority-free agent companions. The repository
 is owned from its first commit by
 [`ZaguanLabs`](https://github.com/ZaguanLabs).
 
-E1 and the T0--T3 Tier 0 core are complete. The project implements strict Agent
-Seat wire revision 3, a generic MCP `2025-11-25` companion, and a standalone
+E1 and the T0--T3 Tier 0 core are complete. Current source implements strict
+Agent Seat wire revision 4, a generic MCP `2025-11-25` companion, and a standalone
 provider with bounded EWMH observation, freshness-checked management, and
-policy-controlled desktop-entry launch. The four deliverables are:
+policy-controlled desktop-entry launch. The five deliverables are:
 
 - `agent-seat-proto`: display-server-neutral wire types and framing only;
 - `agent-seat-mcp`: a generic MCP translator with no policy authority;
 - `agent-seat-x11`: a standalone Tier 0 provider for unmodified EWMH window
   managers such as Openbox; and
 - `agent-seat-settings`: a human-facing policy editor with display-independent
-  validation, inspection, and recovery commands plus a GTK 4 interface.
+  validation, inspection, and recovery commands plus a GTK 4 interface; and
+- `agent-seat-activity-broker`: an experimental, separately confined Linux
+  activity gate for the optional pointer-move profile.
 
 The Tier 0 core provides bounded observation, supported EWMH management,
 and controlled desktop-entry launch. Capture, input, and accessibility are
 separate optional profiles and are not core-release promises.
+
+Revision 4 contains one experimental `pointer.move` operation. It remains
+unavailable without an explicitly configured broker, exact inherited devices,
+and a separately trusted session/lock eligibility source. The repository does
+not yet ship enrollment or claim a supported generic-Openbox deployment.
+
+Administrators can review the current `seat0` device candidate without reading
+input events or changing the system:
+
+```sh
+agent-seat-activity-enroll inspect --seat seat0
+```
+
+They can also render that exact candidate as four inert systemd units, a strict
+complete input-class manifest, a bounded relevant-device identity record, and
+a plain-text review record in a new private directory:
+
+```sh
+agent-seat-activity-enroll render \
+  --uid "$(id -u)" \
+  --session "$XDG_SESSION_ID" \
+  --output /absolute/path/to/new-review-directory
+```
+
+Immediately before any later administrative review, regenerate the current
+seat candidate and require the directory to match it exactly:
+
+```sh
+agent-seat-activity-enroll verify \
+  --uid "$(id -u)" \
+  --session "$XDG_SESSION_ID" \
+  --bundle /absolute/path/to/review-directory
+```
+
+All three operations are unprivileged. Verification requires the exact seven
+direct files, contents, owner, private modes, UID, session, and current device
+set. None of these commands installs, enables, or starts the broker, enables
+input policy, or makes the experimental profile supported.
+
+After installing the optional broker, guard, and enrollment binaries at their
+packaged `/usr/bin` paths, an administrator can explicitly publish the reviewed
+bundle without starting or enabling anything:
+
+```sh
+sudo agent-seat-activity-enroll install \
+  --uid "$(id -u)" \
+  --session "$XDG_SESSION_ID" \
+  --bundle /absolute/path/to/review-directory \
+  --confirm-install
+```
+
+The administrator may then perform one non-persistent arm cycle, stop it, or
+remove the exact UID-bound enrollment and units:
+
+```sh
+sudo agent-seat-activity-enroll arm \
+  --uid "$(id -u)" --session "$XDG_SESSION_ID" --confirm-arm
+sudo agent-seat-activity-enroll stop --uid "$(id -u)"
+sudo agent-seat-activity-enroll purge --uid "$(id -u)" --confirm-purge
+```
+
+`arm` does not enable startup, and stopped brokers do not automatically rearm.
+These commands exist to exercise the remaining security gates; they do not yet
+make generic Openbox input a supported deployment.
+
+Inspection and session eligibility monitoring do not require root or group
+membership. Physical event nodes commonly remain `root:input` mode 0660. The
+normal design does not add the desktop user or broker account to `input`:
+systemd opens only the reviewed nodes and passes those exact read-only
+descriptors to the unprivileged broker. See the permission model in
+[`docs/t5-broker-deployment.md`](docs/t5-broker-deployment.md).
+
+The eligibility guard compares the complete live input-event class mapping to
+the reviewed manifest after subscribing to bounded kernel device-lifecycle
+notifications, then stops on any later input-subsystem change without reading
+input events. Manifest ownership must match the authenticated service-manager
+peer; the production profile fixes that peer and the installed manifest to
+root. The current guard handshake has run only as an ordinary-user local test.
+The new root-only file and lifecycle transactions have passed isolated fixture
+tests, and both service profiles pass an explicit rootless hostile sandbox
+probe on systemd 258. The hardened guard profile also passes a live handshake
+with the current complete sysfs manifest, kernel uevent subscription, and real
+logind session. They have not run under their installed `DynamicUser`
+identities. Root-owned installed startup, production confinement, actual
+hotplug, and trusted lock-transition behavior remain open approval gates.
+
+The private identity record binds each relevant event device to its canonical
+sysfs path, udev physical path, classes, selected hardware IDs, complete kernel
+event-capability bitmaps, and a short serial when one exists. Devices without a
+serial remain topology-only for hardware identity, but their complete activity
+coverage is bound by topology, capabilities, and the separately verified full
+event set. An indistinguishable clone is therefore coverage-equivalent; this is
+not a claim of physical-device attestation.
 
 The current provider target is a local Linux X11 session. Other Unix peer
 credential mechanisms and non-X11 backends are not yet supported.
@@ -90,7 +185,8 @@ Its first tool call resolves `--socket`, `AGENT_SEAT_SOCKET`, or the live
 selection-bound X11 advertisement. The standalone provider answers
 authenticated `seat_status`, bounded desktop snapshots, filtered event
 subscriptions, supported EWMH management, and controlled XDG application
-discovery and launch. Optional profiles remain absent.
+discovery and launch. The gated pointer-move profile is present in source but
+is not part of the supported Tier 0 core.
 
 The normative wire contract is [`docs/specification.md`](docs/specification.md),
 the companion contract is [`docs/mcp.md`](docs/mcp.md), and provider setup is

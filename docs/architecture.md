@@ -64,3 +64,17 @@ The protocol crate never points outward. The companion and provider share
 protocol types, not policy or backend state. Settings deliberately depends on
 the provider library's non-runtime policy API so validation cannot drift. No
 crate depends on Nobox.
+
+## Standards direction
+
+The wire model is intended to remain implementation-independent. A future R0
+RFC track will separate its normative identities, grants, scope, freshness,
+outcomes, interruption, and assurance vocabulary from backend conformance
+profiles and non-normative reference deployments.
+
+An integrated window manager or compositor can satisfy a conformance profile
+using state and ordering it owns directly. The standalone X11 reference may
+need external observation and an optional Linux activity broker to make a
+narrower claim. Neither systemd/evdev deployment details nor MCP translation
+belong in the normative desktop protocol, and matching a tool surface does not
+permit one backend to claim another backend's assurance level.

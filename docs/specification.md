@@ -1,7 +1,7 @@
-# Agent Seat wire revision 3
+# Agent Seat wire revision 4
 
-Status: E1 contract. Revision 3 is independently specified and intentionally
-incompatible with Nobox wire revision 2.
+Status: experimental T5 extension over the released E1 contract. Revision 4
+is intentionally incompatible with Agent Seat revision 3 and Nobox revision 2.
 
 ## Goal
 
@@ -22,13 +22,18 @@ server identities never cross the boundary.
 
 ## Revision decision
 
-The first independent wire is revision 3. Revision 2 was released by Nobox for
+The first independent wire was revision 3. Revision 2 was released by Nobox for
 its integrated Tier 1 seat. Tier 0 requires an authenticated welcome that
 states `x11_ewmh`, `tier0`, exact backend features, exact grants, and provider
 limits. Its management response must distinguish an observed result from a
 sent request that timed out or lost its target. Compatibility with all those
 required shapes was not established for revision 2, so the independent
 product does not reuse that number.
+
+Revision 4 adds one separately gated `pointer.move` call and its qualified
+input result. Strict revision-3 decoders cannot safely interpret the added
+capability, call, feature combination, or reply variant, so the extension does
+not change revision 3 in place. Pointer click and keyboard input are absent.
 
 An advertisement and opening message name one exact revision. There is no
 range negotiation. A mismatched pair closes with `incompatible_revision` and
@@ -59,7 +64,7 @@ exactly that many UTF-8 JSON bytes:
 - The JSON value is one complete object. Trailing bytes, duplicate known
   fields, unknown fields, unknown enum values, and wrong JSON types are
   malformed.
-- Serde's finite JSON recursion limit applies; revision 3 defines no recursive
+- Serde's finite JSON recursion limit applies; revision 4 defines no recursive
   message value.
 
 Lengths constrain encoded bytes, not Unicode scalar counts. Bounded lists stop
@@ -76,7 +81,7 @@ The first client message is `hello`. A provider answers with exactly one
   "type": "hello",
   "body": {
     "protocol": "agent-seat",
-    "revision": 3,
+    "revision": 4,
     "peer": {
       "name": "agent-seat-mcp",
       "version": "0.1.3",
@@ -96,7 +101,7 @@ unique, canonical list of at most 32 atoms.
   "type": "welcome",
   "body": {
     "protocol": "agent-seat",
-    "revision": 3,
+    "revision": 4,
     "session": 1,
     "provider": {"name": "agent-seat-x11", "version": "0.1.0"},
     "backend": "x11_ewmh",
@@ -136,6 +141,7 @@ Canonical capability order is:
 8. `manage_geometry`
 9. `launch_list`
 10. `launch_execute`
+11. `input_pointer`
 
 Core features are `ewmh_observation`, `ewmh_management`, and
 `desktop_launch`. Reserved optional feature names are
@@ -195,6 +201,7 @@ The core call names and arguments are:
 | `client.geometry` | `manage_geometry` | fresh client and nonempty frame rectangle |
 | `applications.list` | `launch_list` | cursor and page `limit` 1..256 |
 | `application.launch` | `launch_execute` | canonical `.desktop` application ID |
+| `pointer.move` | `input_pointer` | fresh client and client-relative unsigned `x`, `y` |
 
 Client IDs are nonzero provider-session handles. They are not XIDs. A
 generation and sequence are provider-local unsigned 64-bit freshness values;
@@ -232,6 +239,16 @@ reply proves that a request was sent and carries exactly one observation:
 
 None of these values claims that a foreign window manager or application
 accepted an event internally.
+
+## Pointer-move result
+
+`pointer.move` is an optional Tier 0 profile operation, never a core promise.
+The provider must revalidate the target generation, client geometry, visible
+hit-test ancestry, broker identity, and unchanged physical-activity epoch
+before one X11 movement. A reply carries `completed`, `requested`, and a
+terminal value of `queued` or `interrupted`. `queued` means the one action was
+queued and synchronized; it does not claim application handling. `interrupted`
+may report zero completed actions when broker or target evidence changed.
 
 ## Launch result
 
@@ -280,7 +297,7 @@ Retry is one of `never`, `reobserve`, or `reconnect`.
 three NUL-separated UTF-8 fields and no trailing NUL:
 
 ```text
-agent-seat NUL 3 NUL /absolute/pathname/socket
+agent-seat NUL 4 NUL /absolute/pathname/socket
 ```
 
 The revision uses canonical decimal. The socket is nonempty, absolute, has no
@@ -299,7 +316,8 @@ filesystem or product-specific fallback.
 
 ## End result
 
-Revision 3 gives T0--T3 a bounded language-neutral contract, gives the MCP
-translator no authority, and makes every core outcome externally testable. A
+Revision 4 retains the bounded T0--T3 contract and adds only the experimental
+pointer-move operation. It gives the MCP translator no authority and keeps
+every core outcome externally testable. A
 later incompatible field, enum, or semantic change allocates another revision
 instead of weakening strict decoding.

@@ -1,0 +1,14 @@
+# Enrollment renders this source as a uniquely named .socket unit.
+# There is intentionally no [Install] section: arming is an explicit start.
+[Unit]
+Description=Agent Seat session-eligibility socket
+Documentation=https://github.com/ZaguanLabs/agent-seat-proto
+
+[Socket]
+ListenStream=@ELIGIBILITY_SOCKET@
+SocketMode=0600
+DirectoryMode=0711
+Accept=no
+Backlog=1
+RemoveOnStop=yes
+Service=@ELIGIBILITY_SERVICE_UNIT@

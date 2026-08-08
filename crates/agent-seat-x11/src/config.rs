@@ -19,7 +19,7 @@ use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
 
 pub(crate) const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 /// Maximum number of capability atoms in the provider policy grant.
-pub const MAX_POLICY_CAPABILITIES: usize = 10;
+pub const MAX_POLICY_CAPABILITIES: usize = 11;
 const DEFAULT_MAX_SESSIONS: u8 = 4;
 const MAX_SESSIONS: u8 = 32;
 const DEFAULT_MAX_REQUESTS: u16 = 1024;
@@ -76,6 +76,8 @@ const FIRST_RUN_TEMPLATE_SUFFIX: &str = r#"
 # Uncomment capabilities deliberately. `observe_titles`, `observe_events`,
 # and all `manage_*` capabilities require `observe_structure`.
 # `launch_execute` requires `launch_list`.
+# `input_pointer` requires `observe_structure` and an explicit
+# activity-broker socket below.
 capabilities = [
   "observe_structure",
   # "observe_titles",     # Read window titles; also set titles = true below.
@@ -87,6 +89,7 @@ capabilities = [
   # "manage_geometry",    # Move or resize a client frame.
   # "launch_list",        # List applications admitted by launch policy.
   # "launch_execute",     # Start an admitted desktop entry without a shell.
+  # "input_pointer",     # Move only inside the unobscured target.
 ]
 
 [observation]
@@ -112,6 +115,14 @@ deny = []
 # User desktop entries below $XDG_DATA_HOME/applications are separately denied
 # by default, even in an allowing mode. System entries remain discoverable.
 allow_user_entries = false
+
+[input]
+# Input remains unavailable unless this is an absolute pathname to the
+# separately installed, armed activity broker socket.
+# broker_socket = "/run/agent-seat-activity/provider.sock"
+# Socket activation is normally owned by the system manager (UID 0), while the
+# broker process itself runs as a separate unprivileged account.
+# broker_peer_uid = 0
 "#;
 
 #[derive(Clone, Debug)]
@@ -122,6 +133,7 @@ pub(crate) struct Config {
     grant: Option<Grant>,
     observation: Observation,
     launch: LaunchPolicy,
+    input: InputPolicy,
 }
 
 /// A validated point-in-time view of an Agent Seat provider policy.
@@ -211,6 +223,12 @@ impl Default for ClientScope {
 struct Observation {
     clients: ClientScope,
     titles: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct InputPolicy {
+    broker_socket: Option<PathBuf>,
+    broker_peer_uid: Option<u32>,
 }
 
 /// Application admission mode selected by the saved launch policy.
@@ -508,6 +526,7 @@ const fn capability_name(capability: Capability) -> &'static str {
         Capability::ManageGeometry => "manage_geometry",
         Capability::LaunchList => "launch_list",
         Capability::LaunchExecute => "launch_execute",
+        Capability::InputPointer => "input_pointer",
     }
 }
 
@@ -628,6 +647,13 @@ impl Config {
 
     pub(crate) const fn launch_policy(&self) -> &LaunchPolicy {
         &self.launch
+    }
+
+    pub(crate) fn broker(&self) -> Option<(&Path, u32)> {
+        Some((
+            self.input.broker_socket.as_deref()?,
+            self.input.broker_peer_uid?,
+        ))
     }
 }
 
@@ -1027,6 +1053,8 @@ struct RawConfig {
     observation: RawObservation,
     #[serde(default)]
     launch: RawLaunch,
+    #[serde(default)]
+    input: RawInput,
 }
 
 fn validate_source(source: &str, provider_uid: u32) -> Result<(bool, Config, RawConfig), String> {
@@ -1060,6 +1088,19 @@ impl RawConfig {
             .grant
             .map(|grant| grant.validate(provider_uid))
             .transpose()?;
+        let input = self.input.validate()?;
+        if grant.as_ref().is_some_and(|grant| {
+            grant
+                .capabilities
+                .iter()
+                .any(|capability| matches!(capability, Capability::InputPointer))
+        }) && (input.broker_socket.is_none() || input.broker_peer_uid.is_none())
+        {
+            return Err(
+                "input capabilities require input.broker_socket and input.broker_peer_uid"
+                    .to_owned(),
+            );
+        }
         Ok(Config {
             max_sessions: usize::from(self.max_sessions),
             max_requests: self.max_requests_per_session,
@@ -1070,6 +1111,7 @@ impl RawConfig {
                 titles: self.observation.titles,
             },
             launch: self.launch.validate()?,
+            input,
         })
     }
 }
@@ -1125,6 +1167,14 @@ impl RawGrant {
         {
             return Err("launch_execute requires launch_list".to_owned());
         }
+        if self
+            .capabilities
+            .iter()
+            .any(|capability| matches!(capability, Capability::InputPointer))
+            && !self.capabilities.contains(&Capability::ObserveStructure)
+        {
+            return Err("input capabilities require observe_structure".to_owned());
+        }
         Ok(Grant {
             uid: self.uid,
             capabilities: self.capabilities,
@@ -1152,6 +1202,36 @@ struct RawLaunch {
     deny: BoundedList<ApplicationId, MAX_APPLICATIONS>,
     #[serde(default)]
     allow_user_entries: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RawInput {
+    #[serde(default)]
+    broker_socket: Option<PathBuf>,
+    #[serde(default)]
+    broker_peer_uid: Option<u32>,
+}
+
+impl RawInput {
+    fn validate(self) -> Result<InputPolicy, String> {
+        if self.broker_socket.is_some() != self.broker_peer_uid.is_some() {
+            return Err(
+                "input.broker_socket and input.broker_peer_uid must be set together".to_owned(),
+            );
+        }
+        if self
+            .broker_socket
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute())
+        {
+            return Err("input.broker_socket must be absolute".to_owned());
+        }
+        Ok(InputPolicy {
+            broker_socket: self.broker_socket,
+            broker_peer_uid: self.broker_peer_uid,
+        })
+    }
 }
 
 impl RawLaunch {
@@ -1296,6 +1376,7 @@ mod tests {
             ("observe_events", "observe_structure"),
             ("manage_activate", "observe_structure"),
             ("launch_execute", "launch_list"),
+            ("input_pointer", "observe_structure"),
         ] {
             let source =
                 format!("enabled = true\n[grant]\nuid = {uid}\ncapabilities = [\"{capability}\"]");
@@ -1303,6 +1384,43 @@ mod tests {
             let error = raw.validate(uid).expect_err("accepted incomplete grant");
             assert!(error.contains(dependency));
         }
+    }
+
+    #[test]
+    fn input_requires_a_complete_absolute_authenticated_broker_endpoint() {
+        let uid = geteuid().as_raw();
+        for input in [
+            "broker_socket = \"/run/agent-seat-activity/test.sock\"",
+            "broker_peer_uid = 0",
+            "broker_socket = \"relative.sock\"\nbroker_peer_uid = 0",
+        ] {
+            let source = format!("enabled = true\n[input]\n{input}");
+            let accepted =
+                toml::from_str::<RawConfig>(&source).is_ok_and(|raw| raw.validate(uid).is_ok());
+            assert!(!accepted, "accepted incomplete broker input {input:?}");
+        }
+
+        let missing = format!(
+            "enabled = true\n[grant]\nuid = {uid}\n\
+             capabilities = [\"observe_structure\", \"input_pointer\"]"
+        );
+        let missing: RawConfig = toml::from_str(&missing).expect("parse missing broker fixture");
+        assert!(missing.validate(uid).is_err());
+
+        let complete = format!(
+            "enabled = true\n[grant]\nuid = {uid}\n\
+             capabilities = [\"observe_structure\", \"input_pointer\"]\n\
+             [input]\nbroker_socket = \"/run/agent-seat-activity/test.sock\"\n\
+             broker_peer_uid = 0"
+        );
+        let complete: RawConfig = toml::from_str(&complete).expect("parse complete broker fixture");
+        let complete = complete
+            .validate(uid)
+            .expect("validate complete broker fixture");
+        assert_eq!(
+            complete.broker(),
+            Some((Path::new("/run/agent-seat-activity/test.sock"), 0))
+        );
     }
 
     #[test]

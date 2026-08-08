@@ -3,8 +3,9 @@
 Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
 complete. The Tier 0 core and C0 shipped in product release v0.1.0; S0 is
 complete on `main` in `agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12.
-T5R has begun with a threat-model review; implementation remains gated. E0
-evidence is recorded in [`e0-verification.md`](e0-verification.md).
+T5R now has an approved experimental pointer-move slice; deployment remains
+gated. E0 evidence is recorded in
+[`e0-verification.md`](e0-verification.md).
 
 ## Goals
 
@@ -19,6 +20,8 @@ evidence is recorded in [`e0-verification.md`](e0-verification.md).
   outcomes distinct at public boundaries.
 - Keep failures outside the window manager and keep source independently
   authored under Apache-2.0 with DCO sign-off.
+- Mature the proven display-neutral contract into an implementation-independent
+  RFC that other desktop maintainers can implement and extend deliberately.
 
 ## Non-goals
 
@@ -31,6 +34,36 @@ evidence is recorded in [`e0-verification.md`](e0-verification.md).
   pointer/keyboard input.
 - Shipping capture, input, accessibility, or persistent coordinate memory as
   part of the core profile.
+- Making Linux evdev, systemd, X11, Openbox, MCP, or this reference
+  implementation mandatory parts of the eventual protocol standard.
+
+## R0 — protocol RFC preparation
+
+Status: planned. Existing revisions remain the repository's normative wire
+contract; no external standards status is currently claimed.
+
+Prepare an implementation-independent RFC from behavior that has survived the
+reference implementation and hostile tests. The RFC must have three clearly
+separated layers:
+
+- a display-server-neutral normative core covering identities, grants, scope,
+  freshness, bounded framing, outcomes, interruption, and assurance claims;
+- backend conformance profiles describing the evidence an integrated display
+  authority, standalone X11 provider, or future backend must supply; and
+- non-normative reference implementations, deployment recipes, and hostile
+  conformance fixtures.
+
+Integrated window managers and compositors may satisfy ordering and
+human-priority requirements inside their authoritative event loop. They must
+not be required to reproduce the standalone X11 broker architecture. Likewise,
+a Tier 0 backend cannot claim the assurance of an integrated backend merely by
+matching its tool surface. Each profile advertises only guarantees it can
+prove, with typed unsupported or qualified outcomes for the rest.
+
+R0 also defines revision allocation, extension ownership, capability
+negotiation, security considerations, conformance terminology, and the process
+for independent implementations to report compatible subsets. Publication as
+an external RFC or standard remains a later maintainer/community decision.
 
 ## E0 — bootstrap
 
@@ -205,11 +238,32 @@ distinguish matching, changed, and crash-stale active-policy evidence.
 
 ## T5R — input reconsideration
 
-Status: threat-model review revised after maintainer review, 2026-08-08;
-authority and deployment approval pending. This is a stop sign with approval
-gates, not an implementation plan. No input capability, tool, feature
-advertisement, wire revision, runtime permission, or broker code has been
-added.
+Status: broker authority and a narrow experimental implementation were approved
+on 2026-08-08. Revision 4, one pointer-move tool, the broker protocol/runtime,
+inert confinement templates, and unprivileged exact-set inspection, inert
+rendering, and byte-exact current-set verification are implemented. An
+unprivileged eligibility guard now subscribes to logind and bounded kernel
+input-device lifecycle notifications before its initial decision. It also
+requires a strict peer-owned manifest of every input-event class mapping and
+reconciles the live mapping after subscription; the production profile pins
+that peer to root. Local render/verify exercised 24 complete mappings and 13
+relevant broker candidates. The same host produced and byte-verified the new
+13-entry relevant-device identity and complete-capability record: one entry was
+serial-backed and 12 were topology-only for hardware identity but coverage-
+bound by their kernel capability bitmaps. An ordinary-user live guard test
+completed the current manifest handshake. Transient user-manager probes
+confirmed eligibility on standard input, the provider listener on standard
+output, the installed device record at fd 3, and events at fd 4 onward.
+Explicit new-only install, freshly verified arm, exact stop, scoped purge, and
+partial-publication rollback are fixture-tested. Rootless hostile systemd
+probes now deny unintended authority for both runtime profiles while preserving
+their exact inherited channels; they also caught and fixed an over-tight task
+bound that prevented namespace setup. The hardened rootless guard also passes
+a live current-manifest, kernel-uevent, and logind handshake, while every
+session/system eligibility predicate has a direct negative case. Real installed
+`DynamicUser` startup, hotplug transitions, production confinement, and the
+LightDM lock-transition contract are not yet proven. Click and keyboard input
+remain gated and unsupported.
 
 Re-evaluate T5 using a separately trusted Linux input source rather than
 weakening the ordinary-X11 stop decision. The review in
@@ -241,7 +295,8 @@ administrator enrollment, exact service-manager-passed read-only evdev
 descriptors, an unprivileged confined broker, fail-closed lifecycle, minimal
 IPC, and upgrade/removal behavior. Its overall gate remains failed: generic
 Openbox supplies no independently trusted lock-state source, and logind's
-desktop-provided lock hint is insufficient. No implementation is authorized.
+desktop-provided lock hint is insufficient. The approved experimental source
+work does not authorize installation or a supported deployment.
 
 The lock follow-up in
 [`t5-lock-state-study.md`](t5-lock-state-study.md) rejects in-session lock

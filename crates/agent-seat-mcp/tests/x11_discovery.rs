@@ -182,7 +182,11 @@ fn discovery_is_selection_bound_and_obeys_exact_precedence() {
     let environment = "/tmp/agent-seat-environment.sock";
     assert!(message(&call(&xvfb.display, Some(explicit), Some(environment))).contains(explicit));
     assert!(message(&call(&xvfb.display, None, Some(environment))).contains(environment));
-    assert!(message(&call(&xvfb.display, None, None)).contains(&root_path));
+    let root_result = call(&xvfb.display, None, None);
+    assert!(
+        message(&root_result).contains(&root_path),
+        "unexpected root discovery result: {root_result}"
+    );
     assert!(
         message(&call(&xvfb.display, Some("relative"), Some(environment))).contains("--socket")
     );

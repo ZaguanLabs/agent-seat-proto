@@ -1,6 +1,7 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core. `agent-seat-x11` 0.1.12 owns lifecycle, policy, local
+Status: T3 Tier 0 core plus an experimental T5 pointer slice.
+`agent-seat-x11` 0.1.13 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -167,6 +168,7 @@ capabilities = [
   "manage_geometry",
   "launch_list",
   "launch_execute",
+  # "input_pointer",
 ]
 
 [observation]
@@ -178,6 +180,12 @@ mode = "allow_listed"
 allow = ["org.example.Editor.desktop"]
 deny = []
 allow_user_entries = false
+
+# Input remains unavailable without an administrator-enrolled broker and a
+# separately trusted eligibility producer.
+[input]
+# broker_socket = "/run/agent-seat-activity/enrolled.sock"
+# broker_peer_uid = 0
 ```
 
 `grant.uid` must equal the provider's effective UID. The private runtime
@@ -185,7 +193,7 @@ directory enforces the same-user boundary and the accepted socket's
 `SO_PEERCRED` UID selects the grant; `hello.peer` remains descriptive.
 Capabilities must be unique and are intersected with the peer's canonically
 ordered request. `observe_titles`, `observe_events`, and every management
-capability require `observe_structure`; `launch_execute` requires
+capability and `input_pointer` require `observe_structure`; `launch_execute` requires
 `launch_list`. Calls recheck those dependencies in the live session. An
 omitted grant denies every peer.
 
@@ -194,13 +202,15 @@ omitted grant denies every peer.
 | `max_sessions` | 4 | 1..32 |
 | `max_requests_per_session` | 1024 | 1..4096 |
 | `io_timeout_ms` | 2000 | 50..10000 |
-| grant capabilities | empty | at most 10 unique atoms |
+| grant capabilities | empty | at most 11 unique atoms |
 | `observation.clients` | `none` | `none`, `current_workspace`, `all_workspaces` |
 | `observation.titles` | `false` | boolean |
 | `launch.mode` | `deny` | `deny`, `allow_listed`, `allow_installed` |
 | `launch.allow` | empty | at most 256 unique canonical desktop IDs; consulted only with `allow_listed` |
 | `launch.deny` | empty | at most 256 unique canonical desktop IDs |
 | `launch.allow_user_entries` | `false` | boolean |
+| `input.broker_socket` | absent | bounded absolute pathname, paired with peer UID |
+| `input.broker_peer_uid` | absent | numeric UID observed through `SO_PEERCRED` |
 
 `deny` exposes and launches nothing. `allow_listed` admits only IDs in
 `allow`, after applying `deny`. `allow_installed` admits each valid discovered
@@ -226,7 +236,7 @@ before releasing the grab. Thus two conforming providers cannot both observe
 an empty selection and overwrite one another.
 
 The selected root and the dedicated owner window receive byte-identical
-revision-3 `_AGENT_SEAT` advertisements only after ownership succeeds. A
+revision-4 `_AGENT_SEAT` advertisements only after ownership succeeds. A
 second provider refuses to compete. Losing the selection terminates the
 provider. Missing or mismatched properties remain undiscoverable rather than
 falling back to a conventional filename.
@@ -244,7 +254,7 @@ Each admitted connection has fixed read/write deadlines and one sequential
 request stream; there is no per-session request queue. The provider refuses
 capacity beyond `max_sessions`, evicts a peer that does not complete framing
 before its deadline, and ends a session at its request bound. Frames retain
-the revision-3 direction limits.
+the revision-4 direction limits.
 
 The provider advertises `ewmh_observation`, `ewmh_management`, and
 `desktop_launch`. It implements `seat.status` and `desktop.snapshot` with
@@ -252,6 +262,16 @@ The provider advertises `ewmh_observation`, `ewmh_management`, and
 `observe_events`, and application list/launch with their separate capabilities.
 Every request is checked against the grant first; missing authority returns
 `refused`.
+
+When `input_pointer` and a complete `[input]` endpoint are configured, the
+provider additionally advertises `input_injection` and `human_activity` and
+accepts revision-4 `pointer.move`. Configuration does not install, start, arm,
+or enroll a broker. Each movement reconnects to the one persistent broker
+instance, verifies its socket-activation peer UID, rechecks the fresh target
+and visible destination under an X server grab, compares the activity epoch,
+queues at most one XTEST movement, synchronizes, and checks the same broker
+instance/epoch again. Changed evidence reports `interrupted`; it never forces
+focus or claims application handling. Click and keyboard calls are absent.
 
 Each session owns a separate X11 observer and opaque client-ID namespace. A
 snapshot samples validated EWMH workspace, client, active-window, geometry,

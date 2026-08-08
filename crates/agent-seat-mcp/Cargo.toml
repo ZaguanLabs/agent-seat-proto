@@ -5,11 +5,11 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-version = "0.1.1"
+version = "0.1.2"
 publish = false
 
 [dependencies]
-agent-seat-proto = { path = "../agent-seat-proto", version = "0.1.1" }
+agent-seat-proto = { path = "../agent-seat-proto", version = "0.1.2" }
 serde.workspace = true
 serde_json.workspace = true
 x11rb.workspace = true

@@ -1,0 +1,16 @@
+# Enrollment renders this source as a uniquely named .socket unit.
+# There is intentionally no [Install] section: arming is an explicit start.
+[Unit]
+Description=Agent Seat physical-activity broker socket
+Documentation=https://github.com/ZaguanLabs/agent-seat-proto
+
+[Socket]
+ListenStream=@BROKER_SOCKET@
+SocketUser=@PROVIDER_UID@
+SocketMode=0600
+# Root owns the parent. Execute-only traversal lets the enrolled UID reach the
+# exact 0600 socket without listing or replacing entries in the directory.
+DirectoryMode=0711
+Accept=no
+Backlog=1
+RemoveOnStop=yes

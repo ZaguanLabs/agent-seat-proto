@@ -72,7 +72,7 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
             .as_array()
             .expect("tool array")
             .len(),
-        12
+        13
     );
     assert_eq!(responses[2]["result"]["isError"], true);
     assert_eq!(

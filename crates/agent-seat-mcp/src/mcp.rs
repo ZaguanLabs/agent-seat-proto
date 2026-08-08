@@ -6,8 +6,8 @@ use std::sync::OnceLock;
 
 use agent_seat_proto::{
     ApplicationLaunchRequest, ApplicationListRequest, Call, ClientGeometryRequest,
-    ClientStateRequest, ClientWorkspaceRequest, Empty, Outcome, PollRequest, SubscribeRequest,
-    TargetRequest, Validate as _, WorkspaceRequest,
+    ClientStateRequest, ClientWorkspaceRequest, Empty, Outcome, PointerMoveRequest, PollRequest,
+    SubscribeRequest, TargetRequest, Validate as _, WorkspaceRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -509,6 +509,18 @@ fn build_tools() -> Box<[Tool]> {
                 "additionalProperties":false
             }),
         },
+        Tool {
+            name: "pointer_move",
+            title: "Move pointer within client",
+            description: "Move the pointer once to a visible client-relative point after fresh target and physical-activity checks.",
+            input_schema: object_with_target(
+                json!({
+                    "x":{"type":"integer","minimum":0,"maximum":4294967295_u64},
+                    "y":{"type":"integer","minimum":0,"maximum":4294967295_u64}
+                }),
+                &["x", "y"],
+            ),
+        },
     ]
     .into_boxed_slice()
 }
@@ -568,6 +580,7 @@ fn translate_call(name: &str, arguments: Option<Value>) -> Result<Call, CallErro
         "client_geometry" => arguments!(ClientGeometryRequest, ClientGeometry),
         "applications_list" => arguments!(ApplicationListRequest, ApplicationsList),
         "application_launch" => arguments!(ApplicationLaunchRequest, ApplicationLaunch),
+        "pointer_move" => arguments!(PointerMoveRequest, PointerMove),
         _ => Err(CallError::UnknownTool),
     }?;
     call.validate()
@@ -627,7 +640,7 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_closed_object_schema() {
-        assert_eq!(tools().len(), 12);
+        assert_eq!(tools().len(), 13);
         for tool in tools() {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -660,6 +673,10 @@ mod tests {
             (
                 "application_launch",
                 json!({"application":"example.desktop"}),
+            ),
+            (
+                "pointer_move",
+                json!({"client":1,"generation":0,"x":10,"y":20}),
             ),
         ];
         for (name, arguments) in calls {

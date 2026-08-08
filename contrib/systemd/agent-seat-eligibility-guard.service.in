@@ -1,0 +1,65 @@
+# Enrollment renders this source as one uniquely named eligibility service.
+# It has logind and input-class metadata visibility but no event-node or display authority.
+[Unit]
+Description=Agent Seat session-eligibility guard
+Documentation=https://github.com/ZaguanLabs/agent-seat-proto
+Requires=@ELIGIBILITY_SOCKET_UNIT@
+After=@ELIGIBILITY_SOCKET_UNIT@ dbus.socket systemd-logind.service
+StartLimitIntervalSec=infinity
+StartLimitBurst=1
+
+[Service]
+Type=exec
+DynamicUser=yes
+StandardInput=socket
+StandardOutput=journal
+StandardError=journal
+ExecStart=@GUARD_EXEC@ --session @SESSION_ID@ --uid @PROVIDER_UID@ --seat seat0 --input-set-fd 3 --listen-stdin --peer-uid 0
+OpenFile=@INPUT_SET_PATH@:initial-input-set:read-only
+
+DevicePolicy=strict
+PrivateDevices=yes
+PrivateNetwork=yes
+# AF_NETLINK is used only for the kernel kobject-uevent group. PrivateNetwork
+# keeps other network-namespace metadata outside the service's view.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+UnsetEnvironment=DISPLAY XAUTHORITY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS SSH_AUTH_SOCK
+TemporaryFileSystem=/run:ro
+BindReadOnlyPaths=/run/dbus/system_bus_socket
+NoExecPaths=/
+ExecPaths=@GUARD_EXEC@ -/usr/lib -/usr/lib64 -/lib -/lib64
+
+UMask=0077
+TasksMax=2
+LimitNOFILE=32
+LimitCORE=0
+MemoryMax=32M
+CPUQuota=10%
+KillMode=mixed
+CollectMode=inactive-or-failed
+Restart=no
