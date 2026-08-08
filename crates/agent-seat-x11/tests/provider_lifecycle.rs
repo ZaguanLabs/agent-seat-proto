@@ -9,6 +9,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -29,6 +30,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use x11rb::{COPY_DEPTH_FROM_PARENT, CURRENT_TIME, NONE};
 
 static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(1);
+static X11_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 struct FixtureDir(PathBuf);
 
@@ -57,10 +59,16 @@ impl Drop for FixtureDir {
 struct Xvfb {
     child: Child,
     display: String,
+    _serial: MutexGuard<'static, ()>,
 }
 
 impl Xvfb {
     fn start() -> Self {
+        // Xvfb's -displayfd selection is not atomic across simultaneous
+        // server startups, so one process test owns the X11 fixture at a time.
+        let serial = X11_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut child = Command::new("Xvfb")
             .args([
                 "-screen",
@@ -83,6 +91,7 @@ impl Xvfb {
         Self {
             child,
             display: format!(":{}", display_number.trim()),
+            _serial: serial,
         }
     }
 }
