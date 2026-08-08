@@ -101,7 +101,7 @@ fn validate_socket_path(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("invalid socket path: {error}"))
 }
 
-fn ensure_private_directory(path: &Path) -> Result<(), String> {
+pub(crate) fn ensure_private_directory(path: &Path) -> Result<(), String> {
     if !path.exists() {
         let mut builder = DirBuilder::new();
         builder.recursive(false).mode(0o700);
@@ -112,6 +112,23 @@ fn ensure_private_directory(path: &Path) -> Result<(), String> {
             )
         })?;
     }
+    let metadata = fs::symlink_metadata(path).map_err(|error| {
+        format!(
+            "cannot inspect runtime directory {}: {error}",
+            path.display()
+        )
+    })?;
+    let uid = geteuid().as_raw();
+    if !metadata.file_type().is_dir() || metadata.uid() != uid || metadata.mode() & 0o077 != 0 {
+        return Err(format!(
+            "runtime directory {} must be a private directory owned by UID {uid}",
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_private_directory(path: &Path) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path).map_err(|error| {
         format!(
             "cannot inspect runtime directory {}: {error}",

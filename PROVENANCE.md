@@ -151,3 +151,11 @@ linked GTK 4 system toolkit is LGPL-2.1-or-later and documented at
 <https://docs.gtk.org/gtk4/>. Exact Rust transitive versions are locked in
 `Cargo.lock`. No external implementation, schema, fixture, prose, or visual
 asset was copied.
+
+The completed Settings controls, state rail implementation, exact diff,
+desktop entry, user guide, and isolated GUI process test are original work
+derived from this repository's S0 roadmap and interaction design. The
+active-policy marker format and lifecycle are original work derived from the
+provider's saved-versus-active requirement and use the already recorded safe
+Rustix `flock` wrappers. No Nobox source, schema, test, fixture, prose, or
+design artifact was consulted.

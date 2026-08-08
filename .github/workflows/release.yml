@@ -24,13 +24,14 @@ jobs:
       - name: Install Rust 1.85
         run: rustup toolchain install 1.85.0 --profile minimal --component clippy,rustfmt
       - name: Install desktop test dependencies
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libgtk-4-dev openbox xterm xvfb
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends desktop-file-utils libgtk-4-dev openbox xterm xvfb
       - name: Verify source
         run: |
           cargo fmt --all --check
           cargo clippy --workspace --all-targets -- -D warnings
           cargo test --workspace --all-targets
           RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
+          desktop-file-validate contrib/org.zaguanlabs.AgentSeat.Settings.desktop
       - name: Assemble and inspect source archive
         env:
           RELEASE_DIR: ${{ runner.temp }}/agent-seat-release

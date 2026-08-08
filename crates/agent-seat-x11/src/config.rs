@@ -17,7 +17,7 @@ use rustix::process::geteuid;
 use serde::{Deserialize, Serialize};
 use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
 
-const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+pub(crate) const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 /// Maximum number of capability atoms in the provider policy grant.
 pub const MAX_POLICY_CAPABILITIES: usize = 10;
 const DEFAULT_MAX_SESSIONS: u8 = 4;
@@ -493,12 +493,12 @@ const fn capability_name(capability: Capability) -> &'static str {
 }
 
 impl Config {
-    pub(crate) fn load(path: &Path) -> Result<Self, String> {
+    pub(crate) fn load(path: &Path) -> Result<(PolicySnapshot, Self), String> {
         let (snapshot, config) = Self::read(path)?;
         if !snapshot.enabled {
             return Err("provider is disabled; set enabled = true explicitly".to_owned());
         }
-        Ok(config)
+        Ok((snapshot, config))
     }
 
     pub(crate) fn check(path: &Path) -> Result<bool, String> {

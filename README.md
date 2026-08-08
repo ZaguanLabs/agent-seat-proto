@@ -60,8 +60,12 @@ agent-seat-settings --restore-previous
 ```
 
 Run `agent-seat-settings` with no command to open its GTK interface. The
-current 0.1.0 milestone establishes the strict command/model foundation and
-initial shell; the complete S0 controls remain in progress.
+complete interface edits activation, capability grants, visible-window scope,
+the bounded XDG launch catalog, and resource limits. It validates and shows an
+exact policy diff before an atomic save, retains a private recovery policy, and
+distinguishes saved policy from best-effort active-provider evidence. See
+[the Settings guide](docs/settings.md) for the complete first-run and recovery
+workflow.
 
 The first supported source release is product tag `v0.1.0`. Its component
 versions are `agent-seat-proto` 0.1.1, `agent-seat-mcp` 0.1.1, and
@@ -90,7 +94,8 @@ discovery and launch. Optional profiles remain absent.
 
 The normative wire contract is [`docs/specification.md`](docs/specification.md),
 the companion contract is [`docs/mcp.md`](docs/mcp.md), and provider setup is
-[`docs/provider.md`](docs/provider.md). Optional-profile stop decisions are in
+[`docs/provider.md`](docs/provider.md). Settings usage is
+[`docs/settings.md`](docs/settings.md). Optional-profile stop decisions are in
 [`docs/optional-profiles.md`](docs/optional-profiles.md).
 
 ## Project policy

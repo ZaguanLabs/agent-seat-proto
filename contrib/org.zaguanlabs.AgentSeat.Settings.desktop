@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Agent Seat Settings
+Comment=Review and edit the local Agent Seat provider policy
+Exec=agent-seat-settings
+Icon=preferences-system
+Terminal=false
+StartupNotify=true
+Categories=Settings;GTK;

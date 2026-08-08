@@ -23,6 +23,7 @@ use agent_seat_proto::{
     ServerMessage, StateAction, SubscribeRequest, TargetRequest, WorkspaceRequest, read_frame,
     write_frame,
 };
+use agent_seat_x11::{ActivePolicyStatus, active_policy_status, read_policy, replace_policy};
 use rustix::process::{Pid, Signal, geteuid, kill_process};
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{
@@ -127,6 +128,10 @@ impl Provider {
             .args(["--config", config.to_str().expect("config UTF-8")])
             .args(["--socket", socket.to_str().expect("socket UTF-8")])
             .env("DISPLAY", display)
+            .env(
+                "XDG_RUNTIME_DIR",
+                socket.parent().expect("socket runtime directory"),
+            )
             .env("XDG_DATA_HOME", user_data)
             .env("XDG_DATA_DIRS", system_data)
             .env("XDG_CURRENT_DESKTOP", "Openbox")
@@ -212,11 +217,91 @@ fn spawn_provider(display: &str, config: &Path, socket: &Path) -> Child {
         .args(["--config", config.to_str().expect("config UTF-8")])
         .args(["--socket", socket.to_str().expect("socket UTF-8")])
         .env("DISPLAY", display)
+        .env(
+            "XDG_RUNTIME_DIR",
+            socket.parent().expect("socket runtime directory"),
+        )
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn provider")
+}
+
+#[test]
+fn active_policy_evidence_distinguishes_matching_changed_and_stopped_provider() {
+    let directory = FixtureDir::new("active-policy");
+    let xvfb = Xvfb::start();
+    let config = write_config(&directory.0, &["observe_structure"], 4, 500);
+    let socket = directory.0.join("active.sock");
+    let mut provider = Provider::start(&xvfb.display, &config, &socket);
+    let original = read_policy(&config).expect("read active policy");
+
+    assert_eq!(
+        query_active_policy(&directory.0, &config),
+        format!(
+            "{:?}",
+            ActivePolicyStatus::Matching {
+                pid: provider.child.id()
+            }
+        )
+    );
+
+    let changed_source = original
+        .source()
+        .replace("max_sessions = 4", "max_sessions = 5");
+    let _changed = replace_policy(&original, &changed_source).expect("replace saved policy");
+    assert_eq!(
+        query_active_policy(&directory.0, &config),
+        format!(
+            "{:?}",
+            ActivePolicyStatus::Different {
+                pid: provider.child.id()
+            }
+        )
+    );
+
+    kill_process(Pid::from_child(&provider.child), Signal::KILL).expect("crash provider");
+    assert!(
+        !provider
+            .child
+            .wait()
+            .expect("crashed provider exit")
+            .success(),
+        "killed provider unexpectedly exited successfully"
+    );
+    assert_eq!(
+        query_active_policy(&directory.0, &config),
+        format!("{:?}", ActivePolicyStatus::NotReported)
+    );
+}
+
+#[test]
+fn active_policy_status_helper() {
+    let Some(config) = std::env::var_os("AGENT_SEAT_ACTIVE_CONFIG") else {
+        return;
+    };
+    let result = std::env::var_os("AGENT_SEAT_ACTIVE_RESULT").expect("active result path");
+    let snapshot = read_policy(Path::new(&config)).expect("read active helper policy");
+    let status = active_policy_status(&snapshot).expect("read active helper status");
+    fs::write(result, format!("{status:?}")).expect("write active status result");
+}
+
+fn query_active_policy(runtime: &Path, config: &Path) -> String {
+    let result = runtime.join("active-status.txt");
+    let output = Command::new(std::env::current_exe().expect("provider test executable"))
+        .args(["--exact", "active_policy_status_helper", "--nocapture"])
+        .env("XDG_RUNTIME_DIR", runtime)
+        .env("AGENT_SEAT_ACTIVE_CONFIG", config)
+        .env("AGENT_SEAT_ACTIVE_RESULT", &result)
+        .output()
+        .expect("run active status helper");
+    assert!(
+        output.status.success(),
+        "active status helper failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::read_to_string(result).expect("read active status result")
 }
 
 fn write_config(

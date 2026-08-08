@@ -6,10 +6,21 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Completed `agent-seat-settings` 0.1.1 with native GTK 4 controls for explicit
+  activation, every capability and dependency, observation scope and titles,
+  the searchable provider-identical application catalog, bounded limits, an
+  exact review diff, validated save/reload/discard/recovery flows, unsaved-work
+  confirmations, and a persistent saved/draft/active state rail.
+- Added a source XDG desktop entry and a complete graphical and terminal
+  Settings guide.
+- Added `agent-seat-x11` 0.1.10 best-effort active-policy evidence. A running
+  provider holds a private locked marker containing its exact startup policy;
+  Settings can report matching, restart-required, multiple, unavailable, and
+  unreported states without X11 or a provider-socket connection.
 - Added `agent-seat-settings` 0.1.0 with a display-independent policy session
   model, exact check and print commands, recoverable `.previous` exchange,
   strict CLI parsing, default-policy creation for the GTK entry path, and an
-  initial native GTK 4 shell. Complete graphical controls remain in progress.
+  initial native GTK 4 shell.
 - Planned an S0 `agent-seat-settings` application for safe, human-facing
   provider policy editing, shared validation, reviewable changes, and explicit
   active-versus-saved state without adding another runtime authority.

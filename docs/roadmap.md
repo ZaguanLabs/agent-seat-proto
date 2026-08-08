@@ -1,8 +1,9 @@
 # Product roadmap
 
-Status: E0, E1, T0--T3, the T4--T6 first-release decisions, and C0 are
-complete in product release v0.1.0. E0 evidence is recorded in
-[`e0-verification.md`](e0-verification.md).
+Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
+complete. The Tier 0 core and C0 shipped in product release v0.1.0; S0 is
+complete on `main` in `agent-seat-settings` 0.1.1 and `agent-seat-x11` 0.1.10.
+E0 evidence is recorded in [`e0-verification.md`](e0-verification.md).
 
 ## Goals
 
@@ -146,18 +147,16 @@ incompatibility, and untested combinations without relying on source sharing.
 
 ## S0 — settings application
 
-Status: foundation in progress. `agent-seat-x11` 0.1.6 separates complete
-read-only policy validation from provider activation. Version 0.1.7 adds the
-provider-owned validated snapshot and atomic policy transaction API with
-stale-edit refusal and a private recovery file. Version 0.1.8 adds a typed,
-bounded settings draft and the provider's read-only launchable XDG application
-catalog. Version 0.1.9 preserves policy comments through typed edits and
-exposes default creation and recovery discovery. The initial interaction and
-visual design selects GTK 4 without libadwaita; see
-[settings-design.md](settings-design.md). `agent-seat-settings` 0.1.0 adds the
-display-independent model, strict check/print/recovery commands, and initial
-GTK shell; the complete graphical controls and active-state reporting remain
-in progress.
+Status: complete in `agent-seat-settings` 0.1.1 and `agent-seat-x11` 0.1.10,
+2026-08-08. The provider library owns exact validation, a typed bounded draft,
+comment-preserving rendering, provider-identical XDG catalog discovery,
+race-aware atomic replacement, private recovery, and lock-held active-policy
+evidence. The GTK 4 application implements every bounded control and the
+saved/draft/active state rail described in
+[settings-design.md](settings-design.md); its display-independent commands
+retain validation and recovery when no graphical session is available. The
+source desktop entry and complete user workflow are documented in
+[settings.md](settings.md).
 
 Add a standalone `agent-seat-settings` application that makes the strict
 provider policy approachable without weakening it. The application should
@@ -194,3 +193,11 @@ validate the exact saved policy, and see whether a provider restart is needed.
 Filesystem and process tests must prove refusal of unsafe targets, invalid
 policy, concurrent replacement, and write failure before the milestone is
 complete.
+
+Exit evidence: transaction process tests cover unsafe targets, invalid
+candidates, stale and concurrent writers, and pre-commit infrastructure
+failure. Model tests cover typed edit, exact rendering, save, restore, and
+display-independent commands. Isolated Xvfb/Openbox tests prove the GTK first
+run maps without touching the person's desktop, creates only a disabled mode
+0600 policy, and does not fabricate provider state. Provider lifecycle tests
+distinguish matching, changed, and crash-stale active-policy evidence.

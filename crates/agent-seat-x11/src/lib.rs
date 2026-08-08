@@ -2,6 +2,7 @@
 
 #![forbid(unsafe_code)]
 
+mod active;
 mod config;
 mod launch;
 mod observer;
@@ -9,6 +10,7 @@ mod ownership;
 mod runtime;
 mod session;
 
+pub use active::{ActivePolicyStatus, active_policy_status};
 pub use config::{
     ClientScope, LaunchMode, MAX_POLICY_CAPABILITIES, MAX_POLICY_IO_TIMEOUT_MS,
     MAX_POLICY_REQUESTS, MAX_POLICY_SESSIONS, MIN_POLICY_IO_TIMEOUT_MS, MIN_POLICY_REQUESTS,
@@ -87,7 +89,8 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
         println!("{}: valid and {state}", config_path.display());
         return Ok(());
     }
-    let config = Arc::new(config::Config::load(&config_path)?);
+    let (policy_snapshot, config) = config::Config::load(&config_path)?;
+    let config = Arc::new(config);
 
     let screen = ownership::selected_screen()?;
     let listener = runtime::ListenerGuard::bind(options.socket.as_deref(), screen)?;
@@ -95,6 +98,13 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
     if ownership.screen() != screen {
         return Err("selected X11 screen changed during provider startup".to_owned());
     }
+    let _active_policy = match active::ActivePolicyGuard::publish(&policy_snapshot) {
+        Ok(guard) => Some(guard),
+        Err(error) => {
+            eprintln!("agent-seat-x11: active-policy status unavailable: {error}");
+            None
+        }
+    };
 
     let stopping = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(SIGINT, Arc::clone(&stopping))

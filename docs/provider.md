@@ -1,6 +1,6 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core. `agent-seat-x11` 0.1.7 owns lifecycle, policy, local
+Status: T3 Tier 0 core. `agent-seat-x11` 0.1.10 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -97,10 +97,10 @@ successfully without touching X11. An ordinary provider start still rejects a
 disabled policy. This separation lets a person or settings application safely
 validate a staged disabled policy before enabling it.
 
-### Settings transaction foundation
+### Settings integration
 
 The `agent-seat-x11` library exposes validated policy snapshots and independent
-typed drafts for the future Settings application. Drafts provide grouped,
+typed drafts for the Settings application. Drafts provide grouped,
 all-or-nothing edits for activation, resource limits, grants, observation, and
 launch policy. They never add capability dependencies implicitly. Rendering
 preserves existing comments and unaffected layout, then passes the exact
@@ -126,6 +126,16 @@ synchronized before success is reported. Symlink, non-regular, wrong-owner,
 unsafe recovery, invalid candidate, stale snapshot, concurrent writer, and
 write-infrastructure failures are refused without replacing the reviewed
 policy. This API edits saved policy only; a running provider does not reload it.
+
+After X11 ownership succeeds, a provider also attempts to publish a private,
+mode-0600 active-policy marker under `$XDG_RUNTIME_DIR/agent-seat`. The process
+holds an exclusive advisory lock on that marker for its lifetime and records
+the exact policy path and source loaded at startup. Settings can therefore
+distinguish a reported matching policy from a changed saved file without
+connecting to X11 or the provider socket. Unlocked crash-stale markers are
+ignored. Missing or unavailable evidence is reported as unknown rather than
+as proof that the provider is stopped; this best-effort channel grants no
+authority and is not a same-user security boundary.
 
 ### Policy reference
 

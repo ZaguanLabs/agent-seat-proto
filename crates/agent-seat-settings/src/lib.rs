@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use agent_seat_proto::ApplicationDescriptor;
 use agent_seat_x11::{
-    PolicyDraft, PolicySnapshot, ensure_default_policy, installed_applications, read_policy,
-    recovery_policy_path, replace_policy,
+    ActivePolicyStatus, PolicyDraft, PolicySnapshot, active_policy_status, ensure_default_policy,
+    installed_applications, read_policy, recovery_policy_path, replace_policy,
 };
 
 /// One loaded saved policy and an independently editable draft.
@@ -61,6 +61,12 @@ impl SettingsModel {
         self.snapshot.source()
     }
 
+    /// Reports whether the last loaded saved policy requests activation.
+    #[must_use]
+    pub fn saved_enabled(&self) -> bool {
+        self.original.is_enabled()
+    }
+
     /// Returns the editable typed policy.
     #[must_use]
     pub const fn draft(&self) -> &PolicyDraft {
@@ -107,6 +113,23 @@ impl SettingsModel {
         } else {
             Ok(self.snapshot.source().to_owned())
         }
+    }
+
+    /// Returns a bounded unified before/after view of the changed source.
+    ///
+    /// Unchanged context is reduced to two lines around one conservative
+    /// changed region. Removed and added lines retain their exact text after
+    /// the leading diff marker.
+    ///
+    /// # Errors
+    ///
+    /// Returns an exact provider rendering or validation error.
+    pub fn unified_diff(&self) -> Result<String, String> {
+        if !self.has_changes() {
+            return Ok("No policy changes.\n".to_owned());
+        }
+        let after = self.candidate_source()?;
+        Ok(unified_diff(self.snapshot.source(), &after))
     }
 
     /// Saves a changed draft through the provider's atomic transaction API.
@@ -156,6 +179,19 @@ impl SettingsModel {
         recovery_policy_path(self.path())
     }
 
+    /// Reads lock-held evidence of the policy loaded by running providers.
+    ///
+    /// This does not connect to X11 or a provider socket and does not grant
+    /// authority. Absence is reported distinctly because an older provider
+    /// may not publish evidence.
+    ///
+    /// # Errors
+    ///
+    /// Returns the provider library's runtime-directory or marker safety error.
+    pub fn active_policy_status(&self) -> Result<ActivePolicyStatus, String> {
+        active_policy_status(&self.snapshot)
+    }
+
     /// Discovers the same bounded launchable application catalog as the
     /// provider, without applying the saved launch policy.
     ///
@@ -164,5 +200,64 @@ impl SettingsModel {
     /// Returns the provider catalog's XDG safety or resource-bound error.
     pub fn application_catalog(&self) -> Result<Vec<ApplicationDescriptor>, String> {
         installed_applications()
+    }
+}
+
+fn unified_diff(before: &str, after: &str) -> String {
+    let before = before.lines().collect::<Vec<_>>();
+    let after = after.lines().collect::<Vec<_>>();
+    let prefix = before
+        .iter()
+        .zip(&after)
+        .take_while(|(left, right)| left == right)
+        .count();
+    let possible_suffix = before.len().min(after.len()).saturating_sub(prefix);
+    let suffix = before
+        .iter()
+        .rev()
+        .zip(after.iter().rev())
+        .take(possible_suffix)
+        .take_while(|(left, right)| left == right)
+        .count();
+    let before_changed_end = before.len().saturating_sub(suffix);
+    let after_changed_end = after.len().saturating_sub(suffix);
+    let context_start = prefix.saturating_sub(2);
+    let context_end_before = (before_changed_end + 2).min(before.len());
+    let mut result = String::from("--- saved policy\n+++ draft policy\n");
+    for line in &before[context_start..prefix] {
+        result.push(' ');
+        result.push_str(line);
+        result.push('\n');
+    }
+    for line in &before[prefix..before_changed_end] {
+        result.push('-');
+        result.push_str(line);
+        result.push('\n');
+    }
+    for line in &after[prefix..after_changed_end] {
+        result.push('+');
+        result.push_str(line);
+        result.push('\n');
+    }
+    for line in &before[before_changed_end..context_end_before] {
+        result.push(' ');
+        result.push_str(line);
+        result.push('\n');
+    }
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unified_diff;
+
+    #[test]
+    fn diff_keeps_local_context_and_exact_changed_lines() {
+        let before = "one\ntwo\nthree\nfour\nfive\n";
+        let after = "one\ntwo\nchanged\nfour\nfive\n";
+        assert_eq!(
+            unified_diff(before, after),
+            "--- saved policy\n+++ draft policy\n one\n two\n-three\n+changed\n four\n five\n"
+        );
     }
 }
