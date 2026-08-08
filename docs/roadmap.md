@@ -109,6 +109,13 @@ Tier 0 core.
 
 ## Optional profiles
 
+Status: first-release decisions complete, 2026-08-08. The evidence and stop
+conditions are recorded in
+[`optional-profiles.md`](optional-profiles.md). T4 output/core-window capture,
+T5 input, and T6 semantics remain unsupported. A narrowly target-owned
+Composite `obscured_capture` is deferred to a new wire revision and does not
+delay C0.
+
 - T4 may add capture only for modes that can reapply visibility and scope at
   capture time without returning unrelated pixels.
 - T5 may add best-effort client-relative XTEST input only where human activity

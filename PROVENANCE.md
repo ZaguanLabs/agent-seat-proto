@@ -97,3 +97,11 @@ semantics, `Exec` quoting/field codes, and startup-ID behavior use:
 No new runtime dependency was added. Openbox and Xvfb remain external
 black-box test processes; standard command-line programs are process fixtures,
 not linked or distributed dependencies.
+
+## Optional profile decision study
+
+The T4--T6 analysis in `docs/optional-profiles.md` is original work written for
+this repository. It uses the public X11 core, Security, Composite, XTEST, and
+RECORD extension specifications and the public AT-SPI 2 API documentation
+linked from that document. No implementation source or fixture from Nobox or
+another Agent Seat product was consulted or imported.

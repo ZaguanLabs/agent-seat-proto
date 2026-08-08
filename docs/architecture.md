@@ -26,7 +26,9 @@ Openbox plugin or window-manager dependency.
 
 The core profile is observation, supported management, and controlled launch.
 Capture, input, and accessibility remain separately reviewed optional
-profiles. Missing profiles return typed unsupported results.
+profiles. Revision 3 exposes no calls for absent profiles; their feature atoms
+remain unadvertised. A future revision that defines optional calls must return
+typed `unsupported` results when its backend does not advertise them.
 
 ## Dependency direction
 

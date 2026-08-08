@@ -43,7 +43,8 @@ discovery and launch. Optional profiles remain absent.
 
 The normative wire contract is [`docs/specification.md`](docs/specification.md),
 the companion contract is [`docs/mcp.md`](docs/mcp.md), and provider setup is
-[`docs/provider.md`](docs/provider.md).
+[`docs/provider.md`](docs/provider.md). Optional-profile stop decisions are in
+[`docs/optional-profiles.md`](docs/optional-profiles.md).
 
 ## Project policy
 
