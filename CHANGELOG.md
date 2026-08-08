@@ -37,3 +37,10 @@ All notable changes to this project are documented here.
 - Added Openbox process coverage for client creation, title changes,
   minimize/remap, workspace movement, destruction, scope departure/return,
   title redaction, event filters, and stale cursors.
+- Implemented `agent-seat-x11` 0.1.3 T2 management with a server-grabbed final
+  freshness check, exact EWMH/target support checks, polite close, workspace
+  switch/send, supported state changes, and decoration-aware frame geometry.
+- Added bounded post-send `observed`, `timed_out`, and `target_gone` results and
+  Openbox coverage for supported operations, refusal, stale and out-of-scope
+  targets, invalid workspaces, unsupported state, ignored requests, responsive
+  close, and target disappearance.

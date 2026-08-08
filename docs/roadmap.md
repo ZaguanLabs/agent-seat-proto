@@ -1,6 +1,6 @@
 # Product roadmap
 
-Status: E0, E1, T0, and T1 complete; T2 is next. Milestones are sequential;
+Status: E0, E1, T0, T1, and T2 complete; T3 is next. Milestones are sequential;
 optional profiles do not delay the Tier 0 core release. E0 evidence is recorded in
 [`e0-verification.md`](e0-verification.md).
 
@@ -78,6 +78,11 @@ End result: independently observed Openbox state converges with snapshots and
 diffs without direct hidden-client disclosure.
 
 ## T2 — management
+
+Status: complete, 2026-08-08. `agent-seat-x11` 0.1.3 advertises
+`ewmh_management` and implements freshness-checked activation, polite close,
+workspace switch/send, supported state changes, and decoration-aware frame
+geometry with bounded post-send observation.
 
 Implement only advertised activation, polite close, workspace, state, and
 geometry requests. Recheck scope and freshness before send and observe the

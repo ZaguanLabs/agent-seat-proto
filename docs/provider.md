@@ -1,8 +1,8 @@
 # Standalone X11 provider
 
-Status: T1 observation. `agent-seat-x11` 0.1.2 owns lifecycle, policy, local
-authentication, X11 discovery, and bounded EWMH observation. T2--T3 add
-management and launch without moving authority into the MCP companion.
+Status: T2 management. `agent-seat-x11` 0.1.3 owns lifecycle, policy, local
+authentication, X11 discovery, bounded EWMH observation, and supported
+management. T3 adds launch without moving authority into the MCP companion.
 The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
 
 ## Goals
@@ -17,6 +17,8 @@ The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
   and the session grant permit them.
 - Use per-session opaque client identities, generations, sequences, filtered
   diffs, and explicit resynchronization.
+- Recheck scope, freshness, and exact advertised support immediately before an
+  EWMH send, then report only what the provider subsequently observes.
 - Remove the private socket and advertisement on clean shutdown while leaving
   Openbox or another window manager independent.
 
@@ -28,7 +30,9 @@ The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
   daemonizing itself.
 - Treating a sequence of independently sampled EWMH properties as an atomic
   window-manager transaction.
-- Implementing management, launch, capture, input, or semantics in T1.
+- Implementing launch, capture, input, or semantics in T2.
+- Killing a client, synthesizing input, or claiming a foreign WM accepted an
+  internally delivered request.
 - Providing a consent window or claiming Tier 1 window-manager authority.
 
 ## Configuration
@@ -55,7 +59,16 @@ io_timeout_ms = 2000
 
 [grant]
 uid = 1000
-capabilities = ["observe_structure", "observe_titles", "observe_events"]
+capabilities = [
+  "observe_structure",
+  "observe_titles",
+  "observe_events",
+  "manage_activate",
+  "manage_close",
+  "manage_workspace",
+  "manage_state",
+  "manage_geometry",
+]
 
 [observation]
 clients = "current_workspace"
@@ -66,9 +79,10 @@ titles = false
 directory enforces the same-user boundary and the accepted socket's
 `SO_PEERCRED` UID selects the grant; `hello.peer` remains descriptive.
 Capabilities must be unique and are intersected with the peer's canonically
-ordered request. `observe_titles` and `observe_events` require
-`observe_structure` in the configured grant. An omitted grant denies every
-peer.
+ordered request. `observe_titles`, `observe_events`, and every management
+capability require `observe_structure` in the configured grant; a management
+call also rechecks that dependency in the live session. An omitted grant
+denies every peer.
 
 | Setting | Default | Accepted bound |
 | --- | ---: | ---: |
@@ -114,8 +128,8 @@ capacity beyond `max_sessions`, evicts a peer that does not complete framing
 before its deadline, and ends a session at its request bound. Frames retain
 the revision-3 direction limits.
 
-The provider advertises `ewmh_observation` and implements `seat.status` and
-`desktop.snapshot` with `observe_structure`, plus `events.subscribe` and
+The provider advertises `ewmh_observation` and `ewmh_management`. It implements
+`seat.status` and `desktop.snapshot` with `observe_structure`, plus `events.subscribe` and
 `events.poll` with `observe_events`. Every request is checked against the grant
 first: missing authority returns `refused`; an authorized call reserved for a
 later milestone returns `unsupported`.
@@ -136,6 +150,29 @@ with the provider's current sequence; taking a snapshot establishes current
 state again. Missing or malformed optional client properties are redacted,
 while absent required EWMH workspace facts fail the observation.
 
+## Management behavior
+
+Management supports activation, polite close, workspace switch/send,
+non-hidden state changes, and frame move/resize. The final observation refresh,
+opaque-ID/generation or sequence check, workspace validation, exact
+`_NET_SUPPORTED` and `_NET_WM_ALLOWED_ACTIONS` check, and `SendEvent` are
+performed while the provider holds a short X server grab. No failure before
+the send is represented as success.
+
+Frame geometry is public outer geometry. The provider reads the target's
+bounded frame extents and converts to the client rectangle used by
+`_NET_MOVERESIZE_WINDOW` with `StaticGravity`; overflow, underflow, or an empty
+client extent is `invalid_argument`. `_NET_WM_STATE_HIDDEN` is observation-only
+because EWMH says a WM should ignore attempts to toggle it. Close additionally
+requires `WM_DELETE_WINDOW`, and the provider never falls back to
+`XKillClient`.
+
+After a successfully sent request, the provider samples for one second. A
+`management` reply is `observed` when the desired visible state appears,
+`target_gone` when a non-close target disappears first, or `timed_out` when the
+deadline expires. For close, visible disappearance is the desired observation.
+These values do not claim internal acceptance by Openbox or another WM.
+
 ## Running beside Openbox
 
 Start the provider as a separate process from Openbox autostart:
@@ -149,10 +186,12 @@ leave a recoverable socket or stale root property, but it cannot terminate or
 block Openbox; discovery requires a current selection owner and matching owner
 property, so stale root bytes alone are not live authority.
 
-## T1 end result
+## T2 end result
 
 The provider is an independently failing, bounded, same-user policy process
 whose scoped Openbox snapshots and filtered diffs converge across client
 creation, title, state, workspace, and destruction changes. It does not expose
 raw XIDs or read titles for filtered-out clients, and it does not claim that
-standalone X11 observation is atomic or a strong isolation boundary.
+standalone X11 observation is atomic or a strong isolation boundary. Supported
+management is additionally freshness-checked before send and reports ignored
+or ambiguous terminal outcomes without elevating them to acceptance.

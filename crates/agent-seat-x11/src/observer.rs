@@ -1,5 +1,7 @@
 //! Bounded per-session EWMH snapshots and convergent event diffs.
 
+mod manager;
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::num::NonZeroU64;
 use std::thread;
@@ -17,6 +19,8 @@ use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _};
 use x11rb::rust_connection::RustConnection;
 
 use crate::config::ClientScope;
+
+pub(crate) use manager::Operation;
 
 const MAX_ROOT_ATOMS: usize = 256;
 const MAX_CLIENT_ATOMS: usize = 64;
@@ -688,24 +692,28 @@ fn client_actions(
     if supported.contains(&atoms.active_window) {
         actions.push(ClientAction::Activate);
     }
-    if allowed.contains(&atoms.action_close) && protocols.contains(&atoms.wm_delete_window) {
+    if supported.contains(&atoms.close_window)
+        && allowed.contains(&atoms.action_close)
+        && protocols.contains(&atoms.wm_delete_window)
+    {
         actions.push(ClientAction::Close);
     }
     if supported.contains(&atoms.wm_desktop) && allowed.contains(&atoms.action_change_desktop) {
         actions.push(ClientAction::ChangeWorkspace);
     }
-    if [
-        atoms.action_above,
-        atoms.action_below,
-        atoms.action_fullscreen,
-        atoms.action_maximize_horz,
-        atoms.action_maximize_vert,
-        atoms.action_minimize,
-        atoms.action_shade,
-        atoms.action_stick,
-    ]
-    .iter()
-    .any(|action| allowed.contains(action))
+    if supported.contains(&atoms.wm_state)
+        && (supported.contains(&atoms.state_demands_attention)
+            || [
+                (atoms.action_above, atoms.state_above),
+                (atoms.action_below, atoms.state_below),
+                (atoms.action_fullscreen, atoms.state_fullscreen),
+                (atoms.action_maximize_horz, atoms.state_maximized_horz),
+                (atoms.action_maximize_vert, atoms.state_maximized_vert),
+                (atoms.action_shade, atoms.state_shaded),
+                (atoms.action_stick, atoms.state_sticky),
+            ]
+            .iter()
+            .any(|(action, state)| allowed.contains(action) && supported.contains(state)))
     {
         actions.push(ClientAction::ChangeState);
     }
@@ -724,17 +732,7 @@ fn client_frame(connection: &RustConnection, root: u32, xid: u32, atoms: &Atoms)
         .ok()?
         .reply()
         .ok()?;
-    let extents = property32(
-        connection,
-        xid,
-        atoms.frame_extents,
-        AtomEnum::CARDINAL.into(),
-        4,
-    )
-    .ok()
-    .flatten()
-    .filter(|values| values.len() == 4)
-    .unwrap_or_else(|| vec![0; 4]);
+    let extents = client_frame_extents(connection, xid, atoms);
     let left = i32::try_from(extents[0]).ok()?;
     let right = extents[1];
     let top = i32::try_from(extents[2]).ok()?;
@@ -749,6 +747,20 @@ fn client_frame(connection: &RustConnection, root: u32, xid: u32, atoms: &Atoms)
             .checked_add(extents[2])?
             .checked_add(bottom)?,
     })
+}
+
+fn client_frame_extents(connection: &RustConnection, xid: u32, atoms: &Atoms) -> [u32; 4] {
+    property32(
+        connection,
+        xid,
+        atoms.frame_extents,
+        AtomEnum::CARDINAL.into(),
+        4,
+    )
+    .ok()
+    .flatten()
+    .and_then(|values| <[u32; 4]>::try_from(values).ok())
+    .unwrap_or([0; 4])
 }
 
 fn rect_from_cardinals(values: &[u32]) -> Option<Rect> {
@@ -875,6 +887,7 @@ struct Atoms {
     wm_allowed_actions: u32,
     frame_extents: u32,
     moveresize_window: u32,
+    close_window: u32,
     wm_protocols: u32,
     wm_delete_window: u32,
     utf8: u32,
@@ -892,7 +905,6 @@ struct Atoms {
     action_fullscreen: u32,
     action_maximize_horz: u32,
     action_maximize_vert: u32,
-    action_minimize: u32,
     action_shade: u32,
     action_stick: u32,
     action_close: u32,
@@ -928,6 +940,7 @@ impl Atoms {
             wm_allowed_actions: atom(b"_NET_WM_ALLOWED_ACTIONS")?,
             frame_extents: atom(b"_NET_FRAME_EXTENTS")?,
             moveresize_window: atom(b"_NET_MOVERESIZE_WINDOW")?,
+            close_window: atom(b"_NET_CLOSE_WINDOW")?,
             wm_protocols: atom(b"WM_PROTOCOLS")?,
             wm_delete_window: atom(b"WM_DELETE_WINDOW")?,
             utf8: atom(b"UTF8_STRING")?,
@@ -945,7 +958,6 @@ impl Atoms {
             action_fullscreen: atom(b"_NET_WM_ACTION_FULLSCREEN")?,
             action_maximize_horz: atom(b"_NET_WM_ACTION_MAXIMIZE_HORZ")?,
             action_maximize_vert: atom(b"_NET_WM_ACTION_MAXIMIZE_VERT")?,
-            action_minimize: atom(b"_NET_WM_ACTION_MINIMIZE")?,
             action_shade: atom(b"_NET_WM_ACTION_SHADE")?,
             action_stick: atom(b"_NET_WM_ACTION_STICK")?,
             action_close: atom(b"_NET_WM_ACTION_CLOSE")?,
@@ -960,6 +972,7 @@ pub(crate) struct Failure {
     pub(crate) code: ErrorCode,
     pub(crate) retry: Retry,
     pub(crate) message: &'static str,
+    pub(crate) current_generation: Option<Generation>,
     pub(crate) current_sequence: Option<Sequence>,
 }
 
@@ -969,6 +982,7 @@ impl Failure {
             code: ErrorCode::Unavailable,
             retry: Retry::Reconnect,
             message,
+            current_generation: None,
             current_sequence: None,
         }
     }
@@ -978,6 +992,7 @@ impl Failure {
             code: ErrorCode::Unsupported,
             retry: Retry::Never,
             message,
+            current_generation: None,
             current_sequence: None,
         }
     }
@@ -987,6 +1002,7 @@ impl Failure {
             code: ErrorCode::InvalidArgument,
             retry: Retry::Never,
             message,
+            current_generation: None,
             current_sequence: None,
         }
     }
@@ -996,6 +1012,7 @@ impl Failure {
             code: ErrorCode::Malformed,
             retry: Retry::Reobserve,
             message,
+            current_generation: None,
             current_sequence: None,
         }
     }
@@ -1005,6 +1022,7 @@ impl Failure {
             code: ErrorCode::TooLarge,
             retry: Retry::Never,
             message,
+            current_generation: None,
             current_sequence: None,
         }
     }
@@ -1014,6 +1032,7 @@ impl Failure {
             code: ErrorCode::Internal,
             retry: Retry::Never,
             message,
+            current_generation: None,
             current_sequence: None,
         }
     }
@@ -1023,6 +1042,7 @@ impl Failure {
             code: ErrorCode::ResyncRequired,
             retry: Retry::Reobserve,
             message: "event cursor is outside the retained observation history",
+            current_generation: None,
             current_sequence: Some(Sequence::new(sequence)),
         }
     }

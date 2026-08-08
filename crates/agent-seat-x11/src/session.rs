@@ -14,7 +14,7 @@ use agent_seat_proto::{
 use rustix::net::sockopt::socket_peercred;
 
 use crate::config::Config;
-use crate::observer::{Failure as ObservationFailure, Observer};
+use crate::observer::{Failure as ObservationFailure, Observer, Operation};
 
 pub(crate) fn run(
     mut stream: UnixStream,
@@ -65,7 +65,7 @@ pub(crate) fn run(
         },
         backend: Backend::X11Ewmh,
         assurance: Assurance::Tier0,
-        features: BoundedList::new(vec![Feature::EwmhObservation])
+        features: BoundedList::new(vec![Feature::EwmhObservation, Feature::EwmhManagement])
             .map_err(|error| format!("provider feature list exceeded wire bounds: {error}"))?,
         granted: granted.clone(),
         limits: Limits {
@@ -150,6 +150,15 @@ fn handle(
 
 fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
     granted.contains(&call.required_capability())
+        && (!matches!(
+            call,
+            Call::ClientActivate(_)
+                | Call::ClientClose(_)
+                | Call::WorkspaceSwitch(_)
+                | Call::ClientWorkspace(_)
+                | Call::ClientState(_)
+                | Call::ClientGeometry(_)
+        ) || granted.contains(&agent_seat_proto::Capability::ObserveStructure))
 }
 
 fn observe_call(
@@ -178,6 +187,24 @@ fn observe_call(
         Call::EventsPoll(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.poll(arguments.after, arguments.limit, arguments.wait_ms))
             .map(Reply::Events),
+        Call::ClientActivate(arguments) => observer_for(observer, granted, config)
+            .and_then(|observer| observer.manage(Operation::Activate(arguments)))
+            .map(Reply::Management),
+        Call::ClientClose(arguments) => observer_for(observer, granted, config)
+            .and_then(|observer| observer.manage(Operation::Close(arguments)))
+            .map(Reply::Management),
+        Call::WorkspaceSwitch(arguments) => observer_for(observer, granted, config)
+            .and_then(|observer| observer.manage(Operation::WorkspaceSwitch(arguments)))
+            .map(Reply::Management),
+        Call::ClientWorkspace(arguments) => observer_for(observer, granted, config)
+            .and_then(|observer| observer.manage(Operation::ClientWorkspace(arguments)))
+            .map(Reply::Management),
+        Call::ClientState(arguments) => observer_for(observer, granted, config)
+            .and_then(|observer| observer.manage(Operation::State(arguments)))
+            .map(Reply::Management),
+        Call::ClientGeometry(arguments) => observer_for(observer, granted, config)
+            .and_then(|observer| observer.manage(Operation::Geometry(arguments)))
+            .map(Reply::Management),
         _ => {
             return protocol_error(
                 ErrorCode::Unsupported,
@@ -214,7 +241,7 @@ fn observation_error(error: ObservationFailure) -> Outcome {
         retry: error.retry,
         field: None,
         message: Some(diagnostic(error.message)),
-        current_generation: None,
+        current_generation: error.current_generation,
         current_sequence: error.current_sequence,
     })
 }
@@ -268,6 +295,22 @@ mod tests {
         assert!(authorized(
             &request.call,
             &[agent_seat_proto::Capability::ObserveStructure]
+        ));
+
+        let close = Call::ClientClose(agent_seat_proto::TargetRequest {
+            client: agent_seat_proto::ClientId::new(NonZeroU64::MIN),
+            generation: agent_seat_proto::Generation::new(0),
+        });
+        assert!(!authorized(
+            &close,
+            &[agent_seat_proto::Capability::ManageClose]
+        ));
+        assert!(authorized(
+            &close,
+            &[
+                agent_seat_proto::Capability::ObserveStructure,
+                agent_seat_proto::Capability::ManageClose,
+            ]
         ));
     }
 }

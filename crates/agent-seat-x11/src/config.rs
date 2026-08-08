@@ -246,6 +246,19 @@ impl RawGrant {
         {
             return Err("observe_events requires observe_structure".to_owned());
         }
+        if self.capabilities.iter().any(|capability| {
+            matches!(
+                capability,
+                Capability::ManageActivate
+                    | Capability::ManageClose
+                    | Capability::ManageWorkspace
+                    | Capability::ManageState
+                    | Capability::ManageGeometry
+            )
+        }) && !self.capabilities.contains(&Capability::ObserveStructure)
+        {
+            return Err("management capabilities require observe_structure".to_owned());
+        }
         Ok(Grant {
             uid: self.uid,
             capabilities: self.capabilities,
@@ -325,9 +338,9 @@ mod tests {
     }
 
     #[test]
-    fn sensitive_observation_grants_require_structure() {
+    fn dependent_capabilities_require_structure() {
         let uid = geteuid().as_raw();
-        for capability in ["observe_titles", "observe_events"] {
+        for capability in ["observe_titles", "observe_events", "manage_activate"] {
             let source =
                 format!("enabled = true\n[grant]\nuid = {uid}\ncapabilities = [\"{capability}\"]");
             let raw: RawConfig = toml::from_str(&source).expect("parse incomplete grant");

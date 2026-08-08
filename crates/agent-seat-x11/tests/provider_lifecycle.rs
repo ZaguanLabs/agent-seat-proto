@@ -14,10 +14,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use agent_seat_proto::{
-    BoundedList, BoundedText, Call, Capability, ClientMessage, DesktopSnapshot, Empty, ErrorCode,
-    Event, EventBatch, EventKind, Hello, MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES,
-    Outcome, PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo, PollRequest, ReadFrame, Reply, Request,
-    RequestId, Sequence, ServerMessage, SubscribeRequest, read_frame, write_frame,
+    BoundedList, BoundedText, Call, Capability, ClientDescriptor, ClientGeometryRequest,
+    ClientMessage, ClientState, ClientStateRequest, ClientWorkspaceRequest, DesktopSnapshot, Empty,
+    ErrorCode, Event, EventBatch, EventKind, Hello, MAX_REQUEST_FRAME_BYTES,
+    MAX_RESPONSE_FRAME_BYTES, ManagementReply, Observation as ManagementObservation, Outcome,
+    PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo, PollRequest, ReadFrame, Rect, Reply, Request,
+    RequestId, Sequence, ServerMessage, StateAction, SubscribeRequest, TargetRequest,
+    WorkspaceRequest, read_frame, write_frame,
 };
 use rustix::process::{Pid, Signal, geteuid, kill_process};
 use x11rb::connection::Connection as _;
@@ -217,7 +220,12 @@ fn write_config(
 fn write_observer_config(directory: &Path, scope: &str, titles: bool) -> PathBuf {
     let path = write_config(
         directory,
-        &["observe_structure", "observe_titles", "observe_events"],
+        &[
+            "observe_structure",
+            "observe_titles",
+            "observe_events",
+            "manage_activate",
+        ],
         4,
         1_000,
     );
@@ -227,6 +235,30 @@ fn write_observer_config(directory: &Path, scope: &str, titles: bool) -> PathBuf
         format!("{source}\n[observation]\nclients = \"{scope}\"\ntitles = {titles}\n"),
     )
     .expect("write observer config");
+    path
+}
+
+fn write_management_config(directory: &Path) -> PathBuf {
+    let path = write_config(
+        directory,
+        &[
+            "observe_structure",
+            "observe_titles",
+            "manage_activate",
+            "manage_close",
+            "manage_workspace",
+            "manage_state",
+            "manage_geometry",
+        ],
+        4,
+        2_000,
+    );
+    let source = fs::read_to_string(&path).expect("read base management config");
+    fs::write(
+        &path,
+        format!("{source}\n[observation]\nclients = \"all_workspaces\"\ntitles = true\n"),
+    )
+    .expect("write management config");
     path
 }
 
@@ -308,6 +340,8 @@ struct TestClient {
     window: u32,
     utf8: u32,
     wm_name: u32,
+    wm_protocols: u32,
+    wm_delete: u32,
 }
 
 impl TestClient {
@@ -365,6 +399,8 @@ impl TestClient {
             window,
             utf8,
             wm_name,
+            wm_protocols,
+            wm_delete,
         }
     }
 
@@ -431,6 +467,37 @@ impl TestClient {
             .check()
             .expect("destroy");
         self.connection.flush().expect("destroy flush");
+    }
+
+    fn respond_to_close(self) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(3);
+            loop {
+                if let Some(x11rb::protocol::Event::ClientMessage(event)) = self
+                    .connection
+                    .poll_for_event()
+                    .expect("close responder event")
+                {
+                    let data = event.data.as_data32();
+                    if event.type_ == self.wm_protocols && data[0] == self.wm_delete {
+                        self.destroy();
+                        return;
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "client did not receive WM_DELETE_WINDOW"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+        })
+    }
+
+    fn destroy_after(self, delay: Duration) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            thread::sleep(delay);
+            self.destroy();
+        })
     }
 }
 
@@ -529,6 +596,29 @@ fn poll_events(stream: &mut UnixStream, next_id: &mut u64, after: Sequence) -> E
     ) {
         Outcome::Ok(Reply::Events(events)) => events,
         other => panic!("unexpected event outcome: {other:?}"),
+    }
+}
+
+fn management(stream: &mut UnixStream, next_id: &mut u64, call: Call) -> ManagementReply {
+    match wire_call(stream, next_id, call) {
+        Outcome::Ok(Reply::Management(reply)) => reply,
+        other => panic!("unexpected management outcome: {other:?}"),
+    }
+}
+
+fn client_named(snapshot: &DesktopSnapshot, title: &str) -> ClientDescriptor {
+    snapshot
+        .clients
+        .iter()
+        .find(|client| client.title.as_deref() == Some(title))
+        .cloned()
+        .unwrap_or_else(|| panic!("snapshot has no client titled {title:?}"))
+}
+
+const fn target(client: &ClientDescriptor) -> TargetRequest {
+    TargetRequest {
+        client: client.id,
+        generation: client.generation,
     }
 }
 
@@ -637,12 +727,27 @@ fn no_wm_lifecycle_policy_ownership_and_stale_recovery() {
             if welcome.assurance == agent_seat_proto::Assurance::Tier0
                 && welcome.backend == agent_seat_proto::Backend::X11Ewmh
                 && welcome.granted.as_slice() == [Capability::ObserveStructure]
-                && welcome.features.as_slice() == [agent_seat_proto::Feature::EwmhObservation]
+                && welcome.features.as_slice() == [
+                    agent_seat_proto::Feature::EwmhObservation,
+                    agent_seat_proto::Feature::EwmhManagement,
+                ]
     ));
     assert!(matches!(
         seat_status(&mut stream),
         ServerMessage::Response(response)
             if matches!(response.outcome, agent_seat_proto::Outcome::Ok(Reply::SeatStatus(_)))
+    ));
+    let mut next_id = 2;
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::ClientClose(TargetRequest {
+                client: agent_seat_proto::ClientId::new(NonZeroU64::MIN),
+                generation: agent_seat_proto::Generation::new(0),
+            }),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::Refused
     ));
 
     let second_socket = directory.0.join("second.sock");
@@ -821,7 +926,10 @@ fn openbox_snapshots_and_diffs_converge_across_client_lifecycle() {
             ],
         ),
         ServerMessage::Welcome(welcome)
-            if welcome.features.as_slice() == [agent_seat_proto::Feature::EwmhObservation]
+            if welcome.features.as_slice() == [
+                agent_seat_proto::Feature::EwmhObservation,
+                agent_seat_proto::Feature::EwmhManagement,
+            ]
                 && welcome.granted.as_slice() == [
                     Capability::ObserveStructure,
                     Capability::ObserveTitles,
@@ -939,7 +1047,11 @@ fn current_workspace_scope_hides_titles_and_rekeys_returning_clients() {
     assert!(matches!(
         hello_with(
             &mut stream,
-            vec![Capability::ObserveStructure, Capability::ObserveTitles],
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::ManageActivate,
+            ],
         ),
         ServerMessage::Welcome(_)
     ));
@@ -948,21 +1060,224 @@ fn current_workspace_scope_hides_titles_and_rekeys_returning_clients() {
     let visible = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
         snapshot.clients.len() == 1
     });
-    let first = visible.clients[0].id;
+    let first = visible.clients[0].clone();
     assert_eq!(visible.clients[0].title, None);
 
     client.move_to_workspace(1);
     wait_snapshot(&mut stream, &mut next_id, |snapshot| {
         snapshot.clients.is_empty()
     });
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::ClientActivate(target(&first)),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::NoSuchClient
+    ));
     client.move_to_workspace(0);
     let returned = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
         snapshot.clients.len() == 1
     });
-    assert_ne!(returned.clients[0].id, first);
+    assert_ne!(returned.clients[0].id, first.id);
     assert_eq!(returned.clients[0].title, None);
 
     client.destroy();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn openbox_management_distinguishes_terminal_and_no_send_outcomes() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("management");
+    let config = write_management_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("management peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::ManageActivate,
+                Capability::ManageClose,
+                Capability::ManageWorkspace,
+                Capability::ManageState,
+                Capability::ManageGeometry,
+            ],
+        ),
+        ServerMessage::Welcome(welcome)
+            if welcome.features.as_slice() == [
+                agent_seat_proto::Feature::EwmhObservation,
+                agent_seat_proto::Feature::EwmhManagement,
+            ]
+    ));
+    let mut next_id = 1;
+    let alpha_client = TestClient::create(&xvfb.display, "manage-alpha");
+    let beta_client = TestClient::create(&xvfb.display, "manage-beta");
+    let initial = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.len() == 2
+    });
+    let alpha = client_named(&initial, "manage-alpha");
+
+    let activated = management(
+        &mut stream,
+        &mut next_id,
+        Call::ClientActivate(target(&alpha)),
+    );
+    assert_eq!(activated.observation, ManagementObservation::Observed);
+
+    let before_switch = snapshot(&mut stream, &mut next_id);
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::WorkspaceSwitch(WorkspaceRequest {
+                workspace: agent_seat_proto::WorkspaceId::new(u16::MAX),
+                sequence: before_switch.sequence,
+            }),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument
+    ));
+    let switched = management(
+        &mut stream,
+        &mut next_id,
+        Call::WorkspaceSwitch(WorkspaceRequest {
+            workspace: agent_seat_proto::WorkspaceId::new(1),
+            sequence: before_switch.sequence,
+        }),
+    );
+    assert_eq!(switched.observation, ManagementObservation::Observed);
+
+    let alpha = client_named(&snapshot(&mut stream, &mut next_id), "manage-alpha");
+    let moved = management(
+        &mut stream,
+        &mut next_id,
+        Call::ClientWorkspace(ClientWorkspaceRequest {
+            target: target(&alpha),
+            workspace: agent_seat_proto::WorkspaceId::new(1),
+        }),
+    );
+    assert_eq!(moved.observation, ManagementObservation::Observed);
+
+    let alpha = client_named(&snapshot(&mut stream, &mut next_id), "manage-alpha");
+    let fullscreen = management(
+        &mut stream,
+        &mut next_id,
+        Call::ClientState(ClientStateRequest {
+            target: target(&alpha),
+            state: ClientState::Fullscreen,
+            action: StateAction::Add,
+        }),
+    );
+    assert_eq!(fullscreen.observation, ManagementObservation::Observed);
+    let alpha = client_named(&snapshot(&mut stream, &mut next_id), "manage-alpha");
+    let restored = management(
+        &mut stream,
+        &mut next_id,
+        Call::ClientState(ClientStateRequest {
+            target: target(&alpha),
+            state: ClientState::Fullscreen,
+            action: StateAction::Remove,
+        }),
+    );
+    assert_eq!(restored.observation, ManagementObservation::Observed);
+
+    let alpha = client_named(&snapshot(&mut stream, &mut next_id), "manage-alpha");
+    let frame = alpha.frame.expect("managed frame");
+    let requested_frame = Rect {
+        x: frame.x + 20,
+        y: frame.y + 15,
+        width: frame.width + 40,
+        height: frame.height + 30,
+    };
+    let geometry = management(
+        &mut stream,
+        &mut next_id,
+        Call::ClientGeometry(ClientGeometryRequest {
+            target: target(&alpha),
+            frame: requested_frame,
+        }),
+    );
+    assert_eq!(geometry.observation, ManagementObservation::Observed);
+
+    let stale = client_named(&snapshot(&mut stream, &mut next_id), "manage-alpha");
+    alpha_client.rename("manage-alpha-renamed");
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::ClientActivate(target(&stale)),
+        ),
+        Outcome::Error(error)
+            if error.code == ErrorCode::Stale
+                && error.current_generation.is_some()
+                && error.current_sequence.is_some()
+    ));
+
+    let alpha = client_named(&snapshot(&mut stream, &mut next_id), "manage-alpha-renamed");
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::ClientState(ClientStateRequest {
+                target: target(&alpha),
+                state: ClientState::Hidden,
+                action: StateAction::Toggle,
+            }),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::Unsupported
+    ));
+
+    let beta = client_named(&snapshot(&mut stream, &mut next_id), "manage-beta");
+    let ignored = management(&mut stream, &mut next_id, Call::ClientClose(target(&beta)));
+    assert_eq!(ignored.observation, ManagementObservation::TimedOut);
+
+    let close_client = TestClient::create(&xvfb.display, "manage-close");
+    let close = client_named(
+        &wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+            snapshot
+                .clients
+                .iter()
+                .any(|client| client.title.as_deref() == Some("manage-close"))
+        }),
+        "manage-close",
+    );
+    let close_responder = close_client.respond_to_close();
+    let closed = management(&mut stream, &mut next_id, Call::ClientClose(target(&close)));
+    assert_eq!(closed.observation, ManagementObservation::Observed);
+    close_responder.join().expect("close responder");
+
+    let alpha = client_named(&snapshot(&mut stream, &mut next_id), "manage-alpha-renamed");
+    let destroyer = alpha_client.destroy_after(Duration::from_millis(50));
+    let disappeared = management(
+        &mut stream,
+        &mut next_id,
+        Call::ClientGeometry(ClientGeometryRequest {
+            target: target(&alpha),
+            frame: Rect {
+                x: 0,
+                y: 0,
+                width: u32::MAX,
+                height: u32::MAX,
+            },
+        }),
+    );
+    assert_eq!(disappeared.observation, ManagementObservation::TargetGone);
+    destroyer.join().expect("target destroyer");
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::ClientActivate(target(&alpha)),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::NoSuchClient
+    ));
+
+    beta_client.destroy();
     let _ = openbox.kill();
     let _ = openbox.wait();
 }

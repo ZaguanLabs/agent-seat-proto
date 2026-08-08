@@ -71,3 +71,11 @@ repository. EWMH property names, types, meanings, and client-message behavior
 use the freedesktop.org specification linked above. Openbox 3.6.1 and Xvfb are
 used only through their public process and X11 behavior as external regression
 oracles. No Nobox source, schema, fixture, or prose was used.
+
+## T2 management
+
+The EWMH sender, frame/client geometry conversion, freshness checks,
+post-request sampler, and management process tests are original work written
+for this repository. Message fields, source indication, StaticGravity, state
+actions, and advertised-action rules use EWMH 1.5 from the freedesktop.org
+specification linked above. Openbox remains an external black-box oracle.
