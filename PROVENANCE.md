@@ -112,3 +112,10 @@ The generated configuration template, creation behavior, CLI guidance,
 documentation, and process tests are original work written for this
 repository from its existing strict provider policy. No external product code,
 schema, fixture, comments, or prose was used.
+
+## Settings application roadmap
+
+The S0 settings application requirements and authority boundaries are original
+planning work derived from this repository's existing strict configuration and
+provider architecture. No external product code, schema, fixture, comments, or
+prose was used.

@@ -4,6 +4,12 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Added
+
+- Planned an S0 `agent-seat-settings` application for safe, human-facing
+  provider policy editing, shared validation, reviewable changes, and explicit
+  active-versus-saved state without adding another runtime authority.
+
 ### Changed
 
 - `agent-seat-x11` 0.1.5 now creates a private, disabled, extensively commented

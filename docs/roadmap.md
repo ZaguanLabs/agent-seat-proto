@@ -10,6 +10,9 @@ complete in product release v0.1.0. E0 evidence is recorded in
 - Ship an authority-free generic MCP companion.
 - Ship a standalone Tier 0 provider that works beside unmodified EWMH window
   managers, beginning with released Openbox.
+- Provide a human-facing settings application for safely reviewing, editing,
+  and validating provider policy without moving runtime authority out of the
+  provider.
 - Make unsupported, refused, stale, sent-but-unobserved, timed-out, and failed
   outcomes distinct at public boundaries.
 - Keep failures outside the window manager and keep source independently
@@ -20,6 +23,8 @@ complete in product release v0.1.0. E0 evidence is recorded in
 - Importing or relicensing Nobox implementation material.
 - Treating same-user X11 as a secure isolation boundary.
 - Giving the MCP companion policy authority.
+- Giving a settings application an MCP surface, X11 control, provider socket
+  ownership, or independent runtime grant authority.
 - Emulating unsupported EWMH operations with shell commands or synthetic
   pointer/keyboard input.
 - Shipping capture, input, accessibility, or persistent coordinate memory as
@@ -138,3 +143,44 @@ checksums, and tag the first supported release.
 
 End result: users can distinguish tested compatibility, partial support,
 incompatibility, and untested combinations without relying on source sharing.
+
+## S0 — settings application
+
+Status: planned for a future release; no implementation or toolkit has been
+selected.
+
+Add a standalone `agent-seat-settings` application that makes the strict
+provider policy approachable without weakening it. The application should
+discover the same effective configuration path as `agent-seat-x11`, explain
+the security effect and dependencies of every capability, and support the
+following bounded tasks:
+
+- enable or disable the provider policy explicitly;
+- configure observation scope, title access, and resource limits;
+- grant or revoke observation, management, and launch capabilities while
+  showing required capability dependencies;
+- browse valid XDG desktop entries and manage launch allow/deny lists by their
+  canonical desktop IDs;
+- show a reviewable before/after policy diff and validation errors before any
+  write; and
+- distinguish saved configuration from the policy active in a running
+  provider, with an explicit restart instruction when required.
+
+The settings application is a policy editor, not a second authority. It must
+not expose MCP tools, connect to X11, listen on the provider socket, grant a
+live session, silently enable capabilities, or start/stop the provider without
+a separate user-confirmed design. It must reuse the provider's exact parser
+and validation rules rather than maintaining a schema that can drift.
+
+Writes must be recoverable and race-aware: reject symlinks and non-regular
+targets, preserve ownership, replace only after successful validation, retain
+mode 0600, and never turn a failed edit into a partially written policy. The
+initial implementation should remain usable without a running X server so
+configuration recovery is possible from a terminal session.
+
+End result: a first-time user can safely configure observation and an
+application launch allow-list, understand what each permission enables,
+validate the exact saved policy, and see whether a provider restart is needed.
+Filesystem and process tests must prove refusal of unsafe targets, invalid
+policy, concurrent replacement, and write failure before the milestone is
+complete.
