@@ -205,9 +205,11 @@ distinguish matching, changed, and crash-stale active-policy evidence.
 
 ## T5R — input reconsideration
 
-Status: threat-model review complete, 2026-08-08; authority and deployment
-approval pending. No input capability, tool, feature advertisement, wire
-revision, or runtime permission has been added.
+Status: threat-model review revised after maintainer review, 2026-08-08;
+authority and deployment approval pending. This is a stop sign with approval
+gates, not an implementation plan. No input capability, tool, feature
+advertisement, wire revision, runtime permission, or broker code has been
+added.
 
 Re-evaluate T5 using a separately trusted Linux input source rather than
 weakening the ordinary-X11 stop decision. The review in
@@ -221,7 +223,17 @@ realization.
 The candidate creates a new privileged authority with keylogging-grade access
 inside its process. It therefore requires explicit maintainer approval of the
 authority, deployment, one-action race bound, target-validation contract, and
-adversarial exit tests before revision 4 or implementation work begins.
+adversarial exit tests before revision 4 or implementation work begins. A
+formal process-authority inventory now records what the harness, companion,
+provider, and candidate broker may and may not do. Negative-authority tests
+must prove deployed confinement, rather than inferring it from source layout
+or current device permissions.
+
+If those designs are approved, the first code milestone is deterministic
+hostile and negative-authority fixtures. Input realization follows only after
+the fixtures establish loss, interruption, target-change, partial-action
+cleanup, and one-action race contracts. An untestable race stops T5 instead of
+weakening its tests or public promise.
 
 End result for this review: T5 now has concrete pass/fail gates and a smallest
 candidate architecture. Until those gates are approved and passed, the public

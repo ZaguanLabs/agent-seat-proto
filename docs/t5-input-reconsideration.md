@@ -4,6 +4,12 @@ Status: threat-model review, 2026-08-08. The ordinary-X11 stop decision still
 holds. This review identifies one candidate architecture, but does not approve
 its new privileged authority or allocate a wire revision.
 
+This document is a stop sign with approval gates, not an implementation plan.
+Neither interest in T5 nor acceptance of this review authorizes broker code,
+new device permissions, XTEST calls, protocol allocation, or an install-time
+service. Observation, management, and launch remain the shippable Tier 0
+profile if the gates cannot be passed without weakening the promise below.
+
 ## User outcome
 
 The useful outcome is not merely that an agent can make X11 synthesize an
@@ -20,6 +26,10 @@ event. A qualifying input profile must:
 Mouse movement, clicks, keys, and text are absent until this complete contract
 can be met. Opening a client or changing its workspace does not imply input
 authority.
+
+These promises are non-negotiable release criteria. Failure to realize them on
+Openbox/X11 stops T5; it is not a reason to weaken the contract, rename an
+uncertain result as success, or loosen a test.
 
 ## Threat model
 
@@ -40,6 +50,38 @@ access to the existing user process would enlarge its authority beyond the X11
 session and could remain effective at a lock screen or another virtual
 terminal. Device names, vendor IDs, udev properties, XInput source IDs, and
 timing are descriptive data, not proof that a person generated an event.
+
+## Process authority inventory
+
+This inventory describes authority granted or exercised by Agent Seat. It is
+not a claim that same-user X11 is an OS sandbox: a separately written process
+that already has the session cookie can bypass Agent Seat entirely. The MCP
+companion's existing X11 selection lookup is discovery only and must not grow
+into desktop observation or control.
+
+```text
+agent harness:
+    required: MCP calls to the companion
+    forbidden: Agent Seat X11 realization, evdev, broker control
+
+agent-seat-mcp:
+    required: static translation, provider IPC, selection-only X11 discovery
+    forbidden: desktop realization, XTEST, evdev, grants, launch realization
+
+agent-seat-x11:
+    required: X11 observation/manage, controlled launch
+    candidate: XTEST only while an approved input profile is active
+    forbidden: evdev, uinput, broker administration, raw activity details
+
+candidate activity broker:
+    required: configured seat evdev, readiness evaluation, minimal IPC
+    forbidden: X11, MCP, Agent Seat wire, launch, injection, policy grants
+```
+
+Any feature that moves an authority from one row into another requires a new
+architecture and threat-model review. In particular, no convenience fallback
+may let the provider open `/dev/input/event*` or let the broker connect to the
+X server.
 
 ## Evidence and rejected shortcuts
 
@@ -117,6 +159,35 @@ devices not represented by the broker's physical seat set remain unsupported.
 The feature must describe `kernel_seat_activity`, not claim generic proof of
 all human activity.
 
+## Unresolved deployment decisions
+
+The IPC shape is not the unresolved part: only readiness, a monotonic activity
+epoch, and a latched stop state may cross it. The following questions block
+implementation:
+
+- **Installation:** define a deliberate administrator-controlled package and
+  enablement action. The provider, companion, Settings, and first-run workflow
+  must never install, enable, or elevate the broker.
+- **Device coverage:** define how the broker proves it has the complete
+  keyboard and pointer set for exactly one physical seat. A partial,
+  ambiguous, remote, nested, or changing set is unavailable, not degraded.
+- **Lifecycle:** specify detection of hotplug, suspend, lock, VT switch,
+  inactive session, logout, broker restart, overflow, and device loss. Each
+  transition immediately makes input unavailable and latches it off until a
+  complete safe state is re-established.
+- **Retained privilege:** define opening ownership, UID/GID changes,
+  capabilities, namespaces, filesystem and `/proc` visibility, executable
+  access, resource limits, syscall restrictions, crash behavior, and log data.
+- **IPC exposure:** define the private pathname, owner and mode, peer-credential
+  checks, session binding, framing bounds, reconnect rules, and denial of raw
+  event fields. No peer chooses devices or clears a latched stop remotely.
+- **Maintenance:** define which package owns policy and service files, how
+  upgrades preserve fail-closed state, and how uninstall removes authority and
+  stale runtime objects.
+
+Answers belong in a separately approved deployment contract. An
+implementation cannot be used to discover the answers after the fact.
+
 ## Candidate X11 action contract
 
 If the broker authority is approved, every input request must still pass a
@@ -152,6 +223,48 @@ is insufficient because another top-level or override-redirect window may
 cover it. Keyboard actions require the actual input focus to be the target or
 one of its descendants; the provider must not force focus as a fallback.
 
+## Verification before implementation
+
+The first code milestone, if the authority and deployment design are approved,
+is the hostile test boundary—not XTEST realization. It must establish both
+positive behavior and absence of authority.
+
+Negative-authority tests must show that:
+
+- the broker's deployed confinement cannot reach an X11 socket, execute an
+  arbitrary program, inspect ordinary application metadata, open unrelated
+  files, inject input, or expose raw input fields over IPC;
+- the provider cannot open evdev or uinput devices, including when the test
+  account would otherwise have filesystem permission;
+- the companion cannot access broker IPC, XTEST, raw input, grants, or launch
+  realization, and its X11 use remains selection-only discovery; and
+- the harness reaches desktop authority only through the companion/provider
+  protocols and cannot administer the broker through either one.
+
+The enforcement mechanism for each `cannot` must be named and exercised. A
+source-code convention, missing dependency, or currently restrictive file mode
+is useful defense in depth but is not by itself proof of runtime confinement.
+
+The hostile action suite must deterministically cover:
+
+- missing or partial device coverage, `SYN_DROPPED`, hotplug, device removal,
+  broker restart, IPC loss, suspend, lock, logout, inactive session, and VT
+  switch;
+- activity before the first epoch check, between both epoch checks, during the
+  single action, and immediately after synchronization;
+- scope, generation, focus, stacking, geometry, and hit-test changes at every
+  check boundary, including a new override-redirect window over the point;
+- target destruction during the server grab and X11 errors at every send and
+  synchronization boundary;
+- press/release failure at each partial modifier, key, and button state, with
+  observable cleanup and no logically held input; and
+- exact typed results and the documented maximum of one overlapping atomic
+  action, without accepting logs as pass evidence.
+
+Tests use isolated synthetic evdev fixtures and Xvfb/Openbox, never the
+person's live display or input devices. If a race cannot be made deterministic,
+the contract is not implementable yet and T5 remains stopped.
+
 ## Approval gates
 
 No revision-4 schema or implementation begins until all of these are accepted:
@@ -168,9 +281,17 @@ No revision-4 schema or implementation begins until all of these are accepted:
 - **Interruption gate:** prove pre-action refusal, between-action cancellation,
   overflow/hotplug/disconnect latching, cleanup of pressed state, and the
   documented worst-case single-action overlap.
+- **Negative-authority gate:** name and test the confinement that prevents each
+  process from acquiring the forbidden authorities in the inventory.
+- **Test-first gate:** approve deterministic hostile fixtures and land their
+  failure contracts before XTEST realization.
 
 If any gate cannot be met, T5 remains unsupported. The existing revision-3
 feature list and MCP surface do not change.
+
+The governing rule is: Tier 0 must never acquire extra machine authority merely
+to imitate a guarantee that Tier 1 gets naturally from owning the display
+server. A useful Tier 0 release does not depend on input support.
 
 ## Standards consulted
 

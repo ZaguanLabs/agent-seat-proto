@@ -119,6 +119,12 @@ at
 No Nobox source, schema, test, fixture, comments, or prose was consulted or
 adapted. The review adds no code or dependency.
 
+The later process-authority inventory, deployment questions,
+negative-authority requirements, hostile-test ordering, and governing Tier 0
+rule incorporate direct maintainer review of that original document. They add
+no external implementation source, schema, fixture, dependency, or product
+prose.
+
 ## First-run configuration workflow
 
 The generated configuration template, creation behavior, CLI guidance,
