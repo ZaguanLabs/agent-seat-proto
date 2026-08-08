@@ -182,4 +182,3 @@ feature list and MCP surface do not change.
   <https://docs.kernel.org/input/uinput.html>
 - systemd-logind session control and device access:
   <https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html>
-
