@@ -30,6 +30,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `agent-seat-settings` 0.1.2 now switches application admission modes
+  reliably when an allow-list already exists. The provider-owned draft clears
+  only allow entries that are invalid outside allow-list mode, preserves deny
+  entries and the user-entry gate, and keeps the resulting change reviewable
+  before saving. `agent-seat-x11` is patch-bumped to 0.1.11 for that draft API.
 - `agent-seat-x11` 0.1.9 preserves existing TOML comments and layout across
   typed Settings edits while still validating the exact rendered source. It
   also exposes bounded default-policy creation and recovery-path discovery so

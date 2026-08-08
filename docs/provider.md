@@ -1,6 +1,6 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core. `agent-seat-x11` 0.1.10 owns lifecycle, policy, local
+Status: T3 Tier 0 core. `agent-seat-x11` 0.1.11 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`

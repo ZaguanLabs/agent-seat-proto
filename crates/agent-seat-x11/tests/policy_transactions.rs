@@ -175,6 +175,42 @@ fn typed_draft_edits_render_and_commit_through_the_exact_policy_validator() {
 }
 
 #[test]
+fn launch_mode_transitions_clear_only_incompatible_allow_entries() {
+    let directory = FixtureDir::new("launch-mode-transition");
+    let source = "enabled = false\n\
+                  [launch]\n\
+                  mode = \"allow_listed\"\n\
+                  allow = [\"brave-browser.desktop\"]\n\
+                  deny = [\"blocked.desktop\"]\n\
+                  allow_user_entries = true\n";
+    let path = directory.policy(source);
+    let snapshot = read_policy(&path).expect("read transition policy");
+    let mut draft = snapshot.draft();
+    let blocked = ApplicationId::new("blocked.desktop").expect("blocked desktop ID");
+
+    draft
+        .set_launch_mode(LaunchMode::AllowInstalled)
+        .expect("switch to installed mode");
+    assert_eq!(draft.launch_mode(), LaunchMode::AllowInstalled);
+    assert!(draft.launch_allow().is_empty());
+    assert_eq!(draft.launch_deny(), std::slice::from_ref(&blocked));
+    assert!(draft.allows_user_entries());
+
+    draft
+        .set_launch_mode(LaunchMode::Deny)
+        .expect("switch to deny mode");
+    assert_eq!(draft.launch_mode(), LaunchMode::Deny);
+    assert_eq!(draft.launch_deny(), std::slice::from_ref(&blocked));
+
+    draft
+        .set_launch_mode(LaunchMode::AllowListed)
+        .expect("switch back to listed mode");
+    assert_eq!(draft.launch_mode(), LaunchMode::AllowListed);
+    assert!(draft.launch_allow().is_empty());
+    assert_eq!(draft.launch_deny(), std::slice::from_ref(&blocked));
+}
+
+#[test]
 fn typed_draft_safely_edits_valid_inline_tables() {
     let directory = FixtureDir::new("inline-draft");
     let uid = geteuid().as_raw();

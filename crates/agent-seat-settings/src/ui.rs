@@ -629,20 +629,18 @@ impl Ui {
             .launch_mode
             .connect_selected_notify(move |mode| {
                 let selected = mode.selected();
-                apply_weak(&weak, move |draft| {
-                    let mode = match selected {
-                        0 => LaunchMode::Deny,
-                        1 => LaunchMode::AllowListed,
-                        2 => LaunchMode::AllowInstalled,
-                        _ => return Err("unknown launch mode selection".to_owned()),
-                    };
-                    draft.set_launch(
-                        mode,
-                        draft.launch_allow().to_vec(),
-                        draft.launch_deny().to_vec(),
-                        draft.allows_user_entries(),
-                    )
-                });
+                let mode = match selected {
+                    0 => Ok(LaunchMode::Deny),
+                    1 => Ok(LaunchMode::AllowListed),
+                    2 => Ok(LaunchMode::AllowInstalled),
+                    _ => Err("unknown launch mode selection".to_owned()),
+                };
+                if let Some(ui) = weak.upgrade() {
+                    match mode {
+                        Ok(mode) => ui.change_launch_mode(mode),
+                        Err(error) => ui.error(&error),
+                    }
+                }
             });
 
         let weak = Rc::downgrade(self);
@@ -909,6 +907,26 @@ impl Ui {
         }
     }
 
+    fn change_launch_mode(&self, mode: LaunchMode) {
+        if self.updating.get() {
+            return;
+        }
+        let clears_allow = mode != LaunchMode::AllowListed
+            && !self.model.borrow().draft().launch_allow().is_empty();
+        let result = self
+            .model
+            .borrow_mut()
+            .edit(|draft| draft.set_launch_mode(mode));
+        match result {
+            Ok(()) if clears_allow => self.success(
+                "Admission mode changed. Allow-list entries that do not apply in this mode were removed from the draft; review before saving.",
+            ),
+            Ok(()) => self.clear_message(),
+            Err(error) => self.error(&error),
+        }
+        self.refresh();
+    }
+
     fn filter_catalog(&self, query: &str) {
         let query = query.trim().to_lowercase();
         let mut visible = 0_usize;
@@ -1143,6 +1161,7 @@ fn edit_application(
         LaunchMode::Deny => return Err("Choose an allowing launch mode first.".to_owned()),
         LaunchMode::AllowListed => {
             if admitted && !allow.contains(&id) {
+                deny.retain(|entry| *entry != id);
                 allow.push(id);
             } else if !admitted {
                 allow.retain(|entry| *entry != id);
@@ -1362,4 +1381,46 @@ fn build_error_window(application: &Application, error: &str) {
     page.append(&close);
     window.set_child(Some(&page));
     window.present();
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{self, DirBuilder};
+    use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
+
+    use agent_seat_x11::read_policy;
+
+    use super::*;
+
+    struct Fixture(PathBuf);
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn listed_application_selection_removes_a_prior_denial() {
+        let directory =
+            std::env::temp_dir().join(format!("agent-seat-settings-ui-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        let mut builder = DirBuilder::new();
+        builder.mode(0o700).create(&directory).expect("UI fixture");
+        let fixture = Fixture(directory);
+        let path = fixture.0.join("config.toml");
+        fs::write(
+            &path,
+            "enabled = false\n[launch]\nmode = \"allow_listed\"\ndeny = [\"blocked.desktop\"]\n",
+        )
+        .expect("write UI policy");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("secure UI policy");
+        let mut draft = read_policy(&path).expect("read UI policy").draft();
+        let blocked = ApplicationId::new("blocked.desktop").expect("blocked desktop ID");
+
+        edit_application(&mut draft, blocked.clone(), true).expect("admit blocked application");
+
+        assert_eq!(draft.launch_allow(), std::slice::from_ref(&blocked));
+        assert!(draft.launch_deny().is_empty());
+    }
 }

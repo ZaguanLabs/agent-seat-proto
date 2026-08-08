@@ -393,6 +393,30 @@ impl PolicyDraft {
         self.raw.launch.allow_user_entries
     }
 
+    /// Changes application admission mode as one valid draft edit.
+    ///
+    /// Leaving allow-list mode clears its mode-specific allow entries. Deny
+    /// entries and the user-entry gate remain unchanged so they still apply
+    /// if the selected mode uses them.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the prospective complete policy is invalid. The
+    /// draft is unchanged on error.
+    pub fn set_launch_mode(&mut self, mode: LaunchMode) -> Result<(), String> {
+        let allow = if mode == LaunchMode::AllowListed {
+            self.launch_allow().to_vec()
+        } else {
+            Vec::new()
+        };
+        self.set_launch(
+            mode,
+            allow,
+            self.launch_deny().to_vec(),
+            self.allows_user_entries(),
+        )
+    }
+
     /// Replaces the complete launch policy as one validated edit.
     ///
     /// # Errors
