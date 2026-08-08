@@ -103,8 +103,9 @@ titles = false
 # `allow_installed` admits every valid discovered desktop entry except `deny`.
 mode = "deny"
 
-# Canonical desktop IDs end in `.desktop`. `allow` must stay empty unless mode
-# is `allow_listed`; an ID cannot appear in both lists.
+# Canonical desktop IDs end in `.desktop`. `allow` is consulted only in
+# `allow_listed` mode but is retained in other modes so a later mode change can
+# restore the selection. An ID cannot appear in both lists.
 allow = []
 deny = []
 
@@ -395,23 +396,18 @@ impl PolicyDraft {
 
     /// Changes application admission mode as one valid draft edit.
     ///
-    /// Leaving allow-list mode clears its mode-specific allow entries. Deny
-    /// entries and the user-entry gate remain unchanged so they still apply
-    /// if the selected mode uses them.
+    /// Allow entries, deny entries, and the user-entry gate remain unchanged.
+    /// The provider consults allow entries only in allow-list mode, allowing a
+    /// later mode change to restore the prior selection without data loss.
     ///
     /// # Errors
     ///
     /// Returns an error if the prospective complete policy is invalid. The
     /// draft is unchanged on error.
     pub fn set_launch_mode(&mut self, mode: LaunchMode) -> Result<(), String> {
-        let allow = if mode == LaunchMode::AllowListed {
-            self.launch_allow().to_vec()
-        } else {
-            Vec::new()
-        };
         self.set_launch(
             mode,
-            allow,
+            self.launch_allow().to_vec(),
             self.launch_deny().to_vec(),
             self.allows_user_entries(),
         )
@@ -421,9 +417,8 @@ impl PolicyDraft {
     ///
     /// # Errors
     ///
-    /// Returns an error for oversized, duplicate, non-canonical, overlapping,
-    /// or mode-incompatible application lists. The draft is unchanged on
-    /// error.
+    /// Returns an error for oversized, duplicate, non-canonical, or
+    /// overlapping application lists. The draft is unchanged on error.
     pub fn set_launch(
         &mut self,
         mode: LaunchMode,
@@ -750,7 +745,15 @@ pub fn recovery_policy_path(path: &Path) -> PathBuf {
     suffixed_path(path, ".previous")
 }
 
-fn lock_policy_directory(path: &Path, uid: u32) -> Result<File, String> {
+struct PolicyLock(File);
+
+impl Drop for PolicyLock {
+    fn drop(&mut self) {
+        let _ = rustix::fs::flock(&self.0, FlockOperation::Unlock);
+    }
+}
+
+fn lock_policy_directory(path: &Path, uid: u32) -> Result<PolicyLock, String> {
     let parent = path
         .parent()
         .ok_or_else(|| format!("configuration path {} has no parent", path.display()))?;
@@ -787,7 +790,7 @@ fn lock_policy_directory(path: &Path, uid: u32) -> Result<File, String> {
             path.display()
         )
     })?;
-    Ok(file)
+    Ok(PolicyLock(file))
 }
 
 fn check_recovery_target(path: &Path, uid: u32) -> Result<bool, String> {
@@ -1155,9 +1158,6 @@ impl RawLaunch {
     fn validate(self) -> Result<LaunchPolicy, String> {
         validate_application_ids("launch.allow", &self.allow)?;
         validate_application_ids("launch.deny", &self.deny)?;
-        if self.mode != LaunchMode::AllowListed && !self.allow.is_empty() {
-            return Err("launch.allow is valid only in allow_listed mode".to_owned());
-        }
         if self
             .allow
             .iter()
@@ -1208,6 +1208,40 @@ const fn default_io_timeout_ms() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new(label: &str) -> Self {
+            let path =
+                env::temp_dir().join(format!("agent-seat-config-{label}-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&path);
+            let mut builder = DirBuilder::new();
+            builder.mode(0o700).create(&path).expect("test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn policy_lock_drop_unlocks_an_inherited_descriptor() {
+        let directory = TestDirectory::new("explicit-unlock");
+        let policy = directory.0.join("config.toml");
+        let lock = lock_policy_directory(&policy, geteuid().as_raw()).expect("first lock");
+        let inherited = lock.0.try_clone().expect("duplicate lock descriptor");
+
+        drop(lock);
+
+        let replacement =
+            lock_policy_directory(&policy, geteuid().as_raw()).expect("lock after explicit unlock");
+        drop(inherited);
+        drop(replacement);
+    }
 
     #[test]
     fn disabled_policy_is_valid_but_unknown_and_unbounded_values_are_rejected() {
@@ -1280,6 +1314,15 @@ mod tests {
         assert!(!defaults.launch_policy().allows_any());
         assert!(!defaults.launch_policy().permits(&application, false));
 
+        let inactive_list: RawConfig =
+            toml::from_str("enabled = true\n[launch]\nallow = [\"example.desktop\"]")
+                .expect("parse inactive allow-list");
+        let inactive_list = inactive_list
+            .validate(uid)
+            .expect("validate inactive allow-list");
+        assert!(!inactive_list.launch_policy().allows_any());
+        assert!(!inactive_list.launch_policy().permits(&application, false));
+
         let listed: RawConfig = toml::from_str(
             "enabled = true\n[launch]\nmode = \"allow_listed\"\n\
              allow = [\"example.desktop\"]\nallow_user_entries = true",
@@ -1301,7 +1344,6 @@ mod tests {
         assert!(!installed.launch_policy().permits(&other, true));
 
         for source in [
-            "enabled = true\n[launch]\nallow = [\"example.desktop\"]",
             "enabled = true\n[launch]\nmode = \"allow_listed\"\nallow = [\"bad/id.desktop\"]",
             "enabled = true\n[launch]\nmode = \"allow_listed\"\nallow = [\"same.desktop\"]\ndeny = [\"same.desktop\"]",
         ] {

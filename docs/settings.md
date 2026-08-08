@@ -60,9 +60,9 @@ The pages divide one policy into bounded tasks:
   workspaces and independently gates title text.
 - **Applications** selects deny, allow-list, or allow-installed mode and shows
   the provider's bounded XDG catalog. Canonical desktop IDs and user-entry
-  status remain visible. Search only filters this in-memory catalog. Changing
-  away from allow-list mode removes its now-inapplicable allow entries from the
-  draft, reports that conversion inline, and leaves it visible in Review.
+  status remain visible. Search only filters this in-memory catalog. Each mode
+  retains its bounded selections in the saved policy, while the provider
+  consults only the entries applicable to the active mode.
 - **Limits** controls the published session, request, and I/O timeout bounds.
 - **Review** shows the exact removed and added policy lines and the result of
   strict candidate validation.

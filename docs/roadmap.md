@@ -2,7 +2,7 @@
 
 Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
 complete. The Tier 0 core and C0 shipped in product release v0.1.0; S0 is
-complete on `main` in `agent-seat-settings` 0.1.2 and `agent-seat-x11` 0.1.11.
+complete on `main` in `agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12.
 E0 evidence is recorded in [`e0-verification.md`](e0-verification.md).
 
 ## Goals
@@ -147,7 +147,7 @@ incompatibility, and untested combinations without relying on source sharing.
 
 ## S0 — settings application
 
-Status: complete in `agent-seat-settings` 0.1.2 and `agent-seat-x11` 0.1.11,
+Status: complete in `agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12,
 2026-08-08. The provider library owns exact validation, a typed bounded draft,
 comment-preserving rendering, provider-identical XDG catalog discovery,
 race-aware atomic replacement, private recovery, and lock-held active-policy

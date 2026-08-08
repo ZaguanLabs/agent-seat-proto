@@ -1,6 +1,6 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core. `agent-seat-x11` 0.1.11 owns lifecycle, policy, local
+Status: T3 Tier 0 core. `agent-seat-x11` 0.1.12 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -198,13 +198,15 @@ omitted grant denies every peer.
 | `observation.clients` | `none` | `none`, `current_workspace`, `all_workspaces` |
 | `observation.titles` | `false` | boolean |
 | `launch.mode` | `deny` | `deny`, `allow_listed`, `allow_installed` |
-| `launch.allow` | empty | at most 256 unique canonical desktop IDs; only with `allow_listed` |
+| `launch.allow` | empty | at most 256 unique canonical desktop IDs; consulted only with `allow_listed` |
 | `launch.deny` | empty | at most 256 unique canonical desktop IDs |
 | `launch.allow_user_entries` | `false` | boolean |
 
 `deny` exposes and launches nothing. `allow_listed` admits only IDs in
 `allow`, after applying `deny`. `allow_installed` admits each valid discovered
-entry except IDs in `deny`. In every mode, a winning entry from
+entry except IDs in `deny`. An inactive `allow` list remains saved when another
+mode is selected but grants nothing until `allow_listed` is selected again. In
+every mode, a winning entry from
 `$XDG_DATA_HOME/applications` remains refused unless
 `allow_user_entries = true`. User entries retain XDG precedence, so a denied
 user override also shadows a lower-priority system entry with the same ID.

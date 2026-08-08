@@ -911,16 +911,11 @@ impl Ui {
         if self.updating.get() {
             return;
         }
-        let clears_allow = mode != LaunchMode::AllowListed
-            && !self.model.borrow().draft().launch_allow().is_empty();
         let result = self
             .model
             .borrow_mut()
             .edit(|draft| draft.set_launch_mode(mode));
         match result {
-            Ok(()) if clears_allow => self.success(
-                "Admission mode changed. Allow-list entries that do not apply in this mode were removed from the draft; review before saving.",
-            ),
             Ok(()) => self.clear_message(),
             Err(error) => self.error(&error),
         }
@@ -1171,6 +1166,7 @@ fn edit_application(
             if admitted {
                 deny.retain(|entry| *entry != id);
             } else if !deny.contains(&id) {
+                allow.retain(|entry| *entry != id);
                 deny.push(id);
             }
         }
@@ -1401,7 +1397,7 @@ mod tests {
     }
 
     #[test]
-    fn listed_application_selection_removes_a_prior_denial() {
+    fn application_selection_keeps_allow_and_deny_lists_consistent() {
         let directory =
             std::env::temp_dir().join(format!("agent-seat-settings-ui-{}", std::process::id()));
         let _ = fs::remove_dir_all(&directory);
@@ -1422,5 +1418,12 @@ mod tests {
 
         assert_eq!(draft.launch_allow(), std::slice::from_ref(&blocked));
         assert!(draft.launch_deny().is_empty());
+
+        draft
+            .set_launch_mode(LaunchMode::AllowInstalled)
+            .expect("switch UI policy to installed mode");
+        edit_application(&mut draft, blocked.clone(), false).expect("deny installed application");
+        assert!(draft.launch_allow().is_empty());
+        assert_eq!(draft.launch_deny(), std::slice::from_ref(&blocked));
     }
 }

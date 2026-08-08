@@ -175,7 +175,7 @@ fn typed_draft_edits_render_and_commit_through_the_exact_policy_validator() {
 }
 
 #[test]
-fn launch_mode_transitions_clear_only_incompatible_allow_entries() {
+fn launch_mode_transitions_preserve_inactive_allow_entries() {
     let directory = FixtureDir::new("launch-mode-transition");
     let source = "enabled = false\n\
                   [launch]\n\
@@ -186,15 +186,23 @@ fn launch_mode_transitions_clear_only_incompatible_allow_entries() {
     let path = directory.policy(source);
     let snapshot = read_policy(&path).expect("read transition policy");
     let mut draft = snapshot.draft();
+    let brave = ApplicationId::new("brave-browser.desktop").expect("Brave desktop ID");
     let blocked = ApplicationId::new("blocked.desktop").expect("blocked desktop ID");
 
     draft
         .set_launch_mode(LaunchMode::AllowInstalled)
         .expect("switch to installed mode");
     assert_eq!(draft.launch_mode(), LaunchMode::AllowInstalled);
-    assert!(draft.launch_allow().is_empty());
+    assert_eq!(draft.launch_allow(), std::slice::from_ref(&brave));
     assert_eq!(draft.launch_deny(), std::slice::from_ref(&blocked));
     assert!(draft.allows_user_entries());
+
+    let installed_source = draft.render().expect("render installed mode");
+    let installed = replace_policy(&snapshot, &installed_source).expect("save installed mode");
+    assert_eq!(
+        installed.draft().launch_allow(),
+        std::slice::from_ref(&brave)
+    );
 
     draft
         .set_launch_mode(LaunchMode::Deny)
@@ -206,7 +214,7 @@ fn launch_mode_transitions_clear_only_incompatible_allow_entries() {
         .set_launch_mode(LaunchMode::AllowListed)
         .expect("switch back to listed mode");
     assert_eq!(draft.launch_mode(), LaunchMode::AllowListed);
-    assert!(draft.launch_allow().is_empty());
+    assert_eq!(draft.launch_allow(), std::slice::from_ref(&brave));
     assert_eq!(draft.launch_deny(), std::slice::from_ref(&blocked));
 }
 

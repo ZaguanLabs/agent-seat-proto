@@ -30,11 +30,17 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `agent-seat-settings` 0.1.3 preserves the bounded allow-list when switching
+  among application admission modes and across saves. The provider consults
+  that list only in allow-list mode, so inactive selections grant nothing but
+  return when the person switches back. `agent-seat-x11` is patch-bumped to
+  0.1.12 for the retained-list policy semantics. Policy transactions now also
+  unlock explicitly on drop so a concurrent process spawn cannot retain a
+  transient inherited lock until `exec`.
 - `agent-seat-settings` 0.1.2 now switches application admission modes
-  reliably when an allow-list already exists. The provider-owned draft clears
-  only allow entries that are invalid outside allow-list mode, preserves deny
-  entries and the user-entry gate, and keeps the resulting change reviewable
-  before saving. `agent-seat-x11` is patch-bumped to 0.1.11 for that draft API.
+  reliably when an allow-list already exists. Version 0.1.3 supersedes its
+  initial list-normalization behavior with lossless retained selections.
+  `agent-seat-x11` was patch-bumped to 0.1.11 for that draft API.
 - `agent-seat-x11` 0.1.9 preserves existing TOML comments and layout across
   typed Settings edits while still validating the exact rendered source. It
   also exposes bounded default-policy creation and recovery-path discovery so
