@@ -62,3 +62,12 @@ for safe kernel peer credentials and process identity, and `signal-hook` 0.3
 (Apache-2.0 OR MIT) for safe shutdown flags. Their canonical upstreams are
 <https://github.com/toml-rs/toml>, <https://github.com/bytecodealliance/rustix>,
 and <https://github.com/vorner/signal-hook>.
+
+## T1 observation
+
+The bounded EWMH sampler, per-session identity model, diff queue, scope and
+title policy, and Openbox process fixtures are original work written for this
+repository. EWMH property names, types, meanings, and client-message behavior
+use the freedesktop.org specification linked above. Openbox 3.6.1 and Xvfb are
+used only through their public process and X11 behavior as external regression
+oracles. No Nobox source, schema, fixture, or prose was used.

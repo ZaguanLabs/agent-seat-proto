@@ -27,12 +27,33 @@ pub(crate) struct Config {
     max_requests: u16,
     io_timeout: Duration,
     grant: Option<Grant>,
+    observation: Observation,
 }
 
 #[derive(Clone, Debug)]
 struct Grant {
     uid: u32,
     capabilities: BoundedList<Capability, MAX_CAPABILITIES>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ClientScope {
+    None,
+    CurrentWorkspace,
+    AllWorkspaces,
+}
+
+impl Default for ClientScope {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Observation {
+    clients: ClientScope,
+    titles: bool,
 }
 
 impl Config {
@@ -113,6 +134,14 @@ impl Config {
                 .collect(),
         )
     }
+
+    pub(crate) const fn client_scope(&self) -> ClientScope {
+        self.observation.clients
+    }
+
+    pub(crate) const fn titles_enabled(&self) -> bool {
+        self.observation.titles
+    }
 }
 
 pub(crate) fn default_path() -> Result<PathBuf, String> {
@@ -145,6 +174,8 @@ struct RawConfig {
     io_timeout_ms: u32,
     #[serde(default)]
     grant: Option<RawGrant>,
+    #[serde(default)]
+    observation: RawObservation,
 }
 
 impl RawConfig {
@@ -174,6 +205,10 @@ impl RawConfig {
             max_requests: self.max_requests_per_session,
             io_timeout: Duration::from_millis(u64::from(self.io_timeout_ms)),
             grant,
+            observation: Observation {
+                clients: self.observation.clients,
+                titles: self.observation.titles,
+            },
         })
     }
 }
@@ -201,11 +236,34 @@ impl RawGrant {
         {
             return Err("grant capabilities must not contain duplicates".to_owned());
         }
+        if self.capabilities.contains(&Capability::ObserveTitles)
+            && !self.capabilities.contains(&Capability::ObserveStructure)
+        {
+            return Err("observe_titles requires observe_structure".to_owned());
+        }
+        if self.capabilities.contains(&Capability::ObserveEvents)
+            && !self.capabilities.contains(&Capability::ObserveStructure)
+        {
+            return Err("observe_events requires observe_structure".to_owned());
+        }
         Ok(Grant {
             uid: self.uid,
             capabilities: self.capabilities,
         })
     }
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawObservation {
+    #[serde(default = "default_client_scope")]
+    clients: ClientScope,
+    #[serde(default)]
+    titles: bool,
+}
+
+const fn default_client_scope() -> ClientScope {
+    ClientScope::None
 }
 
 const fn default_max_sessions() -> u8 {
@@ -237,6 +295,43 @@ mod tests {
             let accepted = toml::from_str::<RawConfig>(source)
                 .is_ok_and(|raw| raw.validate(geteuid().as_raw()).is_ok());
             assert!(!accepted, "accepted {source:?}");
+        }
+    }
+
+    #[test]
+    fn observation_is_deny_by_default_and_strict() {
+        let uid = geteuid().as_raw();
+        let defaults: RawConfig = toml::from_str("enabled = true").expect("parse defaults");
+        let defaults = defaults.validate(uid).expect("validate defaults");
+        assert_eq!(defaults.client_scope(), ClientScope::None);
+        assert!(!defaults.titles_enabled());
+
+        let explicit: RawConfig = toml::from_str(
+            "enabled = true\n[observation]\nclients = \"current_workspace\"\ntitles = true",
+        )
+        .expect("parse explicit observation");
+        let explicit = explicit
+            .validate(uid)
+            .expect("validate explicit observation");
+        assert_eq!(explicit.client_scope(), ClientScope::CurrentWorkspace);
+        assert!(explicit.titles_enabled());
+
+        for source in [
+            "enabled = true\n[observation]\nclients = \"somewhere\"",
+            "enabled = true\n[observation]\nunknown = true",
+        ] {
+            assert!(toml::from_str::<RawConfig>(source).is_err());
+        }
+    }
+
+    #[test]
+    fn sensitive_observation_grants_require_structure() {
+        let uid = geteuid().as_raw();
+        for capability in ["observe_titles", "observe_events"] {
+            let source =
+                format!("enabled = true\n[grant]\nuid = {uid}\ncapabilities = [\"{capability}\"]");
+            let raw: RawConfig = toml::from_str(&source).expect("parse incomplete grant");
+            assert!(raw.validate(uid).is_err(), "accepted {capability}");
         }
     }
 

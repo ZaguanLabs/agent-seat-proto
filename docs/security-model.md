@@ -1,6 +1,6 @@
 # Security model
 
-Status: T0 foundation. Feature-specific analysis expands before each
+Status: T1 observation. Feature-specific analysis expands before each later
 implementation milestone.
 
 E1 supplies strict bounded wire decoding and an authority-free companion. A
@@ -12,6 +12,13 @@ T0 supplies the policy boundary: a private pathname socket, kernel
 grant, bounded sessions, and atomic selection ownership. It deliberately
 provides no cross-user isolation and no protection from another process that
 already has the session owner's X11 authority.
+
+T1 adds independently sampled EWMH observation. Client enumeration is disabled
+by default. Scope filtering happens before title allocation, titles require
+both an explicit policy switch and a session capability, raw XIDs are replaced
+with per-session opaque IDs, and all properties, scans, strings, queues, polls,
+and waits have fixed bounds. Clients that leave a visibility scope lose their
+identity and receive a new one if they return.
 
 The standalone provider is a policy boundary against accidental overreach,
 malformed peers, and a compromised translator. It is not an isolation boundary
@@ -42,6 +49,10 @@ against another process that already has the same user's X11 authority.
   accidental conforming duplicates, not malicious selection theft.
 - Raw X11 resource identifiers do not cross the provider boundary.
 - Missing, hidden, and out-of-scope direct client lookups are indistinguishable.
+- Optional malformed client metadata is omitted; malformed or absent required
+  desktop structure fails the observation instead of inventing state.
+- Event diffs are sampled and may require a snapshot resynchronization; they
+  are never represented as atomic window-manager notifications.
 - Buffers, frames, peers, queues, scans, strings, retries, and deadlines are
   finite before allocation or blocking work.
 - Mutation distinguishes no-send decisions from sent but unobserved outcomes.
@@ -51,3 +62,8 @@ against another process that already has the same user's X11 authority.
 Same-user X11 clients may inspect or spoof desktop state and bypass the
 provider entirely. Stronger isolation requires a different OS user/session or
 a display architecture with an enforceable security boundary.
+
+Between property reads, a client or window manager can change or destroy a
+window. The provider therefore guarantees bounded, convergent observation—not
+an atomic view—and uses generations and resynchronization to make freshness
+loss explicit. XID reuse between samples is an inherent X11 observation limit.

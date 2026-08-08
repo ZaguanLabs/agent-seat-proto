@@ -1,12 +1,13 @@
 # Compatibility matrix
 
-T0 verifies the provider lifecycle and revision-3 status boundary beside bare
-Xvfb and released Openbox. Observation, management, and launch remain absent,
-so this is not yet Tier 0 core compatibility.
+T1 verifies provider lifecycle and bounded revision-3 observation beside bare
+Xvfb and released Openbox. Management and launch remain absent, so this is not
+yet complete Tier 0 core compatibility.
 
 | Protocol crate | Companion | Provider | Backend/WM | Status |
 | --- | --- | --- | --- | --- |
 | 0.1.1 / revision 3 | 0.1.1 | 0.1.1 / `x11_ewmh`, `tier0` | Linux, Openbox 3.6.1 / Xvfb | T0 foundation verified; core features absent |
+| 0.1.1 / revision 3 | 0.1.1 | 0.1.2 / `x11_ewmh`, `tier0`, `ewmh_observation` | Linux, Openbox 3.6.1 / Xvfb | T1 scoped snapshots, filtered diffs, title redaction, and resync verified |
 
 Future entries name exact released versions, advertised wire revision,
 backend features, tested window manager and X server, and one of: compatible,

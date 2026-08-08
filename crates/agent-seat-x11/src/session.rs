@@ -6,13 +6,15 @@ use std::sync::Arc;
 
 use agent_seat_proto::{
     Assurance, Backend, BoundedList, BoundedText, Call, ClientMessage, Diagnostic, ErrorCode,
-    Goodbye, Limits, MAX_EVENTS, MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES, Outcome,
-    PROTOCOL_NAME, PROTOCOL_REVISION, ProtocolError, ProviderInfo, ReadFrame, Reply, Request,
-    Response, Retry, Sequence, ServerMessage, SessionId, Welcome, read_frame, write_frame,
+    Feature, Goodbye, Limits, MAX_EVENTS, MAX_POLL_WAIT_MS, MAX_REQUEST_FRAME_BYTES,
+    MAX_RESPONSE_FRAME_BYTES, Outcome, PROTOCOL_NAME, PROTOCOL_REVISION, ProtocolError,
+    ProviderInfo, ReadFrame, Reply, Request, Response, Retry, Sequence, ServerMessage, SessionId,
+    Welcome, read_frame, write_frame,
 };
 use rustix::net::sockopt::socket_peercred;
 
 use crate::config::Config;
+use crate::observer::{Failure as ObservationFailure, Observer};
 
 pub(crate) fn run(
     mut stream: UnixStream,
@@ -63,13 +65,14 @@ pub(crate) fn run(
         },
         backend: Backend::X11Ewmh,
         assurance: Assurance::Tier0,
-        features: BoundedList::default(),
+        features: BoundedList::new(vec![Feature::EwmhObservation])
+            .map_err(|error| format!("provider feature list exceeded wire bounds: {error}"))?,
         granted: granted.clone(),
         limits: Limits {
             request_frame_bytes: MAX_REQUEST_FRAME_BYTES as u32,
             response_frame_bytes: MAX_RESPONSE_FRAME_BYTES as u32,
             events_per_poll: MAX_EVENTS as u16,
-            poll_wait_ms: 0,
+            poll_wait_ms: MAX_POLL_WAIT_MS,
         },
     };
     write_frame(
@@ -79,6 +82,7 @@ pub(crate) fn run(
     )
     .map_err(|error| format!("cannot write session welcome: {error}"))?;
 
+    let mut observer = None;
     for _ in 0..config.max_requests() {
         let message = match read_frame(&mut stream, MAX_REQUEST_FRAME_BYTES)
             .map_err(|error| format!("cannot read session request: {error}"))?
@@ -88,7 +92,7 @@ pub(crate) fn run(
         };
         match message {
             ClientMessage::Request(request) => {
-                let response = handle(request, session, &granted);
+                let response = handle(request, session, &granted, &config, &mut observer);
                 write_frame(
                     &mut stream,
                     &ServerMessage::Response(response),
@@ -126,31 +130,93 @@ fn handle(
     request: Request,
     session: SessionId,
     granted: &[agent_seat_proto::Capability],
+    config: &Config,
+    observer: &mut Option<Observer>,
 ) -> Response {
-    let outcome = if !granted.contains(&request.call.required_capability()) {
+    let outcome = if !authorized(&request.call, granted) {
         protocol_error(
             ErrorCode::Refused,
             Retry::Never,
             "capability was not granted",
         )
     } else {
-        match request.call {
-            Call::SeatStatus(_) => Outcome::Ok(Reply::SeatStatus(agent_seat_proto::SeatStatus {
-                session,
-                sequence: Sequence::new(0),
-                assurance: Assurance::Tier0,
-            })),
-            _ => protocol_error(
-                ErrorCode::Unsupported,
-                Retry::Never,
-                "operation is not implemented by the T0 foundation",
-            ),
-        }
+        observe_call(request.call, session, granted, config, observer)
     };
     Response {
         id: request.id,
         outcome,
     }
+}
+
+fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
+    granted.contains(&call.required_capability())
+}
+
+fn observe_call(
+    call: Call,
+    session: SessionId,
+    granted: &[agent_seat_proto::Capability],
+    config: &Config,
+    observer: &mut Option<Observer>,
+) -> Outcome {
+    let result = match call {
+        Call::SeatStatus(_) => {
+            return Outcome::Ok(Reply::SeatStatus(agent_seat_proto::SeatStatus {
+                session,
+                sequence: observer
+                    .as_ref()
+                    .map_or(Sequence::new(0), Observer::sequence),
+                assurance: Assurance::Tier0,
+            }));
+        }
+        Call::DesktopSnapshot(_) => observer_for(observer, granted, config)
+            .and_then(Observer::snapshot)
+            .map(Reply::DesktopSnapshot),
+        Call::EventsSubscribe(arguments) => observer_for(observer, granted, config)
+            .and_then(|observer| observer.subscribe(&arguments.kinds))
+            .map(Reply::Subscribed),
+        Call::EventsPoll(arguments) => observer_for(observer, granted, config)
+            .and_then(|observer| observer.poll(arguments.after, arguments.limit, arguments.wait_ms))
+            .map(Reply::Events),
+        _ => {
+            return protocol_error(
+                ErrorCode::Unsupported,
+                Retry::Never,
+                "operation is not implemented by the T1 observer",
+            );
+        }
+    };
+    match result {
+        Ok(reply) => Outcome::Ok(reply),
+        Err(error) => observation_error(error),
+    }
+}
+
+fn observer_for<'a>(
+    observer: &'a mut Option<Observer>,
+    granted: &[agent_seat_proto::Capability],
+    config: &Config,
+) -> Result<&'a mut Observer, ObservationFailure> {
+    if observer.is_none() {
+        let show_titles = config.titles_enabled()
+            && granted.contains(&agent_seat_proto::Capability::ObserveTitles);
+        let connected = Observer::connect(config.client_scope(), show_titles)?;
+        *observer = Some(connected);
+    }
+    observer
+        .as_mut()
+        .ok_or_else(|| ObservationFailure::internal("observer initialization failed"))
+}
+
+fn observation_error(error: ObservationFailure) -> Outcome {
+    Outcome::Error(ProtocolError {
+        code: error.code,
+        retry: error.retry,
+        field: None,
+        message: Some(diagnostic(error.message)),
+        current_generation: None,
+        current_sequence: error.current_sequence,
+    })
 }
 
 fn protocol_error(code: ErrorCode, retry: Retry, message: &str) -> Outcome {
@@ -198,21 +264,10 @@ mod tests {
             id: RequestId::new(NonZeroU64::MIN),
             call: Call::SeatStatus(Empty {}),
         };
-        assert!(matches!(
-            handle(request.clone(), SessionId::new(NonZeroU64::MIN), &[]).outcome,
-            Outcome::Error(ProtocolError {
-                code: ErrorCode::Refused,
-                ..
-            })
-        ));
-        assert!(matches!(
-            handle(
-                request,
-                SessionId::new(NonZeroU64::MIN),
-                &[agent_seat_proto::Capability::ObserveStructure]
-            )
-            .outcome,
-            Outcome::Ok(Reply::SeatStatus(_))
+        assert!(!authorized(&request.call, &[]));
+        assert!(authorized(
+            &request.call,
+            &[agent_seat_proto::Capability::ObserveStructure]
         ));
     }
 }

@@ -1,8 +1,8 @@
 # Standalone X11 provider
 
-Status: T0 foundation. `agent-seat-x11` 0.1.1 owns lifecycle, policy, local
-authentication, bounds, and X11 discovery. T1--T3 add observation, management,
-and launch behavior without moving authority into the MCP companion.
+Status: T1 observation. `agent-seat-x11` 0.1.2 owns lifecycle, policy, local
+authentication, X11 discovery, and bounded EWMH observation. T2--T3 add
+management and launch without moving authority into the MCP companion.
 The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
 
 ## Goals
@@ -13,6 +13,10 @@ The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
 - Own one X11 screen without racing or replacing another conforming provider.
 - Keep socket paths, frames, sessions, requests, waits, and configuration
   bounded.
+- Expose only configured client scope, and expose titles only when both policy
+  and the session grant permit them.
+- Use per-session opaque client identities, generations, sequences, filtered
+  diffs, and explicit resynchronization.
 - Remove the private socket and advertisement on clean shutdown while leaving
   Openbox or another window manager independent.
 
@@ -22,8 +26,9 @@ The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
   as authorization identity.
 - Listening on a network or abstract socket, admitting another OS user, or
   daemonizing itself.
-- Implementing observation, management, launch, capture, input, or semantics
-  in the T0 foundation.
+- Treating a sequence of independently sampled EWMH properties as an atomic
+  window-manager transaction.
+- Implementing management, launch, capture, input, or semantics in T1.
 - Providing a consent window or claiming Tier 1 window-manager authority.
 
 ## Configuration
@@ -50,14 +55,20 @@ io_timeout_ms = 2000
 
 [grant]
 uid = 1000
-capabilities = ["observe_structure"]
+capabilities = ["observe_structure", "observe_titles", "observe_events"]
+
+[observation]
+clients = "current_workspace"
+titles = false
 ```
 
 `grant.uid` must equal the provider's effective UID. The private runtime
 directory enforces the same-user boundary and the accepted socket's
 `SO_PEERCRED` UID selects the grant; `hello.peer` remains descriptive.
 Capabilities must be unique and are intersected with the peer's canonically
-ordered request. An omitted grant denies every peer.
+ordered request. `observe_titles` and `observe_events` require
+`observe_structure` in the configured grant. An omitted grant denies every
+peer.
 
 | Setting | Default | Accepted bound |
 | --- | ---: | ---: |
@@ -65,6 +76,8 @@ ordered request. An omitted grant denies every peer.
 | `max_requests_per_session` | 1024 | 1..4096 |
 | `io_timeout_ms` | 2000 | 50..10000 |
 | grant capabilities | empty | at most 10 unique atoms |
+| `observation.clients` | `none` | `none`, `current_workspace`, `all_workspaces` |
+| `observation.titles` | `false` | boolean |
 
 Validate configuration without touching X11 or creating a socket:
 
@@ -101,12 +114,27 @@ capacity beyond `max_sessions`, evicts a peer that does not complete framing
 before its deadline, and ends a session at its request bound. Frames retain
 the revision-3 direction limits.
 
-The T0 foundation implements `seat.status` when `observe_structure` was
-granted. It reports `x11_ewmh`, `tier0`, the exact grant, no implemented backend
-features yet, and sequence zero. Every request is checked against the grant
+The provider advertises `ewmh_observation` and implements `seat.status` and
+`desktop.snapshot` with `observe_structure`, plus `events.subscribe` and
+`events.poll` with `observe_events`. Every request is checked against the grant
 first: missing authority returns `refused`; an authorized call reserved for a
-later milestone returns `unsupported`. T1 changes only the implemented feature
-set and operation realization, not this authority order.
+later milestone returns `unsupported`.
+
+Each session owns a separate X11 observer and opaque client-ID namespace. A
+snapshot samples validated EWMH workspace, client, active-window, geometry,
+state, and allowed-action properties under fixed public bounds. Raw XIDs never
+cross the wire. `observation.clients = "current_workspace"` filters clients
+before titles are read; a client leaving that scope is removed, and returning
+later receives a fresh opaque ID. `observation.titles = true` still requires an
+`observe_titles` session grant.
+
+Events are monotonic diffs between bounded samples, not pushed window-manager
+transactions. An empty subscription filter selects every event class; a
+nonempty filter selects only those classes. Polls are bounded to 1,024 events
+and 30 seconds. A stale, future, or evicted cursor returns `resync_required`
+with the provider's current sequence; taking a snapshot establishes current
+state again. Missing or malformed optional client properties are redacted,
+while absent required EWMH workspace facts fail the observation.
 
 ## Running beside Openbox
 
@@ -121,9 +149,10 @@ leave a recoverable socket or stale root property, but it cannot terminate or
 block Openbox; discovery requires a current selection owner and matching owner
 property, so stale root bytes alone are not live authority.
 
-## T0 end result
+## T1 end result
 
-The foundation is an independently failing, bounded, same-user policy process
-with atomic per-screen ownership and an authenticated revision-3 handshake.
-It is ready for T1 EWMH observation without granting the companion authority
-or claiming that standalone X11 is a strong isolation boundary.
+The provider is an independently failing, bounded, same-user policy process
+whose scoped Openbox snapshots and filtered diffs converge across client
+creation, title, state, workspace, and destruction changes. It does not expose
+raw XIDs or read titles for filtered-out clients, and it does not claim that
+standalone X11 observation is atomic or a strong isolation boundary.

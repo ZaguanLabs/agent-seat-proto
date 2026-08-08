@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod config;
+mod observer;
 mod ownership;
 mod runtime;
 mod session;

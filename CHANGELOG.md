@@ -30,3 +30,10 @@ All notable changes to this project are documented here.
 - Added bare-Xvfb and Openbox process tests for lifecycle, duplicate refusal,
   stale recovery, peer denial, slow-client eviction, selection loss, clean
   shutdown, and window-manager survival after provider failure.
+- Implemented `agent-seat-x11` 0.1.2 T1 observation with strict deny-by-default
+  client scope, independently gated titles, bounded EWMH snapshots,
+  per-session opaque identities, generations, filtered monotonic diffs, and
+  typed resynchronization.
+- Added Openbox process coverage for client creation, title changes,
+  minimize/remap, workspace movement, destruction, scope departure/return,
+  title redaction, event filters, and stale cursors.

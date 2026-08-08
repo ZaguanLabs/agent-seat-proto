@@ -79,7 +79,7 @@ The first client message is `hello`. A provider answers with exactly one
     "revision": 3,
     "peer": {
       "name": "agent-seat-mcp",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "purpose": "translate MCP desktop tools"
     },
     "requested": ["observe_structure", "observe_titles"]

@@ -1,6 +1,6 @@
 # Product roadmap
 
-Status: E0, E1, and T0 complete; T1 is next. Milestones are sequential;
+Status: E0, E1, T0, and T1 complete; T2 is next. Milestones are sequential;
 optional profiles do not delay the Tier 0 core release. E0 evidence is recorded in
 [`e0-verification.md`](e0-verification.md).
 
@@ -55,7 +55,7 @@ refusal, desktop-free MCP startup, and isolated-X11 discovery all pass.
 Status: complete, 2026-08-08. `agent-seat-x11` 0.1.1 provides strict explicit
 configuration, same-user kernel credential grants, bounded sessions, private
 socket recovery, atomic selection ownership, clean withdrawal, and isolated
-Openbox/no-WM lifecycle coverage. Backend features remain empty until T1.
+Openbox/no-WM lifecycle coverage.
 
 Implement explicit enablement, strict configuration, local peer credentials,
 deny-by-default grants, bounded sessions, the private socket, and atomic
@@ -65,6 +65,11 @@ End result: standalone lifecycle, duplicate refusal, stale recovery, peer
 denial, slow-client eviction, and crash isolation pass beside Openbox.
 
 ## T1 — observation
+
+Status: complete, 2026-08-08. `agent-seat-x11` 0.1.2 advertises
+`ewmh_observation` and implements bounded scoped snapshots, separately gated
+titles, opaque session handles, descriptor generations, filtered monotonic
+diffs, and typed resynchronization beside Openbox.
 
 Implement bounded EWMH snapshots, opaque session handles, provider-local
 freshness, filtered titles/scopes, monotonic diffs, and resynchronization.

@@ -13,13 +13,19 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use agent_seat_proto::{
-    BoundedList, BoundedText, Call, Capability, ClientMessage, Empty, ErrorCode, Hello,
-    MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES, PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo,
-    ReadFrame, Reply, Request, RequestId, ServerMessage, read_frame, write_frame,
+    BoundedList, BoundedText, Call, Capability, ClientMessage, DesktopSnapshot, Empty, ErrorCode,
+    Event, EventBatch, EventKind, Hello, MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES,
+    Outcome, PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo, PollRequest, ReadFrame, Reply, Request,
+    RequestId, Sequence, ServerMessage, SubscribeRequest, read_frame, write_frame,
 };
 use rustix::process::{Pid, Signal, geteuid, kill_process};
 use x11rb::connection::Connection as _;
-use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, CreateWindowAux, WindowClass};
+use x11rb::protocol::xproto::{
+    AtomEnum, ClientMessageEvent, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
+    WindowClass,
+};
+use x11rb::rust_connection::RustConnection;
+use x11rb::wrapper::ConnectionExt as _;
 use x11rb::{COPY_DEPTH_FROM_PARENT, CURRENT_TIME, NONE};
 
 static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(1);
@@ -199,9 +205,30 @@ fn write_config(
     path
 }
 
+fn write_observer_config(directory: &Path, scope: &str, titles: bool) -> PathBuf {
+    let path = write_config(
+        directory,
+        &["observe_structure", "observe_titles", "observe_events"],
+        4,
+        1_000,
+    );
+    let source = fs::read_to_string(&path).expect("read base observer config");
+    fs::write(
+        &path,
+        format!("{source}\n[observation]\nclients = \"{scope}\"\ntitles = {titles}\n"),
+    )
+    .expect("write observer config");
+    path
+}
+
 fn hello(stream: &mut UnixStream) -> ServerMessage {
-    let requested = BoundedList::new(vec![Capability::ObserveStructure, Capability::ManageClose])
-        .expect("bounded fixture");
+    hello_with(
+        stream,
+        vec![Capability::ObserveStructure, Capability::ManageClose],
+    )
+}
+
+fn hello_with(stream: &mut UnixStream, requested: Vec<Capability>) -> ServerMessage {
     write_frame(
         stream,
         &ClientMessage::Hello(Hello {
@@ -212,7 +239,7 @@ fn hello(stream: &mut UnixStream) -> ServerMessage {
                 version: BoundedText::new("1").expect("version fixture"),
                 purpose: BoundedText::new("T0 process test").expect("purpose fixture"),
             },
-            requested,
+            requested: BoundedList::new(requested).expect("bounded fixture"),
         }),
         MAX_REQUEST_FRAME_BYTES,
     )
@@ -236,6 +263,205 @@ fn seat_status(stream: &mut UnixStream) -> ServerMessage {
     match read_frame(stream, MAX_RESPONSE_FRAME_BYTES).expect("read status response") {
         ReadFrame::Message(message) => message,
         ReadFrame::CleanEof => panic!("provider closed before status response"),
+    }
+}
+
+fn wire_call(stream: &mut UnixStream, next_id: &mut u64, call: Call) -> Outcome {
+    let id = NonZeroU64::new(*next_id).expect("nonzero request ID");
+    *next_id = next_id.checked_add(1).expect("request ID space");
+    write_frame(
+        stream,
+        &ClientMessage::Request(Request {
+            id: RequestId::new(id),
+            call,
+        }),
+        MAX_REQUEST_FRAME_BYTES,
+    )
+    .expect("write provider call");
+    match read_frame(stream, MAX_RESPONSE_FRAME_BYTES).expect("read provider response") {
+        ReadFrame::Message(ServerMessage::Response(response)) if response.id.get() == id.get() => {
+            response.outcome
+        }
+        other => panic!("unexpected provider response: {other:?}"),
+    }
+}
+
+fn snapshot(stream: &mut UnixStream, next_id: &mut u64) -> DesktopSnapshot {
+    match wire_call(stream, next_id, Call::DesktopSnapshot(Empty {})) {
+        Outcome::Ok(Reply::DesktopSnapshot(snapshot)) => snapshot,
+        other => panic!("unexpected snapshot outcome: {other:?}"),
+    }
+}
+
+struct TestClient {
+    connection: RustConnection,
+    root: u32,
+    window: u32,
+    utf8: u32,
+    wm_name: u32,
+}
+
+impl TestClient {
+    fn create(display: &str, title: &str) -> Self {
+        let (connection, screen) = x11rb::connect(Some(display)).expect("fixture X11 connection");
+        let screen = &connection.setup().roots[screen];
+        let root = screen.root;
+        let window = connection.generate_id().expect("fixture window ID");
+        connection
+            .create_window(
+                COPY_DEPTH_FROM_PARENT,
+                window,
+                root,
+                40,
+                50,
+                320,
+                180,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                screen.root_visual,
+                &CreateWindowAux::new(),
+            )
+            .expect("fixture create request")
+            .check()
+            .expect("fixture create");
+        let utf8 = intern(&connection, b"UTF8_STRING");
+        let wm_name = intern(&connection, b"_NET_WM_NAME");
+        let wm_protocols = intern(&connection, b"WM_PROTOCOLS");
+        let wm_delete = intern(&connection, b"WM_DELETE_WINDOW");
+        connection
+            .change_property8(PropMode::REPLACE, window, wm_name, utf8, title.as_bytes())
+            .expect("fixture title request")
+            .check()
+            .expect("fixture title");
+        connection
+            .change_property32(
+                PropMode::REPLACE,
+                window,
+                wm_protocols,
+                AtomEnum::ATOM,
+                &[wm_delete],
+            )
+            .expect("fixture protocols request")
+            .check()
+            .expect("fixture protocols");
+        connection
+            .map_window(window)
+            .expect("fixture map request")
+            .check()
+            .expect("fixture map");
+        connection.flush().expect("fixture flush");
+        Self {
+            connection,
+            root,
+            window,
+            utf8,
+            wm_name,
+        }
+    }
+
+    fn rename(&self, title: &str) {
+        self.connection
+            .change_property8(
+                PropMode::REPLACE,
+                self.window,
+                self.wm_name,
+                self.utf8,
+                title.as_bytes(),
+            )
+            .expect("rename request")
+            .check()
+            .expect("rename");
+        self.connection.flush().expect("rename flush");
+    }
+
+    fn move_to_workspace(&self, workspace: u32) {
+        let atom = intern(&self.connection, b"_NET_WM_DESKTOP");
+        let event = ClientMessageEvent::new(32, self.window, atom, [workspace, 2, 0, 0, 0]);
+        self.connection
+            .send_event(
+                false,
+                self.root,
+                EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+                event,
+            )
+            .expect("workspace event request")
+            .check()
+            .expect("workspace event");
+        self.connection.flush().expect("workspace event flush");
+    }
+
+    fn minimize(&self) {
+        let atom = intern(&self.connection, b"WM_CHANGE_STATE");
+        let event = ClientMessageEvent::new(32, self.window, atom, [3, 0, 0, 0, 0]);
+        self.connection
+            .send_event(
+                false,
+                self.root,
+                EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT,
+                event,
+            )
+            .expect("minimize event request")
+            .check()
+            .expect("minimize event");
+        self.connection.flush().expect("minimize event flush");
+    }
+
+    fn map(&self) {
+        self.connection
+            .map_window(self.window)
+            .expect("remap request")
+            .check()
+            .expect("remap");
+        self.connection.flush().expect("remap flush");
+    }
+
+    fn destroy(&self) {
+        self.connection
+            .destroy_window(self.window)
+            .expect("destroy request")
+            .check()
+            .expect("destroy");
+        self.connection.flush().expect("destroy flush");
+    }
+}
+
+fn intern(connection: &RustConnection, name: &[u8]) -> u32 {
+    connection
+        .intern_atom(false, name)
+        .expect("atom request")
+        .reply()
+        .expect("atom reply")
+        .atom
+}
+
+fn wait_snapshot(
+    stream: &mut UnixStream,
+    next_id: &mut u64,
+    predicate: impl Fn(&DesktopSnapshot) -> bool,
+) -> DesktopSnapshot {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let snapshot = snapshot(stream, next_id);
+        if predicate(&snapshot) {
+            return snapshot;
+        }
+        assert!(Instant::now() < deadline, "snapshot did not converge");
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn poll_events(stream: &mut UnixStream, next_id: &mut u64, after: Sequence) -> EventBatch {
+    match wire_call(
+        stream,
+        next_id,
+        Call::EventsPoll(PollRequest {
+            after,
+            limit: 64,
+            wait_ms: 500,
+        }),
+    ) {
+        Outcome::Ok(Reply::Events(events)) => events,
+        other => panic!("unexpected event outcome: {other:?}"),
     }
 }
 
@@ -344,7 +570,7 @@ fn no_wm_lifecycle_policy_ownership_and_stale_recovery() {
             if welcome.assurance == agent_seat_proto::Assurance::Tier0
                 && welcome.backend == agent_seat_proto::Backend::X11Ewmh
                 && welcome.granted.as_slice() == [Capability::ObserveStructure]
-                && welcome.features.is_empty()
+                && welcome.features.as_slice() == [agent_seat_proto::Feature::EwmhObservation]
     ));
     assert!(matches!(
         seat_status(&mut stream),
@@ -511,6 +737,186 @@ fn provider_crash_does_not_take_down_openbox() {
     assert!(client.try_wait().expect("xterm status").is_none());
     let _ = client.kill();
     let _ = client.wait();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn openbox_snapshots_and_diffs_converge_across_client_lifecycle() {
+    let xvfb = Xvfb::start();
+    let mut openbox = Command::new("openbox")
+        .env("DISPLAY", &xvfb.display)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Openbox is required by the T1 gate");
+    thread::sleep(Duration::from_millis(200));
+
+    let directory = FixtureDir::new("observation");
+    let config = write_observer_config(&directory.0, "all_workspaces", true);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("observer peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::ObserveEvents,
+            ],
+        ),
+        ServerMessage::Welcome(welcome)
+            if welcome.features.as_slice() == [agent_seat_proto::Feature::EwmhObservation]
+                && welcome.granted.as_slice() == [
+                    Capability::ObserveStructure,
+                    Capability::ObserveTitles,
+                    Capability::ObserveEvents,
+                ]
+    ));
+    let mut next_id = 1;
+    let initial = snapshot(&mut stream, &mut next_id);
+    assert!(!initial.workspaces.is_empty());
+    let mut cursor = match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::EventsSubscribe(SubscribeRequest {
+            kinds: BoundedList::new(vec![
+                EventKind::ClientAdded,
+                EventKind::ClientChanged,
+                EventKind::ClientRemoved,
+            ])
+            .expect("event filter"),
+        }),
+    ) {
+        Outcome::Ok(Reply::Subscribed(subscription)) => subscription.cursor,
+        other => panic!("unexpected subscription outcome: {other:?}"),
+    };
+    let initial_cursor = cursor;
+
+    let client = TestClient::create(&xvfb.display, "agent-seat-alpha");
+    let events = poll_events(&mut stream, &mut next_id, cursor);
+    cursor = events.cursor;
+    let added = events.events.iter().find_map(|event| match &event.event {
+        Event::ClientAdded(client) if client.title.as_deref() == Some("agent-seat-alpha") => {
+            Some(client.clone())
+        }
+        _ => None,
+    });
+    let added = added.expect("client-added event with granted title");
+    assert!(added.frame.is_some());
+
+    client.rename("agent-seat-beta");
+    let events = poll_events(&mut stream, &mut next_id, cursor);
+    let renamed = events.events.iter().find_map(|event| match &event.event {
+        Event::ClientChanged(client) if client.id == added.id => Some(client.clone()),
+        _ => None,
+    });
+    let renamed = renamed.expect("renamed client event");
+    assert_eq!(renamed.title.as_deref(), Some("agent-seat-beta"));
+    assert!(renamed.generation > added.generation);
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::EventsPoll(PollRequest {
+                after: initial_cursor,
+                limit: 64,
+                wait_ms: 0,
+            }),
+        ),
+        Outcome::Error(error)
+            if error.code == ErrorCode::ResyncRequired
+                && error.current_sequence.is_some()
+    ));
+
+    client.minimize();
+    let hidden = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate.id == added.id
+                && candidate
+                    .states
+                    .contains(&agent_seat_proto::ClientState::Hidden)
+        })
+    });
+
+    client.map();
+    let visible = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate.id == added.id
+                && !candidate
+                    .states
+                    .contains(&agent_seat_proto::ClientState::Hidden)
+        })
+    });
+    cursor = visible.sequence;
+
+    client.move_to_workspace(1);
+    let events = poll_events(&mut stream, &mut next_id, cursor);
+    cursor = events.cursor;
+    assert!(events.events.iter().any(|event| matches!(
+        &event.event,
+        Event::ClientChanged(client)
+            if client.id == added.id && client.workspace == Some(agent_seat_proto::WorkspaceId::new(1))
+    )));
+    assert!(hidden.sequence < cursor);
+
+    client.destroy();
+    let events = poll_events(&mut stream, &mut next_id, cursor);
+    assert!(events.events.iter().any(|event| matches!(
+        event.event,
+        Event::ClientRemoved(id) if id == added.id
+    )));
+
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn current_workspace_scope_hides_titles_and_rekeys_returning_clients() {
+    let xvfb = Xvfb::start();
+    let mut openbox = Command::new("openbox")
+        .env("DISPLAY", &xvfb.display)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("Openbox is required by the T1 gate");
+    thread::sleep(Duration::from_millis(200));
+
+    let directory = FixtureDir::new("scope");
+    let config = write_observer_config(&directory.0, "current_workspace", false);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("scope peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![Capability::ObserveStructure, Capability::ObserveTitles],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+    let mut next_id = 1;
+    let client = TestClient::create(&xvfb.display, "private-title");
+    let visible = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.len() == 1
+    });
+    let first = visible.clients[0].id;
+    assert_eq!(visible.clients[0].title, None);
+
+    client.move_to_workspace(1);
+    wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.is_empty()
+    });
+    client.move_to_workspace(0);
+    let returned = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.len() == 1
+    });
+    assert_ne!(returned.clients[0].id, first);
+    assert_eq!(returned.clients[0].title, None);
+
+    client.destroy();
     let _ = openbox.kill();
     let _ = openbox.wait();
 }
