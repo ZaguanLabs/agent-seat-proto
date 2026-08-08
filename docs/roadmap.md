@@ -1,7 +1,7 @@
 # Product roadmap
 
-Status: E0, E1, T0, T1, and T2 complete; T3 is next. Milestones are sequential;
-optional profiles do not delay the Tier 0 core release. E0 evidence is recorded in
+Status: E0, E1, and T0--T3 are complete. The Tier 0 core is ready for C0;
+optional profiles do not delay its release. E0 evidence is recorded in
 [`e0-verification.md`](e0-verification.md).
 
 ## Goals
@@ -92,6 +92,12 @@ End result: every supported operation and every stale, refused, unsupported,
 ignored, disappeared, timed-out, and failed branch is externally tested.
 
 ## T3 — controlled launch
+
+Status: complete, 2026-08-08. `agent-seat-x11` 0.1.4 advertises
+`desktop_launch` and implements bounded preference-ordered XDG discovery,
+deny/allow-list/allow-installed policy, separately gated user entries,
+shell-free `Exec` realization, bounded child supervision, launch tokens, and
+exact startup-ID correlation without guessing.
 
 Implement bounded XDG application discovery and shell-free desktop `Exec`
 parsing with deny, allow-listed, allow-installed, deny-list, and separate

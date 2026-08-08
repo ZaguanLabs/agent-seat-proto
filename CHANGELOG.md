@@ -44,3 +44,10 @@ All notable changes to this project are documented here.
   Openbox coverage for supported operations, refusal, stale and out-of-scope
   targets, invalid workspaces, unsupported state, ignored requests, responsive
   close, and target disappearance.
+- Implemented `agent-seat-x11` 0.1.4 T3 launch with strict bounded XDG catalog
+  discovery, deny/allow-list/allow-installed policy, a separate user-entry
+  gate, shell-free desktop `Exec` parsing, bounded child supervision, and exact
+  startup-ID correlation that remains optional in the reply.
+- Added Openbox process coverage for an allowed system entry, an unlisted
+  entry, a default-denied user entry, hostile metacharacters, exact and absent
+  correlation, launch failure, and post-failure window-manager responsiveness.

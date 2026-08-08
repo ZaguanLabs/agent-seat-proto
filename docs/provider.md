@@ -1,9 +1,10 @@
 # Standalone X11 provider
 
-Status: T2 management. `agent-seat-x11` 0.1.3 owns lifecycle, policy, local
-authentication, X11 discovery, bounded EWMH observation, and supported
-management. T3 adds launch without moving authority into the MCP companion.
-The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
+Status: T3 Tier 0 core. `agent-seat-x11` 0.1.4 owns lifecycle, policy, local
+authentication, X11 discovery, bounded EWMH observation, supported management,
+and controlled desktop-entry launch without moving authority into the MCP
+companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
+contract.
 
 ## Goals
 
@@ -19,6 +20,11 @@ The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
   diffs, and explicit resynchronization.
 - Recheck scope, freshness, and exact advertised support immediately before an
   EWMH send, then report only what the provider subsequently observes.
+- Discover a bounded XDG catalog in standard preference order, expose only
+  policy-visible launchable entries, and execute parsed argument vectors
+  without a shell.
+- Treat client correlation as optional evidence: return a handle only for a
+  newly visible scoped client with the exact launch startup ID.
 - Remove the private socket and advertisement on clean shutdown while leaving
   Openbox or another window manager independent.
 
@@ -30,7 +36,8 @@ The current implementation target is Linux X11 and its `SO_PEERCRED` contract.
   daemonizing itself.
 - Treating a sequence of independently sampled EWMH properties as an atomic
   window-manager transaction.
-- Implementing launch, capture, input, or semantics in T2.
+- Implementing arbitrary commands, terminal wrapping, D-Bus activation,
+  capture, input, or semantics in the Tier 0 core.
 - Killing a client, synthesizing input, or claiming a foreign WM accepted an
   internally delivered request.
 - Providing a consent window or claiming Tier 1 window-manager authority.
@@ -68,11 +75,19 @@ capabilities = [
   "manage_workspace",
   "manage_state",
   "manage_geometry",
+  "launch_list",
+  "launch_execute",
 ]
 
 [observation]
 clients = "current_workspace"
 titles = false
+
+[launch]
+mode = "allow_listed"
+allow = ["org.example.Editor.desktop"]
+deny = []
+allow_user_entries = false
 ```
 
 `grant.uid` must equal the provider's effective UID. The private runtime
@@ -80,9 +95,9 @@ directory enforces the same-user boundary and the accepted socket's
 `SO_PEERCRED` UID selects the grant; `hello.peer` remains descriptive.
 Capabilities must be unique and are intersected with the peer's canonically
 ordered request. `observe_titles`, `observe_events`, and every management
-capability require `observe_structure` in the configured grant; a management
-call also rechecks that dependency in the live session. An omitted grant
-denies every peer.
+capability require `observe_structure`; `launch_execute` requires
+`launch_list`. Calls recheck those dependencies in the live session. An
+omitted grant denies every peer.
 
 | Setting | Default | Accepted bound |
 | --- | ---: | ---: |
@@ -92,6 +107,17 @@ denies every peer.
 | grant capabilities | empty | at most 10 unique atoms |
 | `observation.clients` | `none` | `none`, `current_workspace`, `all_workspaces` |
 | `observation.titles` | `false` | boolean |
+| `launch.mode` | `deny` | `deny`, `allow_listed`, `allow_installed` |
+| `launch.allow` | empty | at most 256 unique canonical desktop IDs; only with `allow_listed` |
+| `launch.deny` | empty | at most 256 unique canonical desktop IDs |
+| `launch.allow_user_entries` | `false` | boolean |
+
+`deny` exposes and launches nothing. `allow_listed` admits only IDs in
+`allow`, after applying `deny`. `allow_installed` admits each valid discovered
+entry except IDs in `deny`. In every mode, a winning entry from
+`$XDG_DATA_HOME/applications` remains refused unless
+`allow_user_entries = true`. User entries retain XDG precedence, so a denied
+user override also shadows a lower-priority system entry with the same ID.
 
 Validate configuration without touching X11 or creating a socket:
 
@@ -128,11 +154,12 @@ capacity beyond `max_sessions`, evicts a peer that does not complete framing
 before its deadline, and ends a session at its request bound. Frames retain
 the revision-3 direction limits.
 
-The provider advertises `ewmh_observation` and `ewmh_management`. It implements
-`seat.status` and `desktop.snapshot` with `observe_structure`, plus `events.subscribe` and
-`events.poll` with `observe_events`. Every request is checked against the grant
-first: missing authority returns `refused`; an authorized call reserved for a
-later milestone returns `unsupported`.
+The provider advertises `ewmh_observation`, `ewmh_management`, and
+`desktop_launch`. It implements `seat.status` and `desktop.snapshot` with
+`observe_structure`, `events.subscribe` and `events.poll` with
+`observe_events`, and application list/launch with their separate capabilities.
+Every request is checked against the grant first; missing authority returns
+`refused`.
 
 Each session owns a separate X11 observer and opaque client-ID namespace. A
 snapshot samples validated EWMH workspace, client, active-window, geometry,
@@ -173,6 +200,39 @@ After a successfully sent request, the provider samples for one second. A
 deadline expires. For close, visible disappearance is the desired observation.
 These values do not claim internal acceptance by Openbox or another WM.
 
+## Launch behavior
+
+Application discovery reads `$XDG_DATA_HOME/applications` first, then the
+preference-ordered `$XDG_DATA_DIRS/applications` roots. Empty variables use the
+XDG defaults. Roots, directory depth, visited paths, file bytes, parsed keys,
+catalog entries, page entries, argument count, and active child processes all
+have fixed bounds. Directory symlinks are not traversed; regular desktop files
+and symlinked desktop-file leaves are opened through bounded file handles.
+Hidden, `NoDisplay`, non-Application, malformed, incompatible
+`OnlyShowIn`/`NotShowIn`, terminal, unavailable `TryExec`, and otherwise
+unlaunchable entries are absent. The first XDG-precedence entry with a desktop
+ID shadows later entries even when hidden, malformed, or refused.
+
+The provider parses only the main `[Desktop Entry]` group. It applies the
+Desktop Entry 1.5 string, quoting, and field-code rules, removes the standard
+file/URL and deprecated field codes because launch accepts no document, expands
+`%c`, `%i`, `%k`, and `%%`, and rejects unknown or ambiguous codes. It invokes
+the executable directly with `std::process::Command`; no shell, command string,
+or peer argument is involved. `Terminal=true` is unsupported because silently
+choosing a terminal would add another executable outside policy. This provider
+does not implement D-Bus activation and therefore uses the required compatible
+`Exec` fallback when `DBusActivatable=true`.
+
+A successful spawn returns a provider-unique token. At most 64 live launched
+children are supervised and reaped. When the same session also has
+`observe_structure` and a nonempty observation scope, the provider may wait up
+to one second for a newly visible client whose own or `WM_CLIENT_LEADER`'s
+`_NET_STARTUP_ID` exactly equals the `DESKTOP_STARTUP_ID` supplied to the
+child. That exact match returns the session's opaque client handle. Missing,
+late, filtered, absent, or spoofed metadata produces `client = null`; the
+provider never guesses from PID, title, class, timing, or “only new window.”
+The ID is same-user X11 evidence, not an authentication or causality guarantee.
+
 ## Running beside Openbox
 
 Start the provider as a separate process from Openbox autostart:
@@ -186,7 +246,7 @@ leave a recoverable socket or stale root property, but it cannot terminate or
 block Openbox; discovery requires a current selection owner and matching owner
 property, so stale root bytes alone are not live authority.
 
-## T2 end result
+## T3 end result
 
 The provider is an independently failing, bounded, same-user policy process
 whose scoped Openbox snapshots and filtered diffs converge across client
@@ -194,4 +254,7 @@ creation, title, state, workspace, and destruction changes. It does not expose
 raw XIDs or read titles for filtered-out clients, and it does not claim that
 standalone X11 observation is atomic or a strong isolation boundary. Supported
 management is additionally freshness-checked before send and reports ignored
-or ambiguous terminal outcomes without elevating them to acceptance.
+or ambiguous terminal outcomes without elevating them to acceptance. The
+complete Tier 0 core additionally exposes only policy-approved XDG entries and
+launches them without shell interpretation. Capture, input, accessibility, and
+persistent coordinate/workflow memory remain unsupported optional profiles.

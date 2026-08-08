@@ -237,9 +237,17 @@ accepted an event internally.
 
 Application pages contain at most 256 entries ordered uniquely by canonical
 desktop ID. Each entry carries a bounded localized name and whether the winning
-catalog entry is user-writable. A launch success carries a unique nonzero
-token and an optional visible client handle only when correlation evidence was
-sufficient. Missing correlation is not an error and is never guessed.
+catalog entry comes from the user-specific XDG data root. Page cursor zero
+starts a current scan; a nonzero cursor is meaningful only in the same
+provider session after that scan. A launch re-resolves the current winning
+entry and policy rather than trusting page contents.
+
+A launch success carries a unique nonzero token and an optional visible client
+handle only when provider-defined correlation evidence was sufficient. Missing
+correlation is not an error and is never guessed. A Tier 0 X11 provider may use
+an exact startup-notification ID on a newly visible, in-scope client; the match
+is same-user X11 metadata and does not raise the assurance level or prove
+causality.
 
 ## Error contract
 

@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 mod config;
+mod launch;
 mod observer;
 mod ownership;
 mod runtime;
@@ -72,11 +73,13 @@ fn serve(
 ) -> Result<(), String> {
     let mut sessions: Vec<JoinHandle<Result<(), String>>> =
         Vec::with_capacity(config.max_sessions());
+    let launcher = Arc::new(launch::LaunchSupervisor::new());
     let mut next_session = 1_u64;
     let mut ownership_lost = false;
 
     while !stopping.load(Ordering::Relaxed) {
         reap(&mut sessions);
+        launcher.reap();
         if ownership.lost()? {
             ownership_lost = true;
             break;
@@ -92,9 +95,12 @@ fn serve(
                     .checked_add(1)
                     .ok_or_else(|| "session identity space is exhausted".to_owned())?;
                 let session_config = Arc::clone(&config);
+                let session_launcher = Arc::clone(&launcher);
                 let handle = thread::Builder::new()
                     .name(format!("agent-seat-{session_number}"))
-                    .spawn(move || session::run(stream, session_config, session_number))
+                    .spawn(move || {
+                        session::run(stream, session_config, session_launcher, session_number)
+                    })
                     .map_err(|error| format!("cannot start bounded session worker: {error}"))?;
                 sessions.push(handle);
             }

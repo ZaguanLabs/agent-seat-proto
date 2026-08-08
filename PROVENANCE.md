@@ -79,3 +79,21 @@ post-request sampler, and management process tests are original work written
 for this repository. Message fields, source indication, StaticGravity, state
 actions, and advertised-action rules use EWMH 1.5 from the freedesktop.org
 specification linked above. Openbox remains an external black-box oracle.
+
+## T3 controlled launch
+
+The bounded XDG catalog, strict desktop-entry parser, launch policy, process
+supervisor, startup correlation, and Openbox launch fixtures are original work
+written for this repository. Search order, desktop IDs, entry syntax, key
+semantics, `Exec` quoting/field codes, and startup-ID behavior use:
+
+- XDG Base Directory Specification 0.8:
+  <https://specifications.freedesktop.org/basedir/latest/>;
+- Desktop Entry Specification 1.5:
+  <https://specifications.freedesktop.org/desktop-entry/latest/>; and
+- Startup Notification Protocol 0.2:
+  <https://specifications.freedesktop.org/startup-notification/0.2/>.
+
+No new runtime dependency was added. Openbox and Xvfb remain external
+black-box test processes; standard command-line programs are process fixtures,
+not linked or distributed dependencies.

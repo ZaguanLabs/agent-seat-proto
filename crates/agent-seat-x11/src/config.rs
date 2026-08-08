@@ -7,7 +7,7 @@ use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use agent_seat_proto::{BoundedList, Capability};
+use agent_seat_proto::{ApplicationId, BoundedList, Capability, MAX_APPLICATIONS};
 use rustix::process::geteuid;
 use serde::Deserialize;
 
@@ -28,6 +28,7 @@ pub(crate) struct Config {
     io_timeout: Duration,
     grant: Option<Grant>,
     observation: Observation,
+    launch: LaunchPolicy,
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +55,44 @@ impl Default for ClientScope {
 struct Observation {
     clients: ClientScope,
     titles: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum LaunchMode {
+    #[default]
+    Deny,
+    AllowListed,
+    AllowInstalled,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LaunchPolicy {
+    mode: LaunchMode,
+    allow: BoundedList<ApplicationId, MAX_APPLICATIONS>,
+    deny: BoundedList<ApplicationId, MAX_APPLICATIONS>,
+    allow_user_entries: bool,
+}
+
+impl LaunchPolicy {
+    pub(crate) fn allows_any(&self) -> bool {
+        match self.mode {
+            LaunchMode::Deny => false,
+            LaunchMode::AllowListed => !self.allow.is_empty(),
+            LaunchMode::AllowInstalled => true,
+        }
+    }
+
+    pub(crate) fn permits(&self, application: &ApplicationId, user_entry: bool) -> bool {
+        if user_entry && !self.allow_user_entries || self.deny.contains(application) {
+            return false;
+        }
+        match self.mode {
+            LaunchMode::Deny => false,
+            LaunchMode::AllowListed => self.allow.contains(application),
+            LaunchMode::AllowInstalled => true,
+        }
+    }
 }
 
 impl Config {
@@ -142,6 +181,10 @@ impl Config {
     pub(crate) const fn titles_enabled(&self) -> bool {
         self.observation.titles
     }
+
+    pub(crate) const fn launch_policy(&self) -> &LaunchPolicy {
+        &self.launch
+    }
 }
 
 pub(crate) fn default_path() -> Result<PathBuf, String> {
@@ -176,6 +219,8 @@ struct RawConfig {
     grant: Option<RawGrant>,
     #[serde(default)]
     observation: RawObservation,
+    #[serde(default)]
+    launch: RawLaunch,
 }
 
 impl RawConfig {
@@ -209,6 +254,7 @@ impl RawConfig {
                 clients: self.observation.clients,
                 titles: self.observation.titles,
             },
+            launch: self.launch.validate()?,
         })
     }
 }
@@ -259,6 +305,11 @@ impl RawGrant {
         {
             return Err("management capabilities require observe_structure".to_owned());
         }
+        if self.capabilities.contains(&Capability::LaunchExecute)
+            && !self.capabilities.contains(&Capability::LaunchList)
+        {
+            return Err("launch_execute requires launch_list".to_owned());
+        }
         Ok(Grant {
             uid: self.uid,
             capabilities: self.capabilities,
@@ -273,6 +324,57 @@ struct RawObservation {
     clients: ClientScope,
     #[serde(default)]
     titles: bool,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLaunch {
+    #[serde(default)]
+    mode: LaunchMode,
+    #[serde(default)]
+    allow: BoundedList<ApplicationId, MAX_APPLICATIONS>,
+    #[serde(default)]
+    deny: BoundedList<ApplicationId, MAX_APPLICATIONS>,
+    #[serde(default)]
+    allow_user_entries: bool,
+}
+
+impl RawLaunch {
+    fn validate(self) -> Result<LaunchPolicy, String> {
+        validate_application_ids("launch.allow", &self.allow)?;
+        validate_application_ids("launch.deny", &self.deny)?;
+        if self.mode != LaunchMode::AllowListed && !self.allow.is_empty() {
+            return Err("launch.allow is valid only in allow_listed mode".to_owned());
+        }
+        if self
+            .allow
+            .iter()
+            .any(|application| self.deny.contains(application))
+        {
+            return Err("launch.allow and launch.deny must not overlap".to_owned());
+        }
+        Ok(LaunchPolicy {
+            mode: self.mode,
+            allow: self.allow,
+            deny: self.deny,
+            allow_user_entries: self.allow_user_entries,
+        })
+    }
+}
+
+fn validate_application_ids(field: &str, applications: &[ApplicationId]) -> Result<(), String> {
+    for (index, application) in applications.iter().enumerate() {
+        if application.is_empty()
+            || !application.ends_with(".desktop")
+            || application.contains(['/', '\0'])
+        {
+            return Err(format!("{field} contains a non-canonical desktop ID"));
+        }
+        if applications[..index].contains(application) {
+            return Err(format!("{field} must not contain duplicates"));
+        }
+    }
+    Ok(())
 }
 
 const fn default_client_scope() -> ClientScope {
@@ -340,11 +442,57 @@ mod tests {
     #[test]
     fn dependent_capabilities_require_structure() {
         let uid = geteuid().as_raw();
-        for capability in ["observe_titles", "observe_events", "manage_activate"] {
+        for (capability, dependency) in [
+            ("observe_titles", "observe_structure"),
+            ("observe_events", "observe_structure"),
+            ("manage_activate", "observe_structure"),
+            ("launch_execute", "launch_list"),
+        ] {
             let source =
                 format!("enabled = true\n[grant]\nuid = {uid}\ncapabilities = [\"{capability}\"]");
             let raw: RawConfig = toml::from_str(&source).expect("parse incomplete grant");
-            assert!(raw.validate(uid).is_err(), "accepted {capability}");
+            let error = raw.validate(uid).expect_err("accepted incomplete grant");
+            assert!(error.contains(dependency));
+        }
+    }
+
+    #[test]
+    fn launch_policy_is_deny_by_default_and_rejects_ambiguity() {
+        let uid = geteuid().as_raw();
+        let defaults: RawConfig = toml::from_str("enabled = true").expect("parse defaults");
+        let defaults = defaults.validate(uid).expect("validate defaults");
+        let application = ApplicationId::new("example.desktop").expect("application ID");
+        assert!(!defaults.launch_policy().allows_any());
+        assert!(!defaults.launch_policy().permits(&application, false));
+
+        let listed: RawConfig = toml::from_str(
+            "enabled = true\n[launch]\nmode = \"allow_listed\"\n\
+             allow = [\"example.desktop\"]\nallow_user_entries = true",
+        )
+        .expect("parse listed policy");
+        let listed = listed.validate(uid).expect("validate listed policy");
+        assert!(listed.launch_policy().permits(&application, true));
+
+        let installed: RawConfig = toml::from_str(
+            "enabled = true\n[launch]\nmode = \"allow_installed\"\n\
+             deny = [\"blocked.desktop\"]",
+        )
+        .expect("parse installed policy");
+        let installed = installed.validate(uid).expect("validate installed policy");
+        let blocked = ApplicationId::new("blocked.desktop").expect("blocked ID");
+        let other = ApplicationId::new("other.desktop").expect("other ID");
+        assert!(!installed.launch_policy().permits(&blocked, false));
+        assert!(installed.launch_policy().permits(&other, false));
+        assert!(!installed.launch_policy().permits(&other, true));
+
+        for source in [
+            "enabled = true\n[launch]\nallow = [\"example.desktop\"]",
+            "enabled = true\n[launch]\nmode = \"allow_listed\"\nallow = [\"bad/id.desktop\"]",
+            "enabled = true\n[launch]\nmode = \"allow_listed\"\nallow = [\"same.desktop\"]\ndeny = [\"same.desktop\"]",
+        ] {
+            let accepted =
+                toml::from_str::<RawConfig>(source).is_ok_and(|raw| raw.validate(uid).is_ok());
+            assert!(!accepted, "accepted {source:?}");
         }
     }
 

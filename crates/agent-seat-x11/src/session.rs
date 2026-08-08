@@ -3,22 +3,25 @@
 use std::num::NonZeroU64;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
+use std::time::Duration;
 
 use agent_seat_proto::{
     Assurance, Backend, BoundedList, BoundedText, Call, ClientMessage, Diagnostic, ErrorCode,
-    Feature, Goodbye, Limits, MAX_EVENTS, MAX_POLL_WAIT_MS, MAX_REQUEST_FRAME_BYTES,
+    Feature, Goodbye, LaunchReply, Limits, MAX_EVENTS, MAX_POLL_WAIT_MS, MAX_REQUEST_FRAME_BYTES,
     MAX_RESPONSE_FRAME_BYTES, Outcome, PROTOCOL_NAME, PROTOCOL_REVISION, ProtocolError,
     ProviderInfo, ReadFrame, Reply, Request, Response, Retry, Sequence, ServerMessage, SessionId,
     Welcome, read_frame, write_frame,
 };
 use rustix::net::sockopt::socket_peercred;
 
-use crate::config::Config;
+use crate::config::{ClientScope, Config};
+use crate::launch::{Failure as LaunchFailure, LaunchSupervisor, SessionCatalog};
 use crate::observer::{Failure as ObservationFailure, Observer, Operation};
 
 pub(crate) fn run(
     mut stream: UnixStream,
     config: Arc<Config>,
+    launcher: Arc<LaunchSupervisor>,
     session_number: NonZeroU64,
 ) -> Result<(), String> {
     stream
@@ -65,8 +68,12 @@ pub(crate) fn run(
         },
         backend: Backend::X11Ewmh,
         assurance: Assurance::Tier0,
-        features: BoundedList::new(vec![Feature::EwmhObservation, Feature::EwmhManagement])
-            .map_err(|error| format!("provider feature list exceeded wire bounds: {error}"))?,
+        features: BoundedList::new(vec![
+            Feature::EwmhObservation,
+            Feature::EwmhManagement,
+            Feature::DesktopLaunch,
+        ])
+        .map_err(|error| format!("provider feature list exceeded wire bounds: {error}"))?,
         granted: granted.clone(),
         limits: Limits {
             request_frame_bytes: MAX_REQUEST_FRAME_BYTES as u32,
@@ -83,6 +90,7 @@ pub(crate) fn run(
     .map_err(|error| format!("cannot write session welcome: {error}"))?;
 
     let mut observer = None;
+    let mut catalog = SessionCatalog::new();
     for _ in 0..config.max_requests() {
         let message = match read_frame(&mut stream, MAX_REQUEST_FRAME_BYTES)
             .map_err(|error| format!("cannot read session request: {error}"))?
@@ -92,7 +100,15 @@ pub(crate) fn run(
         };
         match message {
             ClientMessage::Request(request) => {
-                let response = handle(request, session, &granted, &config, &mut observer);
+                let response = handle(
+                    request,
+                    session,
+                    &granted,
+                    &config,
+                    &launcher,
+                    &mut observer,
+                    &mut catalog,
+                );
                 write_frame(
                     &mut stream,
                     &ServerMessage::Response(response),
@@ -131,7 +147,9 @@ fn handle(
     session: SessionId,
     granted: &[agent_seat_proto::Capability],
     config: &Config,
+    launcher: &LaunchSupervisor,
     observer: &mut Option<Observer>,
+    catalog: &mut SessionCatalog,
 ) -> Response {
     let outcome = if !authorized(&request.call, granted) {
         protocol_error(
@@ -140,7 +158,15 @@ fn handle(
             "capability was not granted",
         )
     } else {
-        observe_call(request.call, session, granted, config, observer)
+        provider_call(
+            request.call,
+            session,
+            granted,
+            config,
+            launcher,
+            observer,
+            catalog,
+        )
     };
     Response {
         id: request.id,
@@ -159,14 +185,18 @@ fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
                 | Call::ClientState(_)
                 | Call::ClientGeometry(_)
         ) || granted.contains(&agent_seat_proto::Capability::ObserveStructure))
+        && (!matches!(call, Call::ApplicationLaunch(_))
+            || granted.contains(&agent_seat_proto::Capability::LaunchList))
 }
 
-fn observe_call(
+fn provider_call(
     call: Call,
     session: SessionId,
     granted: &[agent_seat_proto::Capability],
     config: &Config,
+    launcher: &LaunchSupervisor,
     observer: &mut Option<Observer>,
+    catalog: &mut SessionCatalog,
 ) -> Outcome {
     let result = match call {
         Call::SeatStatus(_) => {
@@ -180,43 +210,97 @@ fn observe_call(
         }
         Call::DesktopSnapshot(_) => observer_for(observer, granted, config)
             .and_then(Observer::snapshot)
-            .map(Reply::DesktopSnapshot),
+            .map(Reply::DesktopSnapshot)
+            .map_err(CallFailure::Observation),
         Call::EventsSubscribe(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.subscribe(&arguments.kinds))
-            .map(Reply::Subscribed),
+            .map(Reply::Subscribed)
+            .map_err(CallFailure::Observation),
         Call::EventsPoll(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.poll(arguments.after, arguments.limit, arguments.wait_ms))
-            .map(Reply::Events),
+            .map(Reply::Events)
+            .map_err(CallFailure::Observation),
         Call::ClientActivate(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.manage(Operation::Activate(arguments)))
-            .map(Reply::Management),
+            .map(Reply::Management)
+            .map_err(CallFailure::Observation),
         Call::ClientClose(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.manage(Operation::Close(arguments)))
-            .map(Reply::Management),
+            .map(Reply::Management)
+            .map_err(CallFailure::Observation),
         Call::WorkspaceSwitch(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.manage(Operation::WorkspaceSwitch(arguments)))
-            .map(Reply::Management),
+            .map(Reply::Management)
+            .map_err(CallFailure::Observation),
         Call::ClientWorkspace(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.manage(Operation::ClientWorkspace(arguments)))
-            .map(Reply::Management),
+            .map(Reply::Management)
+            .map_err(CallFailure::Observation),
         Call::ClientState(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.manage(Operation::State(arguments)))
-            .map(Reply::Management),
+            .map(Reply::Management)
+            .map_err(CallFailure::Observation),
         Call::ClientGeometry(arguments) => observer_for(observer, granted, config)
             .and_then(|observer| observer.manage(Operation::Geometry(arguments)))
-            .map(Reply::Management),
-        _ => {
-            return protocol_error(
-                ErrorCode::Unsupported,
-                Retry::Never,
-                "operation is not implemented by the T1 observer",
-            );
+            .map(Reply::Management)
+            .map_err(CallFailure::Observation),
+        Call::ApplicationsList(arguments) => catalog
+            .list(arguments, config.launch_policy())
+            .map(Reply::Applications)
+            .map_err(CallFailure::Launch),
+        Call::ApplicationLaunch(arguments) => {
+            launch_application(&arguments.application, granted, config, launcher, observer)
+                .map(Reply::Launched)
+                .map_err(CallFailure::Launch)
         }
     };
     match result {
         Ok(reply) => Outcome::Ok(reply),
-        Err(error) => observation_error(error),
+        Err(CallFailure::Observation(error)) => observation_error(error),
+        Err(CallFailure::Launch(error)) => launch_error(error),
     }
+}
+
+enum CallFailure {
+    Observation(ObservationFailure),
+    Launch(LaunchFailure),
+}
+
+impl From<ObservationFailure> for CallFailure {
+    fn from(value: ObservationFailure) -> Self {
+        Self::Observation(value)
+    }
+}
+
+fn launch_application(
+    application: &agent_seat_proto::ApplicationId,
+    granted: &[agent_seat_proto::Capability],
+    config: &Config,
+    launcher: &LaunchSupervisor,
+    observer: &mut Option<Observer>,
+) -> Result<LaunchReply, LaunchFailure> {
+    let baseline = if config.client_scope() != ClientScope::None
+        && granted.contains(&agent_seat_proto::Capability::ObserveStructure)
+    {
+        observer_for(observer, granted, config)
+            .and_then(Observer::launch_baseline)
+            .ok()
+    } else {
+        None
+    };
+    let started = launcher.launch(application, config.launch_policy())?;
+    let client = baseline.and_then(|baseline| {
+        observer.as_mut().and_then(|observer| {
+            observer
+                .correlate_launch(&baseline, &started.startup_id, Duration::from_secs(1))
+                .ok()
+                .flatten()
+        })
+    });
+    Ok(LaunchReply {
+        token: started.token,
+        client,
+    })
 }
 
 fn observer_for<'a>(
@@ -243,6 +327,17 @@ fn observation_error(error: ObservationFailure) -> Outcome {
         message: Some(diagnostic(error.message)),
         current_generation: error.current_generation,
         current_sequence: error.current_sequence,
+    })
+}
+
+fn launch_error(error: LaunchFailure) -> Outcome {
+    Outcome::Error(ProtocolError {
+        code: error.code,
+        retry: error.retry,
+        field: None,
+        message: Some(diagnostic(error.message)),
+        current_generation: None,
+        current_sequence: None,
     })
 }
 
@@ -310,6 +405,22 @@ mod tests {
             &[
                 agent_seat_proto::Capability::ObserveStructure,
                 agent_seat_proto::Capability::ManageClose,
+            ]
+        ));
+
+        let launch = Call::ApplicationLaunch(agent_seat_proto::ApplicationLaunchRequest {
+            application: agent_seat_proto::ApplicationId::new("example.desktop")
+                .expect("application ID"),
+        });
+        assert!(!authorized(
+            &launch,
+            &[agent_seat_proto::Capability::LaunchExecute]
+        ));
+        assert!(authorized(
+            &launch,
+            &[
+                agent_seat_proto::Capability::LaunchList,
+                agent_seat_proto::Capability::LaunchExecute,
             ]
         ));
     }

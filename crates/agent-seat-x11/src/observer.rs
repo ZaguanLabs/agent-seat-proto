@@ -24,6 +24,7 @@ pub(crate) use manager::Operation;
 
 const MAX_ROOT_ATOMS: usize = 256;
 const MAX_CLIENT_ATOMS: usize = 64;
+const MAX_STARTUP_ID_BYTES: usize = 256;
 const SAMPLE_INTERVAL: Duration = Duration::from_millis(25);
 
 pub(crate) struct Observer {
@@ -72,6 +73,44 @@ impl Observer {
 
     pub(crate) const fn sequence(&self) -> Sequence {
         Sequence::new(self.sequence)
+    }
+
+    pub(crate) fn launch_baseline(&mut self) -> Result<HashSet<u32>, Failure> {
+        self.refresh()?;
+        Ok(self
+            .model
+            .as_ref()
+            .map(|model| model.clients.iter().map(|client| client.xid).collect())
+            .unwrap_or_default())
+    }
+
+    pub(crate) fn correlate_launch(
+        &mut self,
+        baseline: &HashSet<u32>,
+        startup_id: &str,
+        wait: Duration,
+    ) -> Result<Option<ClientId>, Failure> {
+        let deadline = Instant::now() + wait;
+        loop {
+            self.refresh()?;
+            if let Some(client) = self.model.as_ref().and_then(|model| {
+                model.clients.iter().find(|client| {
+                    !baseline.contains(&client.xid)
+                        && client_startup_id_matches(
+                            &self.connection,
+                            client.xid,
+                            &self.atoms,
+                            startup_id.as_bytes(),
+                        )
+                })
+            }) {
+                return Ok(Some(client.descriptor.id));
+            }
+            if Instant::now() >= deadline {
+                return Ok(None);
+            }
+            thread::sleep(SAMPLE_INTERVAL.min(deadline.saturating_duration_since(Instant::now())));
+        }
     }
 
     pub(crate) fn snapshot(&mut self) -> Result<DesktopSnapshot, Failure> {
@@ -635,6 +674,27 @@ fn client_title(connection: &RustConnection, xid: u32, atoms: &Atoms) -> Option<
     None
 }
 
+fn client_startup_id_matches(
+    connection: &RustConnection,
+    xid: u32,
+    atoms: &Atoms,
+    expected: &[u8],
+) -> bool {
+    let leader = optional_window(connection, xid, atoms.client_leader);
+    [Some(xid), leader].into_iter().flatten().any(|window| {
+        property_bytes(
+            connection,
+            window,
+            atoms.startup_id,
+            atoms.utf8,
+            MAX_STARTUP_ID_BYTES,
+        )
+        .ok()
+        .flatten()
+        .is_some_and(|value| value == expected)
+    })
+}
+
 fn client_states(connection: &RustConnection, xid: u32, atoms: &Atoms) -> Vec<ClientState> {
     let values = property32(
         connection,
@@ -890,6 +950,8 @@ struct Atoms {
     close_window: u32,
     wm_protocols: u32,
     wm_delete_window: u32,
+    client_leader: u32,
+    startup_id: u32,
     utf8: u32,
     state_above: u32,
     state_below: u32,
@@ -943,6 +1005,8 @@ impl Atoms {
             close_window: atom(b"_NET_CLOSE_WINDOW")?,
             wm_protocols: atom(b"WM_PROTOCOLS")?,
             wm_delete_window: atom(b"WM_DELETE_WINDOW")?,
+            client_leader: atom(b"WM_CLIENT_LEADER")?,
+            startup_id: atom(b"_NET_STARTUP_ID")?,
             utf8: atom(b"UTF8_STRING")?,
             state_above: atom(b"_NET_WM_STATE_ABOVE")?,
             state_below: atom(b"_NET_WM_STATE_BELOW")?,

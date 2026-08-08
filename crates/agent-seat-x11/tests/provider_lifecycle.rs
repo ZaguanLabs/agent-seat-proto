@@ -14,13 +14,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use agent_seat_proto::{
-    BoundedList, BoundedText, Call, Capability, ClientDescriptor, ClientGeometryRequest,
-    ClientMessage, ClientState, ClientStateRequest, ClientWorkspaceRequest, DesktopSnapshot, Empty,
-    ErrorCode, Event, EventBatch, EventKind, Hello, MAX_REQUEST_FRAME_BYTES,
-    MAX_RESPONSE_FRAME_BYTES, ManagementReply, Observation as ManagementObservation, Outcome,
-    PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo, PollRequest, ReadFrame, Rect, Reply, Request,
-    RequestId, Sequence, ServerMessage, StateAction, SubscribeRequest, TargetRequest,
-    WorkspaceRequest, read_frame, write_frame,
+    ApplicationId, ApplicationLaunchRequest, ApplicationListRequest, BoundedList, BoundedText,
+    Call, Capability, ClientDescriptor, ClientGeometryRequest, ClientMessage, ClientState,
+    ClientStateRequest, ClientWorkspaceRequest, DesktopSnapshot, Empty, ErrorCode, Event,
+    EventBatch, EventKind, Hello, MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES,
+    ManagementReply, Observation as ManagementObservation, Outcome, PROTOCOL_NAME,
+    PROTOCOL_REVISION, PeerInfo, PollRequest, ReadFrame, Rect, Reply, Request, RequestId, Sequence,
+    ServerMessage, StateAction, SubscribeRequest, TargetRequest, WorkspaceRequest, read_frame,
+    write_frame,
 };
 use rustix::process::{Pid, Signal, geteuid, kill_process};
 use x11rb::connection::Connection as _;
@@ -112,7 +113,32 @@ struct Provider {
 
 impl Provider {
     fn start(display: &str, config: &Path, socket: &Path) -> Self {
-        let mut child = spawn_provider(display, config, socket);
+        Self::wait_until_ready(display, socket, spawn_provider(display, config, socket))
+    }
+
+    fn start_with_data(
+        display: &str,
+        config: &Path,
+        socket: &Path,
+        user_data: &Path,
+        system_data: &Path,
+    ) -> Self {
+        let child = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+            .args(["--config", config.to_str().expect("config UTF-8")])
+            .args(["--socket", socket.to_str().expect("socket UTF-8")])
+            .env("DISPLAY", display)
+            .env("XDG_DATA_HOME", user_data)
+            .env("XDG_DATA_DIRS", system_data)
+            .env("XDG_CURRENT_DESKTOP", "Openbox")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn provider with XDG fixtures");
+        Self::wait_until_ready(display, socket, child)
+    }
+
+    fn wait_until_ready(display: &str, socket: &Path, mut child: Child) -> Self {
         let deadline = Instant::now() + Duration::from_secs(3);
         let (connection, screen) = x11rb::connect(Some(display)).expect("startup X11 connection");
         let selection = connection
@@ -262,6 +288,36 @@ fn write_management_config(directory: &Path) -> PathBuf {
     path
 }
 
+fn write_launch_config(directory: &Path) -> PathBuf {
+    let path = write_config(
+        directory,
+        &["observe_structure", "launch_list", "launch_execute"],
+        4,
+        2_000,
+    );
+    let source = fs::read_to_string(&path).expect("read base launch config");
+    fs::write(
+        &path,
+        format!(
+            "{source}\n[observation]\nclients = \"all_workspaces\"\n\
+             [launch]\nmode = \"allow_listed\"\n\
+             allow = [\"allowed.desktop\", \"failure.desktop\", \"hostile.desktop\", \
+             \"user.desktop\"]\n"
+        ),
+    )
+    .expect("write launch config");
+    path
+}
+
+fn write_desktop(directory: &Path, id: &str, name: &str, exec: &str) {
+    fs::create_dir_all(directory).expect("desktop fixture directory");
+    fs::write(
+        directory.join(id),
+        format!("[Desktop Entry]\nType=Application\nName={name}\nExec={exec}\n"),
+    )
+    .expect("desktop fixture");
+}
+
 fn hello(stream: &mut UnixStream) -> ServerMessage {
     hello_with(
         stream,
@@ -346,6 +402,10 @@ struct TestClient {
 
 impl TestClient {
     fn create(display: &str, title: &str) -> Self {
+        Self::create_with_startup_id(display, title, None)
+    }
+
+    fn create_with_startup_id(display: &str, title: &str, startup_id: Option<&str>) -> Self {
         let (connection, screen) = x11rb::connect(Some(display)).expect("fixture X11 connection");
         let screen = &connection.setup().roots[screen];
         let root = screen.root;
@@ -376,6 +436,14 @@ impl TestClient {
             .expect("fixture title request")
             .check()
             .expect("fixture title");
+        if let Some(startup_id) = startup_id {
+            let atom = intern(&connection, b"_NET_STARTUP_ID");
+            connection
+                .change_property8(PropMode::REPLACE, window, atom, utf8, startup_id.as_bytes())
+                .expect("fixture startup ID request")
+                .check()
+                .expect("fixture startup ID");
+        }
         connection
             .change_property32(
                 PropMode::REPLACE,
@@ -730,6 +798,7 @@ fn no_wm_lifecycle_policy_ownership_and_stale_recovery() {
                 && welcome.features.as_slice() == [
                     agent_seat_proto::Feature::EwmhObservation,
                     agent_seat_proto::Feature::EwmhManagement,
+                    agent_seat_proto::Feature::DesktopLaunch,
                 ]
     ));
     assert!(matches!(
@@ -929,6 +998,7 @@ fn openbox_snapshots_and_diffs_converge_across_client_lifecycle() {
             if welcome.features.as_slice() == [
                 agent_seat_proto::Feature::EwmhObservation,
                 agent_seat_proto::Feature::EwmhManagement,
+                agent_seat_proto::Feature::DesktopLaunch,
             ]
                 && welcome.granted.as_slice() == [
                     Capability::ObserveStructure,
@@ -1113,6 +1183,7 @@ fn openbox_management_distinguishes_terminal_and_no_send_outcomes() {
             if welcome.features.as_slice() == [
                 agent_seat_proto::Feature::EwmhObservation,
                 agent_seat_proto::Feature::EwmhManagement,
+                agent_seat_proto::Feature::DesktopLaunch,
             ]
     ));
     let mut next_id = 1;
@@ -1285,6 +1356,191 @@ fn openbox_management_distinguishes_terminal_and_no_send_outcomes() {
     ));
 
     beta_client.destroy();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn openbox_launch_is_bounded_policy_controlled_and_shell_free() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("launch");
+    let user_data = directory.0.join("user-data");
+    let system_data = directory.0.join("system-data");
+    let user_applications = user_data.join("applications");
+    let system_applications = system_data.join("applications");
+    let launched = directory.0.join("allowed-launched");
+    let unlisted = directory.0.join("unlisted-launched");
+    let user = directory.0.join("user-launched");
+    let injected = directory.0.join("shell-injected");
+    let invalid_executable = directory.0.join("invalid-executable");
+    fs::write(&invalid_executable, b"not an executable image\n")
+        .expect("invalid executable fixture");
+    fs::set_permissions(&invalid_executable, fs::Permissions::from_mode(0o700))
+        .expect("invalid executable permissions");
+
+    write_desktop(
+        &system_applications,
+        "allowed.desktop",
+        "Allowed fixture",
+        &format!("/usr/bin/touch {}", launched.display()),
+    );
+    write_desktop(
+        &system_applications,
+        "unlisted.desktop",
+        "Unlisted fixture",
+        &format!("/usr/bin/touch {}", unlisted.display()),
+    );
+    write_desktop(
+        &user_applications,
+        "user.desktop",
+        "User fixture",
+        &format!("/usr/bin/touch {}", user.display()),
+    );
+    write_desktop(
+        &system_applications,
+        "hostile.desktop",
+        "Hostile fixture",
+        &format!(
+            "/usr/bin/printf \"literal;touch\" /usr/bin/touch {}",
+            injected.display()
+        ),
+    );
+    write_desktop(
+        &system_applications,
+        "failure.desktop",
+        "Failure fixture",
+        invalid_executable
+            .to_str()
+            .expect("invalid executable UTF-8"),
+    );
+
+    let config = write_launch_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let provider =
+        Provider::start_with_data(&xvfb.display, &config, &socket, &user_data, &system_data);
+    let mut stream = UnixStream::connect(&socket).expect("launch peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::LaunchList,
+                Capability::LaunchExecute,
+            ],
+        ),
+        ServerMessage::Welcome(welcome)
+            if welcome.features.contains(&agent_seat_proto::Feature::DesktopLaunch)
+                && welcome.granted.as_slice() == [
+                    Capability::ObserveStructure,
+                    Capability::LaunchList,
+                    Capability::LaunchExecute,
+                ]
+    ));
+    let mut next_id = 1;
+    let page = match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::ApplicationsList(ApplicationListRequest {
+            cursor: 0,
+            limit: 16,
+        }),
+    ) {
+        Outcome::Ok(Reply::Applications(page)) => page,
+        other => panic!("unexpected application list outcome: {other:?}"),
+    };
+    let listed = page
+        .applications
+        .iter()
+        .map(|application| application.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        listed,
+        ["allowed.desktop", "failure.desktop", "hostile.desktop"]
+    );
+    assert_eq!(page.next_cursor, None);
+
+    let startup_id = format!("agent-seat-x11-{}-1", provider.child.id());
+    let display = xvfb.display.clone();
+    let launch_marker = launched.clone();
+    let correlating_client = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !launch_marker.exists() {
+            assert!(Instant::now() < deadline, "allowed application did not run");
+            thread::sleep(Duration::from_millis(5));
+        }
+        let client =
+            TestClient::create_with_startup_id(&display, "launch-correlated", Some(&startup_id));
+        thread::sleep(Duration::from_millis(1_100));
+        client.destroy();
+    });
+    let allowed = match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::ApplicationLaunch(ApplicationLaunchRequest {
+            application: ApplicationId::new("allowed.desktop").expect("application ID"),
+        }),
+    ) {
+        Outcome::Ok(Reply::Launched(reply)) => reply,
+        other => panic!("unexpected allowed launch outcome: {other:?}"),
+    };
+    assert_eq!(allowed.token.get(), 1);
+    assert!(
+        allowed.client.is_some(),
+        "exact startup ID was not correlated"
+    );
+    correlating_client.join().expect("correlating client");
+
+    for (application, marker) in [("unlisted.desktop", &unlisted), ("user.desktop", &user)] {
+        assert!(matches!(
+            wire_call(
+                &mut stream,
+                &mut next_id,
+                Call::ApplicationLaunch(ApplicationLaunchRequest {
+                    application: ApplicationId::new(application).expect("application ID"),
+                }),
+            ),
+            Outcome::Error(error) if error.code == ErrorCode::Refused
+        ));
+        assert!(!marker.exists(), "refused application was executed");
+    }
+
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::ApplicationLaunch(ApplicationLaunchRequest {
+                application: ApplicationId::new("hostile.desktop").expect("application ID"),
+            }),
+        ),
+        Outcome::Ok(Reply::Launched(reply)) if reply.client.is_none()
+    ));
+    thread::sleep(Duration::from_millis(50));
+    assert!(!injected.exists(), "desktop Exec metadata reached a shell");
+
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::ApplicationLaunch(ApplicationLaunchRequest {
+                application: ApplicationId::new("failure.desktop").expect("application ID"),
+            }),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::Unavailable
+    ));
+    assert!(
+        openbox
+            .try_wait()
+            .expect("Openbox after launch failure")
+            .is_none()
+    );
+    let responsive = TestClient::create(&xvfb.display, "openbox-still-responsive");
+    let snapshot = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.len() == 1 && snapshot.clients[0].frame.is_some()
+    });
+    assert!(!snapshot.clients.is_empty());
+    responsive.destroy();
+
     let _ = openbox.kill();
     let _ = openbox.wait();
 }

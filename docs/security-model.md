@@ -1,7 +1,7 @@
 # Security model
 
-Status: T2 management. Feature-specific analysis expands before each later
-implementation milestone.
+Status: T3 Tier 0 core. Feature-specific analysis expands before each optional
+profile milestone.
 
 E1 supplies strict bounded wire decoding and an authority-free companion. A
 companion can request capabilities but cannot grant them, and it never treats
@@ -26,6 +26,15 @@ scope and opaque freshness under an X server grab immediately before sending.
 Policy, missing target, stale generation/sequence, invalid workspace/geometry,
 and unsupported operations are no-send failures. Close requires
 `WM_DELETE_WINDOW`; there is no kill or input fallback.
+
+T3 adds launch as two separately granted operations. Policy defaults to deny;
+execution additionally depends on catalog visibility. Preference-ordered XDG
+roots, paths, files, keys, entries, pages, arguments, children, and correlation
+waits are bounded. User-root entries need a separate switch and remain user
+entries even when allow-listed. The provider reparses current entry contents
+before each spawn, constructs an argv vector directly, and never passes desktop
+metadata or peer data through a shell. Invalid entries disappear rather than
+being partially interpreted.
 
 The standalone provider is a policy boundary against accidental overreach,
 malformed peers, and a compromised translator. It is not an isolation boundary
@@ -67,6 +76,9 @@ against another process that already has the same user's X11 authority.
   timed-out, or target-gone state without claiming WM acceptance.
 - Provider, peer, or socket failure never becomes a window-manager failure.
 - Core operations do not fall back to a shell, XTEST, or global coordinates.
+- Launch correlation requires one exact startup-ID match on a newly visible,
+  in-scope client. It never falls back to PID, title, class, timing, or window
+  count, and lack of evidence is successful launch with no client handle.
 
 Same-user X11 clients may inspect or spoof desktop state and bypass the
 provider entirely. Stronger isolation requires a different OS user/session or
@@ -82,3 +94,12 @@ window but does not make a foreign WM trustworthy or make later realization
 atomic. Pager-source activation and close carry `CurrentTime` because the
 standalone provider has no trustworthy user-event timestamp; a WM may
 legitimately ignore them, which remains a timed-out observation.
+
+Desktop entries and executable paths can change, and allow-installed mode is a
+deliberately broad trust decision. An allow list authorizes the current winning
+entry with that ID, not a content digest or immutable binary. The provider
+protects its parsing and policy boundary; it does not sandbox the launched
+application. A same-user X11 process can spoof `_NET_STARTUP_ID`, so a
+correlated handle is convenience evidence within the already-weak X11 trust
+domain, never authentication or proof that the launched process owns the
+window.
