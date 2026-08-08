@@ -235,6 +235,14 @@ the fixtures establish loss, interruption, target-change, partial-action
 cleanup, and one-action race contracts. An untestable race stops T5 instead of
 weakening its tests or public promise.
 
+The candidate broker deployment contract in
+[`t5-broker-deployment.md`](t5-broker-deployment.md) now specifies explicit
+administrator enrollment, exact service-manager-passed read-only evdev
+descriptors, an unprivileged confined broker, fail-closed lifecycle, minimal
+IPC, and upgrade/removal behavior. Its overall gate remains failed: generic
+Openbox supplies no independently trusted lock-state source, and logind's
+desktop-provided lock hint is insufficient. No implementation is authorized.
+
 End result for this review: T5 now has concrete pass/fail gates and a smallest
 candidate architecture. Until those gates are approved and passed, the public
 behavior remains the same typed absence described by the first-release T5

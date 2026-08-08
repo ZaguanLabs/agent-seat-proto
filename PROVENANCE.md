@@ -125,6 +125,15 @@ rule incorporate direct maintainer review of that original document. They add
 no external implementation source, schema, fixture, dependency, or product
 prose.
 
+The candidate broker deployment contract is original design work from those
+requirements. Its standards-derived inputs are the Linux evdev documentation,
+udev and libinput device-property documentation, and the systemd service,
+resource-control, execution, and logind interfaces linked from
+`docs/t5-broker-deployment.md`. The local systemd 258 and udev database were
+inspected only as public process and filesystem behavior to check that the
+document does not assume unavailable fields. No broker code, service unit,
+schema, fixture, dependency, or third-party product prose was imported.
+
 ## First-run configuration workflow
 
 The generated configuration template, creation behavior, CLI guidance,

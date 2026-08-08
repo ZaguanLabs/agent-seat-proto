@@ -73,8 +73,12 @@ agent-seat-x11:
     candidate: XTEST only while an approved input profile is active
     forbidden: evdev, uinput, broker administration, raw activity details
 
+candidate enrollment tool:
+    required: explicit root device metadata review and broker unit lifecycle
+    forbidden: event reads, X11, provider policy, grants, resident service
+
 candidate activity broker:
-    required: configured seat evdev, readiness evaluation, minimal IPC
+    required: exact inherited seat evdev FDs, readiness evaluation, minimal IPC
     forbidden: X11, MCP, Agent Seat wire, launch, injection, policy grants
 ```
 
@@ -187,6 +191,13 @@ implementation:
 
 Answers belong in a separately approved deployment contract. An
 implementation cannot be used to discover the answers after the fact.
+
+The candidate contract is now recorded in
+[`t5-broker-deployment.md`](t5-broker-deployment.md). It identifies a
+systemd-253 descriptor-passing design that avoids retained root and broad
+device permissions, but its overall deployment gate fails because generic
+Openbox has no independently trusted lock-state source. This remains a stop,
+not implementation approval.
 
 ## Candidate X11 action contract
 
