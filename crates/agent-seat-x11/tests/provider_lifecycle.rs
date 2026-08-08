@@ -454,6 +454,8 @@ fn start_openbox(display: &str) -> Child {
     let (connection, screen) = x11rb::connect(Some(display)).expect("Openbox readiness X11");
     let root = connection.setup().roots[screen].root;
     let check_atom = intern(&connection, b"_NET_SUPPORTING_WM_CHECK");
+    let count_atom = intern(&connection, b"_NET_NUMBER_OF_DESKTOPS");
+    let current_atom = intern(&connection, b"_NET_CURRENT_DESKTOP");
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
         let owner = connection
@@ -463,7 +465,7 @@ fn start_openbox(display: &str) -> Child {
             .expect("Openbox check reply")
             .value32()
             .and_then(|mut values| values.next());
-        let ready = owner.is_some_and(|owner| {
+        let wm_ready = owner.is_some_and(|owner| {
             connection
                 .get_property(false, owner, check_atom, AtomEnum::WINDOW, 0, 1)
                 .ok()
@@ -471,6 +473,20 @@ fn start_openbox(display: &str) -> Child {
                 .and_then(|reply| reply.value32().and_then(|mut values| values.next()))
                 == Some(owner)
         });
+        let cardinal = |property| {
+            connection
+                .get_property(false, root, property, AtomEnum::CARDINAL, 0, 1)
+                .ok()
+                .and_then(|cookie| cookie.reply().ok())
+                .and_then(|reply| reply.value32().and_then(|mut values| values.next()))
+        };
+        let workspace_count = cardinal(count_atom);
+        let current_workspace = cardinal(current_atom);
+        let ready = wm_ready
+            && workspace_count.is_some_and(|count| count > 0)
+            && current_workspace
+                .zip(workspace_count)
+                .is_some_and(|(current, count)| current < count);
         if ready {
             return child;
         }
