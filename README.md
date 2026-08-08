@@ -22,6 +22,11 @@ separate optional profiles and are not core-release promises.
 The current provider target is a local Linux X11 session. Other Unix peer
 credential mechanisms and non-X11 backends are not yet supported.
 
+The first supported source release is product tag `v0.1.0`. Its component
+versions are `agent-seat-proto` 0.1.1, `agent-seat-mcp` 0.1.1, and
+`agent-seat-x11` 0.1.4; crate versions and the wire revision are intentionally
+separate identities.
+
 ## Build
 
 Rust 1.85 or newer is required. The repository pins its minimum toolchain for

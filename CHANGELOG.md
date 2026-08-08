@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.1.0 - 2026-08-08
+
 ### Added
 
 - Apache-2.0 project skeleton, contribution and provenance policy, security and
@@ -51,3 +53,6 @@ All notable changes to this project are documented here.
 - Added Openbox process coverage for an allowed system entry, an unlisted
   entry, a default-denied user entry, hostile metacharacters, exact and absent
   correlation, launch failure, and post-failure window-manager responsiveness.
+- Completed C0 with the exact independent and cross-product compatibility
+  matrix, explicit T4--T6 stop decisions, a verified source-archive contract,
+  SHA-256 asset, annotated tag workflow, and ZaguanLabs GitHub release notes.

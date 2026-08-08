@@ -1,7 +1,7 @@
 # Product roadmap
 
-Status: E0, E1, and T0--T3 are complete. The Tier 0 core is ready for C0;
-optional profiles do not delay its release. E0 evidence is recorded in
+Status: E0, E1, T0--T3, the T4--T6 first-release decisions, and C0 are
+complete in product release v0.1.0. E0 evidence is recorded in
 [`e0-verification.md`](e0-verification.md).
 
 ## Goals
@@ -126,6 +126,11 @@ delay C0.
 Each profile keeps a typed unsupported result when its stop condition holds.
 
 ## C0 — compatibility and release
+
+Status: complete in v0.1.0, 2026-08-08. The exact matrix, forced
+revision-2 boundary probes, source gate, archive contract, and release evidence
+are recorded in [`c0-verification.md`](c0-verification.md). The annotated
+`v0.1.0` tag drives its verified ZaguanLabs GitHub source release.
 
 Test released companions and providers through public boundaries, publish the
 exact version/revision/backend/WM matrix, assemble the source release and

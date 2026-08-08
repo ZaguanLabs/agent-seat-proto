@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  source-release:
+    name: verified source release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source and tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Require an annotated version tag
+        run: |
+          test "$(git cat-file -t "$GITHUB_REF_NAME")" = tag
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+      - name: Install Rust 1.85
+        run: rustup toolchain install 1.85.0 --profile minimal --component clippy,rustfmt
+      - name: Install isolated X server
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends openbox xterm xvfb
+      - name: Verify source
+        run: |
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo test --workspace --all-targets
+          RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
+      - name: Assemble and inspect source archive
+        env:
+          RELEASE_DIR: ${{ runner.temp }}/agent-seat-release
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          prefix="agent-seat-proto-$version"
+          archive="$RELEASE_DIR/$prefix.tar.gz"
+          inventory="$RELEASE_DIR/$prefix.contents"
+          mkdir -p "$RELEASE_DIR"
+          git archive --format=tar.gz --prefix="$prefix/" --output="$archive" "$GITHUB_REF_NAME"
+          tar -tzf "$archive" > "$inventory"
+          for required in LICENSE Cargo.lock rust-toolchain.toml README.md CONTRIBUTING.md PROVENANCE.md SECURITY.md RELEASING.md; do
+            grep -Fxq "$prefix/$required" "$inventory"
+          done
+          mkdir "$RELEASE_DIR/unpacked"
+          tar -xzf "$archive" -C "$RELEASE_DIR/unpacked"
+          cargo check --locked --workspace --all-targets \
+            --manifest-path "$RELEASE_DIR/unpacked/$prefix/Cargo.toml"
+          pushd "$RELEASE_DIR"
+          sha256sum "$prefix.tar.gz" > "$prefix.tar.gz.sha256"
+          sha256sum --check "$prefix.tar.gz.sha256"
+          popd
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DIR: ${{ runner.temp }}/agent-seat-release
+        run: |
+          set -eu
+          version="${GITHUB_REF_NAME#v}"
+          archive="$RELEASE_DIR/agent-seat-proto-$version.tar.gz"
+          notes=".github/release-notes/$GITHUB_REF_NAME.md"
+          if test -f "$notes"; then
+            gh release create "$GITHUB_REF_NAME" "$archive" "$archive.sha256" \
+              --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+              --title "Agent Seat Protocol $GITHUB_REF_NAME" --notes-file "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" "$archive" "$archive.sha256" \
+              --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+              --title "Agent Seat Protocol $GITHUB_REF_NAME" --generate-notes
+          fi

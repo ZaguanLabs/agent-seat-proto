@@ -1,8 +1,9 @@
 # Compatibility matrix
 
-T3 verifies the complete revision-3 Tier 0 core beside bare Xvfb and released
-Openbox: provider lifecycle, bounded observation, supported EWMH management,
-and controlled desktop-entry launch.
+C0 verifies the complete revision-3 Tier 0 core beside bare Xvfb and released
+Openbox and forces both directions of the separate Nobox revision-2 boundary.
+Detailed release-candidate evidence is in
+[`c0-verification.md`](c0-verification.md).
 
 | Protocol crate | Companion | Provider | Backend/WM | Status |
 | --- | --- | --- | --- | --- |
@@ -10,6 +11,17 @@ and controlled desktop-entry launch.
 | 0.1.1 / revision 3 | 0.1.1 | 0.1.2 / `x11_ewmh`, `tier0`, `ewmh_observation` | Linux, Openbox 3.6.1 / Xvfb | T1 scoped snapshots, filtered diffs, title redaction, and resync verified |
 | 0.1.1 / revision 3 | 0.1.1 | 0.1.3 / `x11_ewmh`, `tier0`, observation + management | Linux, Openbox 3.6.1 / Xvfb | T2 activation, polite close, workspace, state, geometry, and terminal outcomes verified |
 | 0.1.1 / revision 3 | 0.1.1 | 0.1.4 / `x11_ewmh`, `tier0`, observation + management + launch | Linux, Openbox 3.6.1 / Xvfb | Compatible Tier 0 core; policy/refusal, shell-free launch, exact/absent correlation, failure isolation verified |
+
+## Cross-product matrix
+
+| Companion | Provider | Forced explicit-socket result | Status |
+| --- | --- | --- | --- |
+| `agent-seat-mcp` 0.1.1 / revision 3 | `agent-seat-x11` 0.1.4 / revision 3 | Full source and process gates pass | Compatible |
+| released `nobox-agent` 0.1.7 / revision 2 | `agent-seat-x11` 0.1.4 / revision 3 | Provider closes during incompatible opening; no request served | Incompatible |
+| `agent-seat-mcp` 0.1.1 / revision 3 | released Nobox 0.1.3 Tier 1 / revision 2 | Provider closes during incompatible opening; companion returns `unavailable`/`reconnect` | Incompatible |
+
+The first release does not advertise capture, input, human-activity, or
+accessibility features. Those combinations are unsupported, not untested.
 
 Future entries name exact released versions, advertised wire revision,
 backend features, tested window manager and X server, and one of: compatible,
