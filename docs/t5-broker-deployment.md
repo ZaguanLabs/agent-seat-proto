@@ -18,8 +18,11 @@ The deployment gate still does not pass for generic Openbox. systemd-logind's
 locked state is a desktop-provided hint, not an independently enforced lock
 signal. Stock Openbox does not own a screen locker or provide a stronger
 contract. A false unlocked hint would leave the broker armed across an
-automatic lock. Until a separately trusted lock-state integration is specified
-and tested, no broker or Tier 0 input implementation begins.
+automatic lock. The separate
+[`t5-lock-state-study.md`](t5-lock-state-study.md) identifies a narrow
+display-manager foreground-session transition as a candidate, but it remains
+unproven. Until that integration is tested and approved, no broker or Tier 0
+input implementation begins.
 
 ## Supported deployment candidate
 
@@ -204,6 +207,14 @@ can prove both lock and unlock transitions, survive automatic locking, and be
 made unavailable on disconnect or ambiguity. A wrapper around one preferred
 lock command is insufficient because another lock path could bypass it.
 
+The candidate lock contract is specified in
+[`t5-lock-state-study.md`](t5-lock-state-study.md). It requires a supported
+display manager to make the enrolled user session inactive and activate a
+distinct greeter or lock-screen session before credentials can be entered.
+Any session transition or ambiguity latches the broker off, and returning to
+the user session never rearms it. Generic Openbox and in-session lockers do not
+satisfy that contract.
+
 ## Broker state machine
 
 The only public states are:
@@ -319,8 +330,9 @@ another package's udev rules and never leaves group membership or device ACLs.
   unallocated and implementation is forbidden.
 - **Session activity and VT lifecycle:** candidate, needs deterministic logind
   tests without `TakeControl()`.
-- **Lock lifecycle:** fail. Generic Openbox has no independently trusted lock
-  state satisfying the contract.
+- **Lock lifecycle:** fail. A display-manager foreground-session transition is
+  a design candidate, but its ordering and failure behavior have not passed
+  isolated full-system tests. Generic Openbox remains unsupported.
 - **Overall deployment gate:** fail until every item passes. No code milestone
   is authorized.
 

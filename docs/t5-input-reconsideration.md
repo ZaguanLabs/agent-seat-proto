@@ -199,6 +199,13 @@ device permissions, but its overall deployment gate fails because generic
 Openbox has no independently trusted lock-state source. This remains a stop,
 not implementation approval.
 
+The follow-up [`t5-lock-state-study.md`](t5-lock-state-study.md) rejects
+in-session hints, saver state, lock windows, and same-user locker services as
+authorization evidence. It identifies one narrower candidate: an exact,
+tested display-manager flow must make the enrolled user session inactive and
+activate a distinct greeter or lock-screen session before credentials can be
+entered. That candidate remains unproven and does not authorize code.
+
 ## Candidate X11 action contract
 
 If the broker authority is approved, every input request must still pass a

@@ -243,6 +243,15 @@ IPC, and upgrade/removal behavior. Its overall gate remains failed: generic
 Openbox supplies no independently trusted lock-state source, and logind's
 desktop-provided lock hint is insufficient. No implementation is authorized.
 
+The lock follow-up in
+[`t5-lock-state-study.md`](t5-lock-state-study.md) rejects in-session lock
+hints, saver state, windows, and same-user services. It records one candidate
+for isolated full-system testing: a supported display manager must move the
+seat to a distinct greeter or lock-screen session and make the enrolled user
+session inactive before credentials can be entered. LightDM is the first test
+candidate, not a supported profile. Unlock never rearms the broker, and the
+lock gate remains failed pending deterministic evidence and explicit approval.
+
 End result for this review: T5 now has concrete pass/fail gates and a smallest
 candidate architecture. Until those gates are approved and passed, the public
 behavior remains the same typed absence described by the first-release T5

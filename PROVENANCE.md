@@ -134,6 +134,14 @@ inspected only as public process and filesystem behavior to check that the
 document does not assume unavailable fields. No broker code, service unit,
 schema, fixture, dependency, or third-party product prose was imported.
 
+The lock-state integration study is original analysis of the public
+systemd-logind contract, the X11 Screen Saver Extension specification, and the
+upstream LightDM project and `dm-tool` documentation linked from
+`docs/t5-lock-state-study.md`. LightDM is treated only as a future black-box
+compatibility candidate; no LightDM or Nobox implementation, schema, test,
+fixture, comments, or prose was copied or adapted. The study adds no code,
+service definition, schema, fixture, or dependency.
+
 ## First-run configuration workflow
 
 The generated configuration template, creation behavior, CLI guidance,
