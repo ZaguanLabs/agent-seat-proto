@@ -106,6 +106,19 @@ RECORD extension specifications and the public AT-SPI 2 API documentation
 linked from that document. No implementation source or fixture from Nobox or
 another Agent Seat product was consulted or imported.
 
+## T5 input reconsideration
+
+The T5 threat-model review in `docs/t5-input-reconsideration.md` is original
+work derived from this repository's public roadmap and security model. Its
+technical inputs are the public XTEST specification already recorded above,
+the Linux kernel evdev and uinput documentation at
+<https://docs.kernel.org/input/event-codes.html> and
+<https://docs.kernel.org/input/uinput.html>, and the systemd-logind D-Bus API
+at
+<https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html>.
+No Nobox source, schema, test, fixture, comments, or prose was consulted or
+adapted. The review adds no code or dependency.
+
 ## First-run configuration workflow
 
 The generated configuration template, creation behavior, CLI guidance,

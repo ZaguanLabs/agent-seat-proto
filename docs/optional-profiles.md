@@ -104,6 +104,12 @@ same-user X11—such as compositor/window-manager cooperation or an explicitly
 privileged OS input path—with its own authority and deployment review. That
 would be a different profile, not an inference from XInput IDs.
 
+The later [`t5-input-reconsideration.md`](t5-input-reconsideration.md) review
+evaluates that privileged path. It identifies a narrowly bounded system
+activity broker as a candidate, but leaves its new raw-input authority behind
+explicit approval and deployment gates. Revision 3 and this stop decision are
+unchanged.
+
 ## T6 semantics decision
 
 ### Evidence

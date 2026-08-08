@@ -3,7 +3,8 @@
 Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
 complete. The Tier 0 core and C0 shipped in product release v0.1.0; S0 is
 complete on `main` in `agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12.
-E0 evidence is recorded in [`e0-verification.md`](e0-verification.md).
+T5R has begun with a threat-model review; implementation remains gated. E0
+evidence is recorded in [`e0-verification.md`](e0-verification.md).
 
 ## Goals
 
@@ -201,3 +202,28 @@ display-independent commands. Isolated Xvfb/Openbox tests prove the GTK first
 run maps without touching the person's desktop, creates only a disabled mode
 0600 policy, and does not fabricate provider state. Provider lifecycle tests
 distinguish matching, changed, and crash-stale active-policy evidence.
+
+## T5R — input reconsideration
+
+Status: threat-model review complete, 2026-08-08; authority and deployment
+approval pending. No input capability, tool, feature advertisement, wire
+revision, or runtime permission has been added.
+
+Re-evaluate T5 using a separately trusted Linux input source rather than
+weakening the ordinary-X11 stop decision. The review in
+[`t5-input-reconsideration.md`](t5-input-reconsideration.md) rejects XTEST-only
+activity inference, broad provider access to evdev, forced logind controller
+takeover, and unnecessary uinput injection. It records one candidate: a
+separately installed system broker that reduces raw physical-seat input to a
+fail-closed activity epoch while the provider retains bounded XTEST
+realization.
+
+The candidate creates a new privileged authority with keylogging-grade access
+inside its process. It therefore requires explicit maintainer approval of the
+authority, deployment, one-action race bound, target-validation contract, and
+adversarial exit tests before revision 4 or implementation work begins.
+
+End result for this review: T5 now has concrete pass/fail gates and a smallest
+candidate architecture. Until those gates are approved and passed, the public
+behavior remains the same typed absence described by the first-release T5
+decision.
