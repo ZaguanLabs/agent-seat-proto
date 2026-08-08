@@ -124,8 +124,10 @@ and no-replace behavior; Rustix provenance and licensing are recorded above.
 The typed settings draft and public installed-application catalog are original
 work derived from the provider's existing strict policy and T3 discovery code.
 The catalog continues to use only the XDG and Desktop Entry standards recorded
-above. No new dependency, external schema, or other product implementation was
-used.
+above. Comment-preserving edits use `toml_edit` 0.22 (MIT OR Apache-2.0), which
+was already a locked transitive component of `toml` and is now a direct
+dependency. Its canonical upstream is <https://github.com/toml-rs/toml>. No
+external schema or other product implementation was used.
 
 ## Settings application roadmap
 

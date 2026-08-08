@@ -13,7 +13,7 @@ pub use config::{
     ClientScope, LaunchMode, MAX_POLICY_CAPABILITIES, MAX_POLICY_IO_TIMEOUT_MS,
     MAX_POLICY_REQUESTS, MAX_POLICY_SESSIONS, MIN_POLICY_IO_TIMEOUT_MS, MIN_POLICY_REQUESTS,
     MIN_POLICY_SESSIONS, PolicyDraft, PolicySnapshot, default_path as default_policy_path,
-    read_policy, replace_policy,
+    ensure_default_policy, read_policy, recovery_policy_path, replace_policy,
 };
 pub use launch::{MAX_INSTALLED_APPLICATIONS, installed_applications};
 

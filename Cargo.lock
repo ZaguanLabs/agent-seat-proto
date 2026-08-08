@@ -22,13 +22,14 @@ dependencies = [
 
 [[package]]
 name = "agent-seat-x11"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "agent-seat-proto",
  "rustix",
  "serde",
  "signal-hook",
  "toml",
+ "toml_edit",
  "x11rb",
 ]
 

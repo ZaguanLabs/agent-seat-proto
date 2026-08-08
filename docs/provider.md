@@ -103,8 +103,10 @@ The `agent-seat-x11` library exposes validated policy snapshots and independent
 typed drafts for the future Settings application. Drafts provide grouped,
 all-or-nothing edits for activation, resource limits, grants, observation, and
 launch policy. They never add capability dependencies implicitly. Rendering
-produces normalized TOML and passes it back through the provider's exact
-bounded parser before it can be submitted for replacement.
+preserves existing comments and unaffected layout, then passes the exact
+result back through the provider's bounded parser before it can be submitted
+for replacement. The library also exposes default-policy creation and the
+paired recovery path so an editor does not reproduce XDG or filename rules.
 
 The same library exposes a read-only installed-application catalog containing
 at most 4,096 entries. It uses the runtime provider's XDG search order,

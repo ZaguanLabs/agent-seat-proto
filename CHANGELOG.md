@@ -15,8 +15,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `agent-seat-x11` 0.1.9 preserves existing TOML comments and layout across
+  typed Settings edits while still validating the exact rendered source. It
+  also exposes bounded default-policy creation and recovery-path discovery so
+  the standalone editor need not duplicate XDG or recovery conventions.
 - `agent-seat-x11` 0.1.8 exposes the bounded S0 settings model and application
-  catalog: validated grouped policy edits, normalized exact-parser TOML,
+  catalog: validated grouped policy edits, exact-parser TOML rendering,
   published editor bounds, and the provider's own launchable XDG entries
   without opening X11 or consulting the active provider. Process tests cover
   typed edit-to-atomic-commit flow and isolated catalog discovery.

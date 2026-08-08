@@ -151,8 +151,10 @@ read-only policy validation from provider activation. Version 0.1.7 adds the
 provider-owned validated snapshot and atomic policy transaction API with
 stale-edit refusal and a private recovery file. Version 0.1.8 adds a typed,
 bounded settings draft and the provider's read-only launchable XDG application
-catalog. The initial interaction and visual design selects GTK 4 without
-libadwaita; see [settings-design.md](settings-design.md).
+catalog. Version 0.1.9 preserves policy comments through typed edits and
+exposes default creation and recovery discovery. The initial interaction and
+visual design selects GTK 4 without libadwaita; see
+[settings-design.md](settings-design.md).
 
 Add a standalone `agent-seat-settings` application that makes the strict
 provider policy approachable without weakening it. The application should

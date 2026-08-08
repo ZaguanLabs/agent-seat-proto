@@ -15,6 +15,7 @@ use agent_seat_proto::{ApplicationId, BoundedList, Capability, MAX_APPLICATIONS}
 use rustix::fs::{CWD, FlockOperation, Mode, OFlags, RenameFlags};
 use rustix::process::geteuid;
 use serde::{Deserialize, Serialize};
+use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
 
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 /// Maximum number of capability atoms in the provider policy grant.
@@ -170,7 +171,16 @@ impl PolicySnapshot {
 #[derive(Clone, Debug)]
 pub struct PolicyDraft {
     raw: RawConfig,
+    document: DocumentMut,
 }
+
+impl PartialEq for PolicyDraft {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
+    }
+}
+
+impl Eq for PolicyDraft {}
 
 #[derive(Clone, Debug)]
 struct Grant {
@@ -252,8 +262,9 @@ impl PolicyDraft {
     }
 
     /// Sets the explicit provider activation switch.
-    pub const fn set_enabled(&mut self, enabled: bool) {
+    pub fn set_enabled(&mut self, enabled: bool) {
         self.raw.enabled = enabled;
+        self.document["enabled"] = value(enabled);
     }
 
     /// Returns `(max_sessions, max_requests_per_session, io_timeout_ms)`.
@@ -282,7 +293,11 @@ impl PolicyDraft {
         candidate.max_sessions = max_sessions;
         candidate.max_requests_per_session = max_requests_per_session;
         candidate.io_timeout_ms = io_timeout_ms;
-        self.replace_if_valid(candidate)
+        self.replace_if_valid(candidate)?;
+        self.document["max_sessions"] = value(i64::from(max_sessions));
+        self.document["max_requests_per_session"] = value(i64::from(max_requests_per_session));
+        self.document["io_timeout_ms"] = value(i64::from(io_timeout_ms));
+        Ok(())
     }
 
     /// Returns the UID attached to the grant, or `None` when no grant exists.
@@ -315,12 +330,21 @@ impl PolicyDraft {
             uid: geteuid().as_raw(),
             capabilities,
         });
-        self.replace_if_valid(candidate)
+        self.replace_if_valid(candidate)?;
+        ensure_table(&mut self.document, "grant");
+        self.document["grant"]["uid"] = value(i64::from(geteuid().as_raw()));
+        let mut rendered = Array::new();
+        for capability in self.capabilities() {
+            rendered.push(capability_name(*capability));
+        }
+        self.document["grant"]["capabilities"] = Item::Value(Value::Array(rendered));
+        Ok(())
     }
 
     /// Removes the peer grant and all of its capabilities.
     pub fn clear_grant(&mut self) {
         self.raw.grant = None;
+        self.document.remove("grant");
     }
 
     /// Returns the configured client scope and title-content switch.
@@ -338,7 +362,11 @@ impl PolicyDraft {
     pub fn set_observation(&mut self, clients: ClientScope, titles: bool) -> Result<(), String> {
         let mut candidate = self.raw.clone();
         candidate.observation = RawObservation { clients, titles };
-        self.replace_if_valid(candidate)
+        self.replace_if_valid(candidate)?;
+        ensure_table(&mut self.document, "observation");
+        self.document["observation"]["clients"] = value(client_scope_name(clients));
+        self.document["observation"]["titles"] = value(titles);
+        Ok(())
     }
 
     /// Returns the configured application admission mode.
@@ -388,10 +416,16 @@ impl PolicyDraft {
             deny,
             allow_user_entries,
         };
-        self.replace_if_valid(candidate)
+        self.replace_if_valid(candidate)?;
+        ensure_table(&mut self.document, "launch");
+        self.document["launch"]["mode"] = value(launch_mode_name(mode));
+        self.document["launch"]["allow"] = string_array(self.launch_allow());
+        self.document["launch"]["deny"] = string_array(self.launch_deny());
+        self.document["launch"]["allow_user_entries"] = value(allow_user_entries);
+        Ok(())
     }
 
-    /// Renders normalized TOML accepted by the provider's exact validator.
+    /// Renders comment-preserving TOML accepted by the exact validator.
     ///
     /// The original snapshot remains available for a before/after comparison;
     /// rendering a draft never writes the policy.
@@ -401,12 +435,7 @@ impl PolicyDraft {
     /// Returns an error if serialization fails or the rendered policy does not
     /// pass the provider's bounded strict parser and semantic validation.
     pub fn render(&self) -> Result<String, String> {
-        let body = toml::to_string_pretty(&self.raw)
-            .map_err(|error| format!("cannot render provider policy: {error}"))?;
-        let source = format!(
-            "# Managed by agent-seat-settings. Review changes before saving.\n\
-             # The provider must be restarted before saved changes become active.\n\n{body}"
-        );
+        let source = self.document.to_string();
         validate_source(&source, geteuid().as_raw())?;
         Ok(source)
     }
@@ -415,6 +444,51 @@ impl PolicyDraft {
         candidate.clone().validate(geteuid().as_raw())?;
         self.raw = candidate;
         Ok(())
+    }
+}
+
+fn ensure_table(document: &mut DocumentMut, name: &str) {
+    document
+        .entry(name)
+        .or_insert_with(|| Item::Table(Table::new()));
+}
+
+fn string_array<T: std::fmt::Display>(values: &[T]) -> Item {
+    let mut array = Array::new();
+    for entry in values {
+        array.push(entry.to_string());
+    }
+    Item::Value(Value::Array(array))
+}
+
+const fn client_scope_name(scope: ClientScope) -> &'static str {
+    match scope {
+        ClientScope::None => "none",
+        ClientScope::CurrentWorkspace => "current_workspace",
+        ClientScope::AllWorkspaces => "all_workspaces",
+    }
+}
+
+const fn launch_mode_name(mode: LaunchMode) -> &'static str {
+    match mode {
+        LaunchMode::Deny => "deny",
+        LaunchMode::AllowListed => "allow_listed",
+        LaunchMode::AllowInstalled => "allow_installed",
+    }
+}
+
+const fn capability_name(capability: Capability) -> &'static str {
+    match capability {
+        Capability::ObserveStructure => "observe_structure",
+        Capability::ObserveTitles => "observe_titles",
+        Capability::ObserveEvents => "observe_events",
+        Capability::ManageActivate => "manage_activate",
+        Capability::ManageClose => "manage_close",
+        Capability::ManageWorkspace => "manage_workspace",
+        Capability::ManageState => "manage_state",
+        Capability::ManageGeometry => "manage_geometry",
+        Capability::LaunchList => "launch_list",
+        Capability::LaunchExecute => "launch_execute",
     }
 }
 
@@ -480,6 +554,12 @@ impl Config {
             String::from_utf8(bytes).map_err(|_| format!("{} is not UTF-8", path.display()))?;
         let (enabled, config, raw) = validate_source(&source, uid)
             .map_err(|error| format!("invalid {}: {error}", path.display()))?;
+        let document = source.parse::<DocumentMut>().map_err(|error| {
+            format!(
+                "cannot preserve formatting in validated {}: {error}",
+                path.display()
+            )
+        })?;
         Ok((
             PolicySnapshot {
                 path: path.to_path_buf(),
@@ -487,7 +567,7 @@ impl Config {
                 enabled,
                 device: metadata.dev(),
                 inode: metadata.ino(),
-                draft: PolicyDraft { raw },
+                draft: PolicyDraft { raw, document },
             },
             config,
         ))
@@ -571,7 +651,7 @@ pub fn replace_policy(
         return Ok(current);
     }
 
-    let backup_path = suffixed_path(&expected.path, ".previous");
+    let backup_path = recovery_policy_path(&expected.path);
     let backup_exists = check_recovery_target(&backup_path, uid)?;
     let mut temporary = TemporaryPolicy::create(&expected.path, candidate)?;
     let candidate_metadata = temporary
@@ -638,6 +718,12 @@ fn suffixed_path(path: &Path, suffix: &str) -> PathBuf {
     let mut name = OsString::from(path.as_os_str());
     name.push(suffix);
     PathBuf::from(name)
+}
+
+/// Returns the recovery-policy path paired with a provider policy path.
+#[must_use]
+pub fn recovery_policy_path(path: &Path) -> PathBuf {
+    suffixed_path(path, ".previous")
 }
 
 fn lock_policy_directory(path: &Path, uid: u32) -> Result<File, String> {
@@ -849,6 +935,22 @@ pub fn default_path() -> Result<PathBuf, String> {
     Ok(home.join(".config/agent-seat/config.toml"))
 }
 
+/// Ensures the documented disabled policy exists at the default XDG path.
+///
+/// Existing policies are never modified. The returned Boolean is `true` only
+/// when this call created the file.
+///
+/// # Errors
+///
+/// Returns an error when default-path discovery is unsafe or unavailable, the
+/// configuration directory cannot be created, or the private policy cannot be
+/// written.
+pub fn ensure_default_policy() -> Result<(PathBuf, bool), String> {
+    let path = default_path()?;
+    let created = create_first_run_config(&path)?;
+    Ok((path, created))
+}
+
 pub(crate) fn create_first_run_config(path: &Path) -> Result<bool, String> {
     let parent = path.parent().ok_or_else(|| {
         format!(
@@ -882,7 +984,7 @@ pub(crate) fn create_first_run_config(path: &Path) -> Result<bool, String> {
     Ok(true)
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawConfig {
     enabled: bool,
@@ -945,7 +1047,7 @@ impl RawConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawGrant {
     uid: u32,
@@ -1003,7 +1105,7 @@ impl RawGrant {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawObservation {
     #[serde(default = "default_client_scope")]
@@ -1012,7 +1114,7 @@ struct RawObservation {
     titles: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 struct RawLaunch {
     #[serde(default)]

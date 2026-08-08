@@ -26,4 +26,5 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 signal-hook = "0.3"
 toml = "0.8"
+toml_edit = "0.22"
 x11rb = "0.14"

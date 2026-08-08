@@ -9,6 +9,7 @@ use std::thread;
 
 use agent_seat_proto::{ApplicationId, Capability};
 use agent_seat_x11::{ClientScope, LaunchMode, read_policy, replace_policy};
+use rustix::process::geteuid;
 
 static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(1);
 
@@ -100,7 +101,7 @@ fn valid_policy_replacement_is_atomic_private_and_recoverable() {
 #[test]
 fn typed_draft_edits_render_and_commit_through_the_exact_policy_validator() {
     let directory = FixtureDir::new("draft");
-    let original = "enabled = false\n";
+    let original = "# Keep this operator note.\nenabled = false\n";
     let path = directory.policy(original);
     let snapshot = read_policy(&path).expect("read draft source");
     let mut draft = snapshot.draft();
@@ -159,7 +160,7 @@ fn typed_draft_edits_render_and_commit_through_the_exact_policy_validator() {
     assert_eq!(draft.launch_allow().len(), 1);
 
     let rendered = draft.render().expect("render validated policy");
-    assert!(rendered.starts_with("# Managed by agent-seat-settings."));
+    assert!(rendered.starts_with("# Keep this operator note."));
     let replaced = replace_policy(&snapshot, &rendered).expect("commit rendered policy");
     let saved = replaced.draft();
     assert!(saved.is_enabled());
@@ -171,6 +172,34 @@ fn typed_draft_edits_render_and_commit_through_the_exact_policy_validator() {
         fs::read_to_string(previous(&path)).expect("read draft recovery policy"),
         original
     );
+}
+
+#[test]
+fn typed_draft_safely_edits_valid_inline_tables() {
+    let directory = FixtureDir::new("inline-draft");
+    let uid = geteuid().as_raw();
+    let source = format!(
+        "enabled = false\n\
+         grant = {{ uid = {uid}, capabilities = [] }}\n\
+         observation = {{ clients = \"none\", titles = false }}\n\
+         launch = {{ mode = \"deny\", allow = [], deny = [], allow_user_entries = false }}\n"
+    );
+    let path = directory.policy(&source);
+    let snapshot = read_policy(&path).expect("read inline policy");
+    let mut draft = snapshot.draft();
+
+    draft
+        .set_capabilities(vec![Capability::ObserveStructure])
+        .expect("edit inline grant");
+    draft
+        .set_observation(ClientScope::AllWorkspaces, false)
+        .expect("edit inline observation");
+    draft
+        .set_launch(LaunchMode::AllowInstalled, Vec::new(), Vec::new(), false)
+        .expect("edit inline launch");
+
+    let rendered = draft.render().expect("render edited inline tables");
+    replace_policy(&snapshot, &rendered).expect("commit edited inline tables");
 }
 
 #[test]
