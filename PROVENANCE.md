@@ -16,9 +16,9 @@ must first be stated as observable requirements, then implemented afresh.
 
 ## Initial tree
 
-The initial Rust sources, manifests, workflow, policies, and project prose were
-written for this repository after it was created. The only verbatim standard
-documents are:
+The initial Rust sources, manifests, workflow, ownership rules, policies, and
+project prose were written for this repository after it was created. The only
+verbatim standard documents are:
 
 - `LICENSE`: Apache License 2.0 from the Apache Software Foundation;
 - `DCO.txt`: Developer Certificate of Origin 1.1 from The Linux Foundation.
