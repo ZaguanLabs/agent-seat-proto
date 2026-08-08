@@ -1206,6 +1206,13 @@ fn openbox_management_distinguishes_terminal_and_no_send_outcomes() {
 
     let stale = client_named(&snapshot(&mut stream, &mut next_id), "manage-alpha");
     alpha_client.rename("manage-alpha-renamed");
+    wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|client| {
+            client.id == stale.id
+                && client.generation > stale.generation
+                && client.title.as_deref() == Some("manage-alpha-renamed")
+        })
+    });
     assert!(matches!(
         wire_call(
             &mut stream,
