@@ -9,6 +9,10 @@ mod ownership;
 mod runtime;
 mod session;
 
+pub use config::{
+    PolicySnapshot, default_path as default_policy_path, read_policy, replace_policy,
+};
+
 use std::ffi::OsString;
 use std::io;
 use std::num::NonZeroU64;

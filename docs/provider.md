@@ -1,6 +1,6 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core. `agent-seat-x11` 0.1.6 owns lifecycle, policy, local
+Status: T3 Tier 0 core. `agent-seat-x11` 0.1.7 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -96,6 +96,21 @@ valid file reports either `valid and enabled` or `valid and disabled` and exits
 successfully without touching X11. An ordinary provider start still rejects a
 disabled policy. This separation lets a person or settings application safely
 validate a staged disabled policy before enabling it.
+
+### Settings transaction foundation
+
+The `agent-seat-x11` library exposes validated policy snapshots for the future
+Settings application. A replacement succeeds only when the target still has
+the exact inode and contents that the editor originally read. The candidate is
+bounded and validated by the provider's parser before any write.
+
+On Linux, replacement uses an atomic filesystem exchange under a private
+non-blocking settings lock. The new target is mode 0600, the prior policy is
+retained as `config.toml.previous`, and the containing directory is
+synchronized before success is reported. Symlink, non-regular, wrong-owner,
+unsafe recovery, invalid candidate, stale snapshot, concurrent writer, and
+write-infrastructure failures are refused without replacing the reviewed
+policy. This API edits saved policy only; a running provider does not reload it.
 
 ### Policy reference
 

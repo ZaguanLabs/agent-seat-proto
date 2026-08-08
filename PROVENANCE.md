@@ -117,6 +117,10 @@ The later separation of read-only policy validity from runtime activation is
 also original work derived from the same policy. It introduces no external
 schema or implementation input.
 
+The settings transaction API and its filesystem process tests are original
+work. They use the safe Rustix wrappers for Linux `flock`, `renameat2` exchange,
+and no-replace behavior; Rustix provenance and licensing are recorded above.
+
 ## Settings application roadmap
 
 The S0 settings application requirements and authority boundaries are original

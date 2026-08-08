@@ -147,8 +147,10 @@ incompatibility, and untested combinations without relying on source sharing.
 ## S0 — settings application
 
 Status: foundation in progress. `agent-seat-x11` 0.1.6 separates complete
-read-only policy validation from provider activation, so a valid disabled
-policy can be checked safely. No graphical toolkit has been selected.
+read-only policy validation from provider activation. Version 0.1.7 adds the
+provider-owned validated snapshot and atomic policy transaction API with
+stale-edit refusal and a private recovery file. No graphical toolkit has been
+selected.
 
 Add a standalone `agent-seat-settings` application that makes the strict
 provider policy approachable without weakening it. The application should

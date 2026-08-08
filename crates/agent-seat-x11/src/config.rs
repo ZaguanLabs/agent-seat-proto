@@ -1,13 +1,18 @@
 //! Strict, bounded standalone provider configuration.
 
 use std::env;
+use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{Read as _, Write as _};
-use std::os::unix::fs::{DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _};
+use std::os::unix::fs::{
+    DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _,
+};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use agent_seat_proto::{ApplicationId, BoundedList, Capability, MAX_APPLICATIONS};
+use rustix::fs::{CWD, FlockOperation, Mode, OFlags, RenameFlags};
 use rustix::process::geteuid;
 use serde::Deserialize;
 
@@ -20,6 +25,9 @@ const MAX_REQUESTS: u16 = 4096;
 const DEFAULT_IO_TIMEOUT_MS: u32 = 2_000;
 const MIN_IO_TIMEOUT_MS: u32 = 50;
 const MAX_IO_TIMEOUT_MS: u32 = 10_000;
+const TRANSACTION_ATTEMPTS: u8 = 16;
+
+static NEXT_TRANSACTION: AtomicU64 = AtomicU64::new(1);
 
 const FIRST_RUN_TEMPLATE_PREFIX: &str = r#"# agent-seat-x11 configuration
 #
@@ -100,6 +108,40 @@ pub(crate) struct Config {
     launch: LaunchPolicy,
 }
 
+/// A validated point-in-time view of an Agent Seat provider policy.
+///
+/// A snapshot is used as the expected original value for a later
+/// [`replace_policy`] call. This prevents an editor from silently overwriting
+/// changes made after it loaded the policy.
+#[derive(Clone, Debug)]
+pub struct PolicySnapshot {
+    path: PathBuf,
+    source: String,
+    enabled: bool,
+    device: u64,
+    inode: u64,
+}
+
+impl PolicySnapshot {
+    /// Returns the absolute configuration path represented by this snapshot.
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Returns the exact validated TOML source represented by this snapshot.
+    #[must_use]
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// Reports whether the validated policy requests provider activation.
+    #[must_use]
+    pub const fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+}
+
 #[derive(Clone, Debug)]
 struct Grant {
     uid: u32,
@@ -166,18 +208,18 @@ impl LaunchPolicy {
 
 impl Config {
     pub(crate) fn load(path: &Path) -> Result<Self, String> {
-        let (enabled, config) = Self::read(path)?;
-        if !enabled {
+        let (snapshot, config) = Self::read(path)?;
+        if !snapshot.enabled {
             return Err("provider is disabled; set enabled = true explicitly".to_owned());
         }
         Ok(config)
     }
 
     pub(crate) fn check(path: &Path) -> Result<bool, String> {
-        Self::read(path).map(|(enabled, _)| enabled)
+        Self::read(path).map(|(snapshot, _)| snapshot.enabled)
     }
 
-    fn read(path: &Path) -> Result<(bool, Self), String> {
+    fn read(path: &Path) -> Result<(PolicySnapshot, Self), String> {
         if !path.is_absolute() {
             return Err("configuration path must be absolute".to_owned());
         }
@@ -223,12 +265,19 @@ impl Config {
             ));
         }
         let source =
-            std::str::from_utf8(&bytes).map_err(|_| format!("{} is not UTF-8", path.display()))?;
-        let raw: RawConfig = toml::from_str(source)
+            String::from_utf8(bytes).map_err(|_| format!("{} is not UTF-8", path.display()))?;
+        let (enabled, config) = validate_source(&source, uid)
             .map_err(|error| format!("invalid {}: {error}", path.display()))?;
-        let enabled = raw.enabled;
-        let config = raw.validate(uid)?;
-        Ok((enabled, config))
+        Ok((
+            PolicySnapshot {
+                path: path.to_path_buf(),
+                source,
+                enabled,
+                device: metadata.dev(),
+                inode: metadata.ino(),
+            },
+            config,
+        ))
     }
 
     pub(crate) const fn max_sessions(&self) -> usize {
@@ -270,7 +319,306 @@ impl Config {
     }
 }
 
-pub(crate) fn default_path() -> Result<PathBuf, String> {
+/// Reads and validates a provider policy without requiring it to be enabled.
+///
+/// # Errors
+///
+/// Returns an error when `path` is not absolute, is not a safe regular file
+/// owned by the effective UID, exceeds the size bound, cannot be read, or does
+/// not contain a valid strict policy.
+pub fn read_policy(path: &Path) -> Result<PolicySnapshot, String> {
+    Config::read(path).map(|(snapshot, _)| snapshot)
+}
+
+/// Atomically replaces a policy if it still matches `expected`.
+///
+/// The candidate is validated with the provider's exact parser before any
+/// write. A successful replacement retains the previous policy beside the
+/// target with a `.previous` suffix and returns a new validated snapshot.
+///
+/// # Errors
+///
+/// Returns an error if the candidate is invalid, the target or recovery file
+/// is unsafe, another settings writer is active, the policy changed after
+/// `expected` was read, or the atomic write and directory synchronization
+/// cannot be completed.
+pub fn replace_policy(
+    expected: &PolicySnapshot,
+    candidate: &str,
+) -> Result<PolicySnapshot, String> {
+    let uid = geteuid().as_raw();
+    validate_source(candidate, uid).map_err(|error| format!("invalid candidate: {error}"))?;
+
+    let _lock = lock_policy_directory(&expected.path, uid)?;
+    let current = read_policy(&expected.path)?;
+    if !same_snapshot(expected, &current) {
+        return Err("configuration changed after it was read; reload before saving".to_owned());
+    }
+    if candidate == current.source {
+        return Ok(current);
+    }
+
+    let backup_path = suffixed_path(&expected.path, ".previous");
+    let backup_exists = check_recovery_target(&backup_path, uid)?;
+    let mut temporary = TemporaryPolicy::create(&expected.path, candidate)?;
+    let candidate_metadata = temporary
+        .file
+        .metadata()
+        .map_err(|error| format!("cannot inspect staged policy: {error}"))?;
+
+    exchange(&temporary.path, &expected.path).map_err(|error| {
+        format!(
+            "cannot atomically install {}: {error}",
+            expected.path.display()
+        )
+    })?;
+
+    let displaced = read_policy(&temporary.path);
+    let displaced_matches = displaced
+        .as_ref()
+        .is_ok_and(|snapshot| same_snapshot(expected, snapshot));
+    if !displaced_matches {
+        rollback_or_preserve(&mut temporary, &expected.path, &candidate_metadata)?;
+        return Err(match displaced {
+            Ok(_) => "configuration changed during replacement; no change was saved".to_owned(),
+            Err(error) => format!(
+                "configuration became unsafe during replacement; no change was saved: {error}"
+            ),
+        });
+    }
+
+    let backup_result = if backup_exists {
+        exchange(&temporary.path, &backup_path)
+    } else {
+        rustix::fs::renameat_with(
+            CWD,
+            &temporary.path,
+            CWD,
+            &backup_path,
+            RenameFlags::NOREPLACE,
+        )
+    };
+    if let Err(error) = backup_result {
+        rollback_or_preserve(&mut temporary, &expected.path, &candidate_metadata)?;
+        return Err(format!(
+            "cannot retain recovery policy {}: {error}; no change was saved",
+            backup_path.display()
+        ));
+    }
+    fs::set_permissions(&backup_path, fs::Permissions::from_mode(0o600)).map_err(|error| {
+        format!(
+            "configuration was replaced but cannot secure recovery policy {}: {error}",
+            backup_path.display()
+        )
+    })?;
+    temporary.cleanup();
+
+    sync_directory(&expected.path)?;
+    read_policy(&expected.path)
+}
+
+fn same_snapshot(left: &PolicySnapshot, right: &PolicySnapshot) -> bool {
+    left.device == right.device && left.inode == right.inode && left.source == right.source
+}
+
+fn suffixed_path(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = OsString::from(path.as_os_str());
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+fn lock_policy_directory(path: &Path, uid: u32) -> Result<File, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("configuration path {} has no parent", path.display()))?;
+    let lock_path = parent.join(".agent-seat-config.lock");
+    let descriptor = rustix::fs::open(
+        &lock_path,
+        OFlags::RDWR | OFlags::CREATE | OFlags::CLOEXEC | OFlags::NOFOLLOW,
+        Mode::RUSR | Mode::WUSR,
+    )
+    .map_err(|error| format!("cannot open settings lock {}: {error}", lock_path.display()))?;
+    let file = File::from(descriptor);
+    let metadata = file.metadata().map_err(|error| {
+        format!(
+            "cannot inspect settings lock {}: {error}",
+            lock_path.display()
+        )
+    })?;
+    if !metadata.file_type().is_file() || metadata.uid() != uid {
+        return Err(format!(
+            "settings lock {} must be a private regular file owned by UID {uid}",
+            lock_path.display()
+        ));
+    }
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|error| {
+            format!(
+                "cannot secure settings lock {}: {error}",
+                lock_path.display()
+            )
+        })?;
+    rustix::fs::flock(&file, FlockOperation::NonBlockingLockExclusive).map_err(|error| {
+        format!(
+            "another settings writer is active for {}: {error}",
+            path.display()
+        )
+    })?;
+    Ok(file)
+}
+
+fn check_recovery_target(path: &Path, uid: u32) -> Result<bool, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => {
+            return Err(format!(
+                "cannot inspect recovery policy {}: {error}",
+                path.display()
+            ));
+        }
+    };
+    if !metadata.file_type().is_file() || metadata.uid() != uid || metadata.mode() & 0o077 != 0 {
+        return Err(format!(
+            "recovery policy {} must be a private regular file owned by UID {uid}",
+            path.display()
+        ));
+    }
+    Ok(true)
+}
+
+fn exchange(left: &Path, right: &Path) -> Result<(), rustix::io::Errno> {
+    rustix::fs::renameat_with(CWD, left, CWD, right, RenameFlags::EXCHANGE)
+}
+
+fn rollback_exchange(
+    temporary: &Path,
+    target: &Path,
+    candidate_metadata: &fs::Metadata,
+) -> Result<(), String> {
+    let target_metadata = fs::symlink_metadata(target)
+        .map_err(|error| format!("cannot inspect replacement during rollback: {error}"))?;
+    if !target_metadata.file_type().is_file()
+        || target_metadata.dev() != candidate_metadata.dev()
+        || target_metadata.ino() != candidate_metadata.ino()
+    {
+        return Err(format!(
+            "configuration changed again during rollback; inspect {} and {}",
+            target.display(),
+            temporary.display()
+        ));
+    }
+    exchange(temporary, target).map_err(|error| {
+        format!(
+            "cannot roll back configuration replacement; inspect {} and {}: {error}",
+            target.display(),
+            temporary.display()
+        )
+    })
+}
+
+fn rollback_or_preserve(
+    temporary: &mut TemporaryPolicy,
+    target: &Path,
+    candidate_metadata: &fs::Metadata,
+) -> Result<(), String> {
+    rollback_exchange(&temporary.path, target, candidate_metadata).inspect_err(|_| {
+        temporary.preserve();
+    })
+}
+
+fn sync_directory(path: &Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("configuration path {} has no parent", path.display()))?;
+    let directory = File::open(parent).map_err(|error| {
+        format!(
+            "cannot open configuration directory {}: {error}",
+            parent.display()
+        )
+    })?;
+    directory.sync_all().map_err(|error| {
+        format!(
+            "configuration was replaced but cannot synchronize directory {}: {error}",
+            parent.display()
+        )
+    })
+}
+
+struct TemporaryPolicy {
+    path: PathBuf,
+    file: File,
+    remove_on_drop: bool,
+}
+
+impl TemporaryPolicy {
+    fn create(target: &Path, candidate: &str) -> Result<Self, String> {
+        let parent = target
+            .parent()
+            .ok_or_else(|| format!("configuration path {} has no parent", target.display()))?;
+        for _ in 0..TRANSACTION_ATTEMPTS {
+            let serial = NEXT_TRANSACTION.fetch_add(1, Ordering::Relaxed);
+            let path = parent.join(format!(
+                ".agent-seat-config.{}.{serial}.tmp",
+                std::process::id()
+            ));
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true).mode(0o600);
+            let mut file = match options.open(&path) {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => {
+                    return Err(format!("cannot stage policy {}: {error}", path.display()));
+                }
+            };
+            file.set_permissions(fs::Permissions::from_mode(0o600))
+                .map_err(|error| {
+                    format!("cannot secure staged policy {}: {error}", path.display())
+                })?;
+            if let Err(error) = file
+                .write_all(candidate.as_bytes())
+                .and_then(|()| file.sync_all())
+            {
+                drop(file);
+                let _ = fs::remove_file(&path);
+                return Err(format!(
+                    "cannot write staged policy {}: {error}",
+                    path.display()
+                ));
+            }
+            return Ok(Self {
+                path,
+                file,
+                remove_on_drop: true,
+            });
+        }
+        Err("cannot allocate a unique bounded policy staging path".to_owned())
+    }
+
+    fn cleanup(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+
+    fn preserve(&mut self) {
+        self.remove_on_drop = false;
+    }
+}
+
+impl Drop for TemporaryPolicy {
+    fn drop(&mut self) {
+        if self.remove_on_drop {
+            self.cleanup();
+        }
+    }
+}
+
+/// Resolves the default provider policy path from XDG configuration variables.
+///
+/// # Errors
+///
+/// Returns an error when `XDG_CONFIG_HOME` or the `HOME` fallback is relative,
+/// or when neither variable is available.
+pub fn default_path() -> Result<PathBuf, String> {
     if let Some(base) = env::var_os("XDG_CONFIG_HOME") {
         let base = PathBuf::from(base);
         if !base.is_absolute() {
@@ -337,6 +685,18 @@ struct RawConfig {
     observation: RawObservation,
     #[serde(default)]
     launch: RawLaunch,
+}
+
+fn validate_source(source: &str, provider_uid: u32) -> Result<(bool, Config), String> {
+    if source.len() as u64 > MAX_CONFIG_BYTES {
+        return Err(format!(
+            "candidate exceeds the {MAX_CONFIG_BYTES}-byte configuration bound"
+        ));
+    }
+    let raw: RawConfig = toml::from_str(source).map_err(|error| error.to_string())?;
+    let enabled = raw.enabled;
+    let config = raw.validate(provider_uid)?;
+    Ok((enabled, config))
 }
 
 impl RawConfig {

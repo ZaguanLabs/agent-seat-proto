@@ -30,6 +30,12 @@ profiles. Revision 3 exposes no calls for absent profiles; their feature atoms
 remain unadvertised. A future revision that defines optional calls must return
 typed `unsupported` results when its backend does not advertise them.
 
+The crate also owns the non-runtime policy transaction API used by the future
+`agent-seat-settings` application. That API reuses the provider's exact parser,
+captures the expected inode and source, refuses stale or concurrent edits, and
+atomically retains the previous private policy. It does not connect to X11,
+open the provider socket, or alter the policy active in a running process.
+
 ## Dependency direction
 
 ```text

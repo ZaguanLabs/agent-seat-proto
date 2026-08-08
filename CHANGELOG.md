@@ -12,6 +12,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `agent-seat-x11` 0.1.7 exposes the provider-owned S0 policy transaction core:
+  validated snapshots, stale-edit and concurrent-writer refusal, atomic Linux
+  exchange, private mode-0600 replacement and recovery files, rollback on
+  pre-commit failure, directory synchronization, and hostile-target process
+  coverage without adding a configuration schema or dependency.
 - `agent-seat-x11` 0.1.6 now treats policy validity and provider activation as
   separate states: `--check-config` successfully validates complete disabled
   policies and reports their activation state, while an ordinary provider
