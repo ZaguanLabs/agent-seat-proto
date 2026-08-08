@@ -1,7 +1,12 @@
 # Security model
 
-Status: E0 boundary. Feature-specific analysis expands before each
+Status: E1 boundary. Feature-specific analysis expands before each
 implementation milestone.
+
+E1 supplies strict bounded wire decoding and an authority-free companion. It
+does not yet supply a policy boundary because the T0 provider is not
+implemented. A companion can request capabilities but cannot grant them, and
+it never treats descriptive peer metadata as identity.
 
 The standalone provider is a policy boundary against accidental overreach,
 malformed peers, and a compromised translator. It is not an isolation boundary

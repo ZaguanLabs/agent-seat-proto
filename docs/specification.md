@@ -1,24 +1,297 @@
-# Specification structure
+# Agent Seat wire revision 3
 
-Status: E0 outline. No wire revision is assigned and no compatibility is
-claimed yet.
+Status: E1 contract. Revision 3 is independently specified and intentionally
+incompatible with Nobox wire revision 2.
 
-The public specification will be completed in this order:
+## Goal
 
-1. transport, local peer identity, frame length, and allocation bounds;
-2. exact advertisement grammar and per-screen X11 provider ownership;
-3. opening handshake, revision equality, assurance, backend features, and
-   grants;
-4. typed identities, requests, responses, errors, retry guidance, and strict
-   unknown-field behavior;
-5. bounded observation snapshots, cursors, diffs, and resynchronization;
-6. EWMH management requests with distinct refusal, stale, unsupported, sent,
-   observed, timeout, and failure outcomes;
-7. controlled desktop-entry discovery, launch policy, spawn result, and
-   qualified correlation; and
-8. static MCP mapping and lazy provider discovery.
+Define one small, strict contract for a local authority-free companion and a
+policy-owning desktop provider. Every allocation and collection has a finite
+limit, mutation results state only what the provider observed, and display
+server identities never cross the boundary.
 
-The first revision decision compares every public behavior against released
-implementations using process-level evidence. An incompatible contract receives
-a new revision. Optional capture, input, and accessibility profiles cannot add
-implicit behavior to the core revision.
+## Non-goals
+
+- Negotiating by accepting a message that merely resembles another revision.
+- Giving the companion authority over grants, scope, launch policy, or backend
+  features.
+- Encoding X11 atoms, XIDs, Wayland objects, process IDs, or raw desktop
+  properties.
+- Treating Tier 0 observations as atomic window-manager state.
+- Adding capture, input, or accessibility behavior to the core implicitly.
+
+## Revision decision
+
+The first independent wire is revision 3. Revision 2 was released by Nobox for
+its integrated Tier 1 seat. Tier 0 requires an authenticated welcome that
+states `x11_ewmh`, `tier0`, exact backend features, exact grants, and provider
+limits. Its management response must distinguish an observed result from a
+sent request that timed out or lost its target. Compatibility with all those
+required shapes was not established for revision 2, so the independent
+product does not reuse that number.
+
+An advertisement and opening message name one exact revision. There is no
+range negotiation. A mismatched pair closes with `incompatible_revision` and
+does not guess from JSON fields.
+
+## Transport and framing
+
+The provider accepts pathname `AF_UNIX` stream connections only. TCP, UDP,
+abstract sockets, forwarded transports, and MCP stdio are not Agent Seat wire
+transports.
+
+Each message is one four-byte unsigned big-endian JSON byte length followed by
+exactly that many UTF-8 JSON bytes:
+
+```text
+0                   31
++--------------------+--------------------------+
+| JSON bytes (u32 BE) | strict JSON payload ... |
++--------------------+--------------------------+
+```
+
+- A zero length is malformed.
+- Client-to-provider payloads are at most 65,536 bytes.
+- Provider-to-client payloads are at most 1,048,576 bytes.
+- The receiver rejects an over-bound prefix before allocating its payload.
+- EOF before any prefix byte is a clean stream end. EOF inside a prefix or
+  payload is truncated input.
+- The JSON value is one complete object. Trailing bytes, duplicate known
+  fields, unknown fields, unknown enum values, and wrong JSON types are
+  malformed.
+- Serde's finite JSON recursion limit applies; revision 3 defines no recursive
+  message value.
+
+Lengths constrain encoded bytes, not Unicode scalar counts. Bounded lists stop
+deserializing when the first over-bound item is detected and retain no spare
+capacity after successful construction.
+
+## Opening and lifecycle
+
+The first client message is `hello`. A provider answers with exactly one
+`welcome` or terminal `goodbye`. Requests begin only after `welcome`.
+
+```json
+{
+  "type": "hello",
+  "body": {
+    "protocol": "agent-seat",
+    "revision": 3,
+    "peer": {
+      "name": "agent-seat-mcp",
+      "version": "0.1.1",
+      "purpose": "translate MCP desktop tools"
+    },
+    "requested": ["observe_structure", "observe_titles"]
+  }
+}
+```
+
+Peer metadata is descriptive and never authorizes. Names are at most 128
+bytes, versions 64 bytes, and purpose 256 bytes. Requested capabilities are a
+unique, canonical list of at most 32 atoms.
+
+```json
+{
+  "type": "welcome",
+  "body": {
+    "protocol": "agent-seat",
+    "revision": 3,
+    "session": 1,
+    "provider": {"name": "agent-seat-x11", "version": "0.1.0"},
+    "backend": "x11_ewmh",
+    "assurance": "tier0",
+    "features": ["ewmh_observation"],
+    "granted": ["observe_structure"],
+    "limits": {
+      "request_frame_bytes": 65536,
+      "response_frame_bytes": 1048576,
+      "events_per_poll": 1024,
+      "poll_wait_ms": 30000
+    }
+  }
+}
+```
+
+Provider name/version are nonempty and bounded like peer metadata. Features
+and grants are unique canonical lists. The fixed backend is `x11_ewmh`; the
+fixed assurance is `tier0`. A provider may grant fewer atoms than requested.
+A feature never grants a capability and a capability never invents a feature.
+
+The provider authenticates local credentials and evaluates grants before
+`welcome`. A terminal `goodbye` carries an error code and an optional 512-byte
+diagnostic. Closing the stream is otherwise the lifecycle shutdown signal.
+
+## Capabilities and features
+
+Canonical capability order is:
+
+1. `observe_structure`
+2. `observe_titles`
+3. `observe_events`
+4. `manage_activate`
+5. `manage_close`
+6. `manage_workspace`
+7. `manage_state`
+8. `manage_geometry`
+9. `launch_list`
+10. `launch_execute`
+
+Core features are `ewmh_observation`, `ewmh_management`, and
+`desktop_launch`. Reserved optional feature names are
+`client_visible_capture`, `obscured_capture`, `output_capture`,
+`input_injection`, `human_activity`, and `accessibility`. Advertising a feature
+is an implementation claim governed by its profile threat model; absent
+features remain typed `unsupported` behavior.
+
+## Requests and responses
+
+A request has a nonzero peer-selected `id` and one adjacently tagged call:
+
+```json
+{
+  "type": "request",
+  "body": {
+    "id": 7,
+    "call": {
+      "name": "client.activate",
+      "arguments": {"client": 3, "generation": 9}
+    }
+  }
+}
+```
+
+The response repeats the ID exactly and contains one outcome:
+
+```json
+{
+  "type": "response",
+  "body": {
+    "id": 7,
+    "outcome": {
+      "status": "ok",
+      "body": {
+        "kind": "management",
+        "value": {"observation": "observed", "sequence": 42}
+      }
+    }
+  }
+}
+```
+
+The core call names and arguments are:
+
+| Call | Required capability | Arguments |
+| --- | --- | --- |
+| `seat.status` | `observe_structure` | closed empty object |
+| `desktop.snapshot` | `observe_structure` | closed empty object |
+| `events.subscribe` | `observe_events` | optional canonical `kinds`, at most 8 |
+| `events.poll` | `observe_events` | `after`, `limit` 1..1024, `wait_ms` 0..30000 |
+| `client.activate` | `manage_activate` | `client`, `generation` |
+| `client.close` | `manage_close` | `client`, `generation` |
+| `workspace.switch` | `manage_workspace` | `workspace`, snapshot `sequence` |
+| `client.workspace` | `manage_workspace` | `client`, `generation`, `workspace` |
+| `client.state` | `manage_state` | fresh client, typed `state`, add/remove/toggle |
+| `client.geometry` | `manage_geometry` | fresh client and nonempty frame rectangle |
+| `applications.list` | `launch_list` | cursor and page `limit` 1..256 |
+| `application.launch` | `launch_execute` | canonical `.desktop` application ID |
+
+Client IDs are nonzero provider-session handles. They are not XIDs. A
+generation and sequence are provider-local unsigned 64-bit freshness values;
+zero is valid before the first change. Workspace IDs are unsigned 16-bit EWMH
+indexes. Rectangles use signed 32-bit positions and nonzero unsigned 32-bit
+extents.
+
+## Observation and events
+
+A snapshot carries one sequence, the current workspace, at most 128 unique
+workspace descriptors, at most 1,024 unique visible client descriptors, and an
+optional active client that must occur in the visible client list. Missing
+facts are absent, never fabricated zero values.
+
+Titles are at most 1,024 bytes and exist only when granted. States and allowed
+actions are unique canonical lists. Every optional rectangle has a nonzero
+extent.
+
+An event subscription returns an initial cursor. Poll responses contain at
+most 1,024 strictly increasing event sequences no later than the returned
+cursor. Events carry added/changed descriptors, removed handles, active-client
+changes, workspace changes, or application-catalog invalidation. Queue
+overflow is the `resync_required` error; the peer discards its model and takes
+a new snapshot.
+
+## Management result
+
+Policy refusal, stale state, invisible target, and unsupported operations are
+errors produced before an EWMH request is sent. A successful `management`
+reply proves that a request was sent and carries exactly one observation:
+
+- `observed`: the desired public state became true;
+- `timed_out`: the fixed deadline expired without observing it; or
+- `target_gone`: the target disappeared after send and the outcome is unknown.
+
+None of these values claims that a foreign window manager or application
+accepted an event internally.
+
+## Launch result
+
+Application pages contain at most 256 entries ordered uniquely by canonical
+desktop ID. Each entry carries a bounded localized name and whether the winning
+catalog entry is user-writable. A launch success carries a unique nonzero
+token and an optional visible client handle only when correlation evidence was
+sufficient. Missing correlation is not an error and is never guessed.
+
+## Error contract
+
+An error outcome carries a stable `code`, stable `retry`, optional exact field,
+optional bounded diagnostic, and optional current generation/sequence. English
+never selects control flow.
+
+| Code | Meaning before/after send |
+| --- | --- |
+| `unavailable` | no provider/source; no desktop request |
+| `incompatible_revision` | exact revision mismatch; session closes |
+| `refused` | grant/policy denied; nothing sent |
+| `no_such_client` | missing, hidden, or out-of-scope; nothing sent |
+| `stale` | freshness changed; nothing sent |
+| `unsupported` | backend/target did not advertise support; nothing sent |
+| `timed_out` | valid operation sent but not observed |
+| `invalid_argument` | typed argument correction required; nothing sent |
+| `malformed` | frame/schema violation |
+| `too_large` | published bound exceeded |
+| `internal` | provider could not complete the operation |
+| `resync_required` | event backlog was discarded |
+| `revoked` | live grant was removed or narrowed |
+| `session_closed` | session cannot accept another call |
+
+Retry is one of `never`, `reobserve`, or `reconnect`.
+
+## X11 discovery
+
+`_AGENT_SEAT` is `UTF8_STRING`, format 8, at most 256 bytes, with exactly
+three NUL-separated UTF-8 fields and no trailing NUL:
+
+```text
+agent-seat NUL 3 NUL /absolute/pathname/socket
+```
+
+The revision uses canonical decimal. The socket is nonempty, absolute, has no
+NUL, and fits the platform pathname socket bound (107 bytes on Linux).
+
+The provider owns `_AGENT_SEAT_S<screen>` on a dedicated window. That window
+and the selected root contain byte-identical advertisements. A consumer reads
+the current owner, both bounded properties, and the owner again. No owner,
+changed owner, missing property, or mismatch means no live discovery source.
+Wrong type/format/size/UTF-8/grammar/revision is an error.
+
+Companion resolution order is exactly explicit `--socket`,
+`AGENT_SEAT_SOCKET`, then live selection-bound X11. A selected malformed or
+unreachable higher-precedence source fails there. There is no conventional
+filesystem or product-specific fallback.
+
+## End result
+
+Revision 3 gives T0--T3 a bounded language-neutral contract, gives the MCP
+translator no authority, and makes every core outcome externally testable. A
+later incompatible field, enum, or semantic change allocates another revision
+instead of weakening strict decoding.

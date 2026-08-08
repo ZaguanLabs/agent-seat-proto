@@ -2,7 +2,12 @@
 
 #![forbid(unsafe_code)]
 
-fn main() {
-    eprintln!("agent-seat-mcp: implementation begins at milestone E1");
-    std::process::exit(64);
+fn main() -> std::process::ExitCode {
+    match agent_seat_mcp::run(std::env::args_os().skip(1)) {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("agent-seat-mcp: {error}");
+            std::process::ExitCode::FAILURE
+        }
+    }
 }

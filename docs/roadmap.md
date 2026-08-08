@@ -1,6 +1,6 @@
 # Product roadmap
 
-Status: E0 complete; E1 is next. Milestones are sequential; optional profiles
+Status: E0 and E1 complete; T0 is next. Milestones are sequential; optional profiles
 do not delay the Tier 0 core release. E0 evidence is recorded in
 [`e0-verification.md`](e0-verification.md).
 
@@ -37,6 +37,10 @@ End result: the skeleton builds from source, provenance and inbound licensing
 are auditable, and all metadata names the canonical upstream.
 
 ## E1 — protocol and companion
+
+Status: complete, 2026-08-08. `agent-seat-proto` 0.1.1 implements wire
+revision 3 and `agent-seat-mcp` 0.1.1 implements the static MCP boundary and
+lazy discovery. The provider remains deliberately absent until T0.
 
 Specify and implement bounded framing, strict messages, identities,
 capabilities, errors, feature reporting, advertisement parsing, and revision

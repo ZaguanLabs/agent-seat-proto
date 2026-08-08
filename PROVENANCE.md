@@ -26,3 +26,24 @@ verbatim standard documents are:
 GitHub's checkout action is referenced as a CI dependency and is not vendored.
 The Rust toolchain is installed directly by `rustup`. No file in the initial
 tree was copied from Nobox.
+
+## E1 protocol and companion
+
+The revision-3 wire types, codec, advertisement grammar, companion, and tests
+are original work written for this repository from its public specification.
+The implementation used these public standards as behavioral inputs:
+
+- MCP `2025-11-25` lifecycle and tools specifications:
+  <https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle>
+  and <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>;
+- JSON-RPC 2.0: <https://www.jsonrpc.org/specification>; and
+- ICCCM selection ownership conventions:
+  <https://www.x.org/releases/current/doc/xorg-docs/icccm/icccm.html>.
+
+Direct runtime dependencies are Serde 1 (MIT OR Apache-2.0) for typed data,
+`serde_json` 1 (MIT OR Apache-2.0) for the specified JSON encoding, and
+`x11rb` 0.14 (MIT OR Apache-2.0) for safe X11 discovery. Their canonical
+upstreams are <https://github.com/serde-rs/serde>,
+<https://github.com/serde-rs/json>, and <https://github.com/psychon/x11rb>.
+Exact resolved versions and transitive dependencies are recorded in
+`Cargo.lock`.

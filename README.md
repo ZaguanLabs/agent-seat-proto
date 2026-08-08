@@ -5,8 +5,9 @@ between desktop providers and authority-free agent companions. The repository
 is owned from its first commit by
 [`ZaguanLabs`](https://github.com/ZaguanLabs).
 
-The E0 bootstrap is complete and E1 protocol work is next. The project does not
-yet implement or claim a wire revision. The three reserved deliverables are:
+E1 is complete. The project implements strict Agent Seat wire revision 3 and a
+generic MCP `2025-11-25` companion; the standalone provider begins in T0. The
+three deliverables are:
 
 - `agent-seat-proto`: display-server-neutral wire types and framing only;
 - `agent-seat-mcp`: a generic MCP translator with no policy authority; and
@@ -29,8 +30,13 @@ cargo test --workspace --all-targets
 cargo doc --workspace --no-deps
 ```
 
-The E0 binaries intentionally exit with a usage-style failure because no
-provider or companion is implemented yet.
+`agent-seat-mcp` can initialize and list its static tools without a desktop.
+Its first tool call resolves `--socket`, `AGENT_SEAT_SOCKET`, or the live
+selection-bound X11 advertisement. Until T0 provides `agent-seat-x11`, that
+call correctly reports that no live provider is available.
+
+The normative wire contract is [`docs/specification.md`](docs/specification.md)
+and the companion contract is [`docs/mcp.md`](docs/mcp.md).
 
 ## Project policy
 
