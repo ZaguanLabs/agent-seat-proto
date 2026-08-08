@@ -66,7 +66,7 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
 
 fn serve(
     listener: runtime::ListenerGuard,
-    ownership: ownership::Ownership,
+    mut ownership: ownership::Ownership,
     config: Arc<config::Config>,
     stopping: Arc<AtomicBool>,
 ) -> Result<(), String> {
@@ -110,6 +110,7 @@ fn serve(
     if ownership_lost {
         Err("Agent Seat selection ownership was lost".to_owned())
     } else {
+        ownership.withdraw()?;
         Ok(())
     }
 }

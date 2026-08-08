@@ -17,6 +17,7 @@ pub(crate) struct Ownership {
     owner: u32,
     selection: u32,
     property: u32,
+    active: bool,
 }
 
 impl Ownership {
@@ -76,7 +77,7 @@ impl Ownership {
                 .map_err(x11_error)
                 .and_then(|cookie| cookie.check().map_err(x11_error))
             {
-                release(&connection, root, owner, selection, property);
+                let _ = release(&connection, root, owner, selection, property);
                 return Err(error);
             }
         }
@@ -88,6 +89,7 @@ impl Ownership {
             owner,
             selection,
             property,
+            active: true,
         })
     }
 
@@ -107,6 +109,18 @@ impl Ownership {
         }
         Ok(false)
     }
+
+    pub(crate) fn withdraw(&mut self) -> Result<(), String> {
+        let result = release(
+            &self.connection,
+            self.root,
+            self.owner,
+            self.selection,
+            self.property,
+        );
+        self.active = false;
+        result
+    }
 }
 
 pub(crate) fn selected_screen() -> Result<usize, String> {
@@ -117,13 +131,15 @@ pub(crate) fn selected_screen() -> Result<usize, String> {
 
 impl Drop for Ownership {
     fn drop(&mut self) {
-        release(
-            &self.connection,
-            self.root,
-            self.owner,
-            self.selection,
-            self.property,
-        );
+        if self.active {
+            let _ = release(
+                &self.connection,
+                self.root,
+                self.owner,
+                self.selection,
+                self.property,
+            );
+        }
     }
 }
 
@@ -167,19 +183,54 @@ fn claim_selection(connection: &RustConnection, selection: u32, owner: u32) -> R
     claim.and(ungrab).and(flush)
 }
 
-fn release(connection: &RustConnection, root: u32, owner: u32, selection: u32, property: u32) {
-    let still_owner = connection
-        .get_selection_owner(selection)
-        .ok()
-        .and_then(|cookie| cookie.reply().ok())
-        .is_some_and(|reply| reply.owner == owner);
-    if still_owner {
-        let _ = connection.delete_property(root, property);
-        let _ = connection.delete_property(owner, property);
-        let _ = connection.set_selection_owner(NONE, selection, CURRENT_TIME);
-    }
-    let _ = connection.destroy_window(owner);
-    let _ = connection.flush();
+fn release(
+    connection: &RustConnection,
+    root: u32,
+    owner: u32,
+    selection: u32,
+    property: u32,
+) -> Result<(), String> {
+    connection
+        .grab_server()
+        .map_err(x11_error)?
+        .check()
+        .map_err(x11_error)?;
+    let withdrawal = (|| {
+        let current = connection
+            .get_selection_owner(selection)
+            .map_err(x11_error)?
+            .reply()
+            .map_err(x11_error)?
+            .owner;
+        if current != owner {
+            return Err("Agent Seat selection was lost before withdrawal".to_owned());
+        }
+        connection
+            .delete_property(root, property)
+            .map_err(x11_error)?
+            .check()
+            .map_err(x11_error)?;
+        connection
+            .delete_property(owner, property)
+            .map_err(x11_error)?
+            .check()
+            .map_err(x11_error)?;
+        connection
+            .set_selection_owner(NONE, selection, CURRENT_TIME)
+            .map_err(x11_error)?
+            .check()
+            .map_err(x11_error)
+    })();
+    let destroy = connection
+        .destroy_window(owner)
+        .map_err(x11_error)
+        .and_then(|cookie| cookie.check().map_err(x11_error));
+    let ungrab = connection
+        .ungrab_server()
+        .map_err(x11_error)
+        .and_then(|cookie| cookie.check().map_err(x11_error));
+    let flush = connection.flush().map_err(x11_error);
+    withdrawal.and(destroy).and(ungrab).and(flush)
 }
 
 fn intern(connection: &RustConnection, name: &[u8]) -> Result<u32, String> {
