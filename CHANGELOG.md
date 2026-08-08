@@ -12,6 +12,11 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `agent-seat-x11` 0.1.6 now treats policy validity and provider activation as
+  separate states: `--check-config` successfully validates complete disabled
+  policies and reports their activation state, while an ordinary provider
+  start continues to require explicit enablement. This is the first S0
+  settings-application foundation.
 - `agent-seat-x11` 0.1.5 now creates a private, disabled, extensively commented
   policy template on first use of the default configuration path, reports the
   exact next steps without touching X11, and provides complete first-run help

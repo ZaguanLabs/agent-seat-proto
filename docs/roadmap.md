@@ -146,8 +146,9 @@ incompatibility, and untested combinations without relying on source sharing.
 
 ## S0 — settings application
 
-Status: planned for a future release; no implementation or toolkit has been
-selected.
+Status: foundation in progress. `agent-seat-x11` 0.1.6 separates complete
+read-only policy validation from provider activation, so a valid disabled
+policy can be checked safely. No graphical toolkit has been selected.
 
 Add a standalone `agent-seat-settings` application that makes the strict
 provider policy approachable without weakening it. The application should

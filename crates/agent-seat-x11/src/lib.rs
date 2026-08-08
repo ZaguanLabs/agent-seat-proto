@@ -37,8 +37,8 @@ FIRST RUN:
   $HOME/.config/agent-seat/config.toml when XDG_CONFIG_HOME is unset.
 
   The generated file is mode 0600, extensively commented, and disabled.
-  Review its capabilities, set enabled = true, validate it with
-  agent-seat-x11 --check-config, then run agent-seat-x11 again.
+  Review its capabilities and validate it with agent-seat-x11 --check-config.
+  When ready, set enabled = true, validate again, then run agent-seat-x11.
 
   The provider runs in the foreground inside the X11 desktop session.
   Explicit --config paths are never created or overwritten."#;
@@ -63,17 +63,23 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
     if creates_first_run_config && config::create_first_run_config(&config_path)? {
         println!(
             "Created first-run configuration at {}.\n\
-             The provider has not started. Review the documented policy, set enabled = true,\n\
-             then run `agent-seat-x11 --check-config` and start the provider again.",
+             The provider has not started. Review the documented policy and run\n\
+             `agent-seat-x11 --check-config`. When ready, set enabled = true, validate again,\n\
+             then start the provider.",
             config_path.display()
         );
         return Ok(());
     }
-    let config = Arc::new(config::Config::load(&config_path)?);
     if options.check_config {
-        println!("{}: valid and enabled", config_path.display());
+        let state = if config::Config::check(&config_path)? {
+            "enabled"
+        } else {
+            "disabled"
+        };
+        println!("{}: valid and {state}", config_path.display());
         return Ok(());
     }
+    let config = Arc::new(config::Config::load(&config_path)?);
 
     let screen = ownership::selected_screen()?;
     let listener = runtime::ListenerGuard::bind(options.socket.as_deref(), screen)?;

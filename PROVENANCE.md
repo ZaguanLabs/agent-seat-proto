@@ -113,6 +113,10 @@ documentation, and process tests are original work written for this
 repository from its existing strict provider policy. No external product code,
 schema, fixture, comments, or prose was used.
 
+The later separation of read-only policy validity from runtime activation is
+also original work derived from the same policy. It introduces no external
+schema or implementation input.
+
 ## Settings application roadmap
 
 The S0 settings application requirements and authority boundaries are original

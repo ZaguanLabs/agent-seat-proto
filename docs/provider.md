@@ -1,6 +1,6 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core. `agent-seat-x11` 0.1.5 owns lifecycle, policy, local
+Status: T3 Tier 0 core. `agent-seat-x11` 0.1.6 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -63,8 +63,9 @@ the default file does not exist, the command:
 ```sh
 agent-seat-x11
 # Created first-run configuration at /home/example/.config/agent-seat/config.toml.
-# The provider has not started. Review the documented policy, set enabled = true,
-# then run `agent-seat-x11 --check-config` and start the provider again.
+# The provider has not started. Review the documented policy and run
+# `agent-seat-x11 --check-config`. When ready, set enabled = true, validate again,
+# then start the provider.
 ```
 
 The generated template is deliberately disabled. Its uncommented policy grants
@@ -73,10 +74,13 @@ changes `enabled = false` to `enabled = true`. Observation of titles or events,
 window management, and application launch remain commented out. Each optional
 capability is documented next to the corresponding entry.
 
-Review the file, enable only the required permissions, and then validate it:
+Review and validate the disabled file first. Enable only the required
+permissions when ready, then validate it again before starting:
 
 ```sh
 ${EDITOR:-vi} "${XDG_CONFIG_HOME:-$HOME/.config}/agent-seat/config.toml"
+agent-seat-x11 --check-config
+# Change enabled = false to enabled = true when the policy is ready.
 agent-seat-x11 --check-config
 agent-seat-x11
 ```
@@ -86,6 +90,12 @@ default path. `--check-config` remains read-only, while `--config PATH`
 requires an absolute path to an existing file; neither creates or overwrites a
 configuration. Subsequent ordinary runs also never modify an existing default
 configuration.
+
+`--check-config` validates the complete policy independently of activation. A
+valid file reports either `valid and enabled` or `valid and disabled` and exits
+successfully without touching X11. An ordinary provider start still rejects a
+disabled policy. This separation lets a person or settings application safely
+validate a staged disabled policy before enabling it.
 
 ### Policy reference
 

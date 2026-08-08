@@ -701,8 +701,18 @@ fn configuration_check_is_strict_explicit_and_desktop_free() {
         .env_remove("DISPLAY")
         .output()
         .expect("check disabled config");
-    assert!(!disabled.status.success());
-    assert!(String::from_utf8_lossy(&disabled.stderr).contains("disabled"));
+    assert!(disabled.status.success());
+    assert!(String::from_utf8_lossy(&disabled.stdout).contains("valid and disabled"));
+
+    fs::write(&config, "enabled = false\nmax_sessions = 0\n").expect("invalid disabled config");
+    let invalid_disabled = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+        .args(["--config", config.to_str().expect("config UTF-8")])
+        .arg("--check-config")
+        .env_remove("DISPLAY")
+        .output()
+        .expect("check invalid disabled config");
+    assert!(!invalid_disabled.status.success());
+    assert!(String::from_utf8_lossy(&invalid_disabled.stderr).contains("max_sessions"));
 
     fs::write(&config, "enabled = true\nunknown = 1\n").expect("unknown config");
     let unknown = Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))

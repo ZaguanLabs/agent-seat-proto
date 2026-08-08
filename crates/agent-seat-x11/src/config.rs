@@ -166,6 +166,18 @@ impl LaunchPolicy {
 
 impl Config {
     pub(crate) fn load(path: &Path) -> Result<Self, String> {
+        let (enabled, config) = Self::read(path)?;
+        if !enabled {
+            return Err("provider is disabled; set enabled = true explicitly".to_owned());
+        }
+        Ok(config)
+    }
+
+    pub(crate) fn check(path: &Path) -> Result<bool, String> {
+        Self::read(path).map(|(enabled, _)| enabled)
+    }
+
+    fn read(path: &Path) -> Result<(bool, Self), String> {
         if !path.is_absolute() {
             return Err("configuration path must be absolute".to_owned());
         }
@@ -214,7 +226,9 @@ impl Config {
             std::str::from_utf8(&bytes).map_err(|_| format!("{} is not UTF-8", path.display()))?;
         let raw: RawConfig = toml::from_str(source)
             .map_err(|error| format!("invalid {}: {error}", path.display()))?;
-        raw.validate(uid)
+        let enabled = raw.enabled;
+        let config = raw.validate(uid)?;
+        Ok((enabled, config))
     }
 
     pub(crate) const fn max_sessions(&self) -> usize {
@@ -327,9 +341,6 @@ struct RawConfig {
 
 impl RawConfig {
     fn validate(self, provider_uid: u32) -> Result<Config, String> {
-        if !self.enabled {
-            return Err("provider is disabled; set enabled = true explicitly".to_owned());
-        }
         if self.max_sessions == 0 || self.max_sessions > MAX_SESSIONS {
             return Err(format!("max_sessions must be in 1..={MAX_SESSIONS}"));
         }
@@ -500,9 +511,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn disabled_unknown_and_unbounded_values_are_rejected() {
+    fn disabled_policy_is_valid_but_unknown_and_unbounded_values_are_rejected() {
+        let disabled: RawConfig = toml::from_str("enabled = false").expect("parse disabled");
+        assert!(disabled.validate(geteuid().as_raw()).is_ok());
+
         for source in [
-            "enabled = false",
+            "enabled = false\nmax_sessions = 0",
             "enabled = true\nunknown = 1",
             "enabled = true\nmax_sessions = 0",
             "enabled = true\nmax_sessions = 33",
