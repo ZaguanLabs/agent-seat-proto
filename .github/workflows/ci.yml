@@ -26,7 +26,7 @@ jobs:
       - name: Install Rust 1.85
         run: rustup toolchain install 1.85.0 --profile minimal --component clippy,rustfmt
       - name: Install desktop test dependencies
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends desktop-file-utils libgtk-4-dev openbox xterm xvfb
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends desktop-file-utils libdbus-1-dev libgtk-4-dev openbox xterm xvfb
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Lint
