@@ -9,7 +9,7 @@
   },
   "binding": {
     "protocol": "agent-seat",
-    "wire_revision": 4,
+    "wire_revision": 5,
     "transport": "local-json-unix-stream"
   },
   "profile": {

@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core plus an experimental T5 pointer slice.
-`agent-seat-x11` 0.1.20 owns lifecycle, policy, local
+Status: T3 Tier 0 core plus an experimental Tier 0.5 pointer and keyboard slice.
+`agent-seat-x11` 0.1.21 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -31,6 +31,8 @@ contract.
 - Start every provider instance with a volatile disabled seat, admit no Agent
   Seat session until an explicit local enable, and revoke the current session
   generation on disable.
+- Realize bounded target-aware pointer and keyboard input through the existing
+  X11 session only while that volatile seat remains enabled.
 
 ## Non-goals
 
@@ -42,8 +44,8 @@ contract.
   window-manager transaction.
 - Implementing arbitrary commands, terminal wrapping, D-Bus activation,
   capture, input, or semantics in the Tier 0 core.
-- Killing a client, synthesizing input, or claiming a foreign WM accepted an
-  internally delivered request.
+- Killing a client or claiming that a foreign window manager or application
+  accepted internally delivered management or input.
 - Treating the volatile operator gate as same-UID isolation, a trusted lock
   transition, a consent window, or Tier 1 window-manager authority.
 
@@ -188,7 +190,8 @@ capabilities = [
   "manage_geometry",
   "launch_list",
   "launch_execute",
-  # "input_pointer",
+  # "input_pointer",   # Target-aware move and click.
+  # "input_keyboard",  # Focus-bound bounded text.
 ]
 
 [observation]
@@ -201,13 +204,8 @@ allow = ["org.example.Editor.desktop"]
 deny = []
 allow_user_entries = false
 
-# Input remains unavailable without an administrator-enrolled broker and a
-# separately trusted eligibility producer.
 [input]
-# broker_socket = "/run/agent-seat/1000/activity.sock"
-# PID 1 owns the socket-activated listener in the system deployment.
-# broker_peer_uid = 0
-# Enable only with the private-device user service documented below.
+# Optional defense in depth; ordinary input does not require this service.
 provider_private_devices = false
 ```
 
@@ -215,26 +213,24 @@ provider_private_devices = false
 directory enforces the same-user boundary and the accepted socket's
 `SO_PEERCRED` UID selects the grant; `hello.peer` remains descriptive.
 Capabilities must be unique and are intersected with the peer's canonically
-ordered request. `observe_titles`, `observe_events`, and every management
-capability and `input_pointer` require `observe_structure`; `launch_execute` requires
-`launch_list`. Calls recheck those dependencies in the live session. An
-omitted grant denies every peer.
+ordered request. `observe_titles`, `observe_events`, every management
+capability, `input_pointer`, and `input_keyboard` require
+`observe_structure`; `launch_execute` requires `launch_list`. Calls recheck
+those dependencies in the live session. An omitted grant denies every peer.
 
 | Setting | Default | Accepted bound |
 | --- | ---: | ---: |
 | `max_sessions` | 4 | 1..32 |
 | `max_requests_per_session` | 1024 | 1..4096 |
 | `io_timeout_ms` | 2000 | 50..10000 |
-| grant capabilities | empty | at most 11 unique atoms |
+| grant capabilities | empty | at most 12 unique atoms |
 | `observation.clients` | `none` | `none`, `current_workspace`, `all_workspaces` |
 | `observation.titles` | `false` | boolean |
 | `launch.mode` | `deny` | `deny`, `allow_listed`, `allow_installed` |
 | `launch.allow` | empty | at most 256 unique canonical desktop IDs; consulted only with `allow_listed` |
 | `launch.deny` | empty | at most 256 unique canonical desktop IDs |
 | `launch.allow_user_entries` | `false` | boolean |
-| `input.broker_socket` | absent | bounded absolute pathname, paired with peer UID |
-| `input.broker_peer_uid` | absent | numeric socket-listener UID observed through `SO_PEERCRED` |
-| `input.provider_private_devices` | `false` | boolean; `true` requires a complete broker endpoint and the private-device service |
+| `input.provider_private_devices` | `false` | boolean; `true` requires the optional private-device service |
 
 `deny` exposes and launches nothing. `allow_listed` admits only IDs in
 `allow`, after applying `deny`. `allow_installed` admits each valid discovered
@@ -260,7 +256,7 @@ before releasing the grab. Thus two conforming providers cannot both observe
 an empty selection and overwrite one another.
 
 The selected root and the dedicated owner window receive byte-identical
-revision-4 `_AGENT_SEAT` advertisements only after ownership succeeds. A
+revision-5 `_AGENT_SEAT` advertisements only after ownership succeeds. A
 second provider refuses to compete. Losing the selection terminates the
 provider. Missing or mismatched properties remain undiscoverable rather than
 falling back to a conventional filename.
@@ -278,7 +274,7 @@ Each admitted connection has fixed read/write deadlines and one sequential
 request stream; there is no per-session request queue. The provider refuses
 capacity beyond `max_sessions`, evicts a peer that does not complete framing
 before its deadline, and ends a session at its request bound. Frames retain
-the revision-4 direction limits.
+the revision-5 direction limits.
 
 The provider advertises `ewmh_observation`, `ewmh_management`, and
 `desktop_launch`. It implements `seat.status` and `desktop.snapshot` with
@@ -287,15 +283,20 @@ The provider advertises `ewmh_observation`, `ewmh_management`, and
 Every request is checked against the grant first; missing authority returns
 `refused`.
 
-When `input_pointer` and a complete `[input]` endpoint are configured, the
-provider additionally advertises `input_injection` and `human_activity` and
-accepts revision-4 `pointer.move`. Configuration does not install, start, arm,
-or enroll a broker. Each movement reconnects to the one persistent broker
-instance, verifies its socket-activation peer UID, rechecks the fresh target
-and visible destination under an X server grab, compares the activity epoch,
-queues at most one XTEST movement, synchronizes, and checks the same broker
-instance/epoch again. Changed evidence reports `interrupted`; it never forces
-focus or claims application handling. Click and keyboard calls are absent.
+When either input capability is granted, the provider additionally advertises
+`input_injection` and accepts revision-5 `pointer.move`, `pointer.click`, or
+`keyboard.type`. No broker, root service, evdev permission, uinput permission,
+or `input`-group membership is required. Each independently reportable action
+refreshes the fresh target under a short X server grab and rechecks the
+volatile seat generation before XTEST.
+Pointer destinations must be visibly topmost inside the target. Keyboard text
+requires the target to own actual X11 focus and resolves through the current
+keyboard map; focus is never forced. Calls state only how many actions were
+queued and synchronized, never application acceptance.
+
+This simple profile does not advertise `human_activity` and cannot prevent a
+physical event from overlapping an agent action. The runtime seat is an
+operator consent and kill switch, not authenticated physical-user priority.
 
 Each session owns a separate X11 observer and opaque client-ID namespace. A
 snapshot samples validated EWMH workspace, client, active-window, geometry,
@@ -374,10 +375,11 @@ late, filtered, absent, or spoofed metadata produces `client = null`; the
 provider never guesses from PID, title, class, timing, or “only new window.”
 The ID is same-user X11 evidence, not an authentication or causality guarantee.
 
-## Optional private-device input service
+## Optional private-device hardening service
 
-An input-enabled provider must not inherit the desktop user's evdev or uinput
-permissions. Set `input.provider_private_devices = true` only after installing
+Ordinary Tier 0.5 input never opens evdev or uinput and needs no device
+permission. An operator who wants runtime proof that the provider cannot even
+see those paths may set `input.provider_private_devices = true` after installing
 the source unit
 `contrib/systemd/user/agent-seat-x11-input.service` as
 `agent-seat-x11-input.service` in the system or user systemd unit search path.
@@ -435,11 +437,9 @@ cargo test -p agent-seat-x11 --test systemd_input_confinement \
 ```
 
 Neither this user service nor the desktop user needs membership in `input`.
-The separate broker enrollment remains the only root-controlled operation and
-passes exact reviewed descriptors to its own unprivileged process. This
-provider service closes one negative-authority gate; it does not pass the
-remaining physical-device and trusted-lock gates or make generic Openbox input
-supported.
+It is optional defense in depth and is not required for the working XTEST
+surface. The separate activity-broker documents remain research for a possible
+future physical-priority profile, not a dependency of Tier 0.5 input.
 
 ## Running beside Openbox
 
@@ -458,7 +458,7 @@ leave a recoverable socket or stale root property, but it cannot terminate or
 block Openbox; discovery requires a current selection owner and matching owner
 property, so stale root bytes alone are not live authority.
 
-## T3 end result
+## Current end result
 
 The provider is an independently failing, bounded, same-user policy process
 whose scoped Openbox snapshots and filtered diffs converge across client
@@ -468,5 +468,7 @@ standalone X11 observation is atomic or a strong isolation boundary. Supported
 management is additionally freshness-checked before send and reports ignored
 or ambiguous terminal outcomes without elevating them to acceptance. The
 complete Tier 0 core additionally exposes only policy-approved XDG entries and
-launches them without shell interpretation. Capture, input, accessibility, and
-persistent coordinate/workflow memory remain unsupported optional profiles.
+launches them without shell interpretation. The optional Tier 0.5 profile adds
+explicit-seat-gated pointer movement, clicks, and focused text without claiming
+physical-user priority. Capture, accessibility, and persistent
+coordinate/workflow memory remain unsupported optional profiles.

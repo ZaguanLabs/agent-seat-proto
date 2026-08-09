@@ -1,8 +1,9 @@
 # Optional X11 profile decisions
 
-Status: first Tier 0 core release decision, 2026-08-08. T4 is deferred to a
-future wire revision in one narrow form; T5 and T6 meet their stop conditions
-and remain unsupported. None of these profiles delays C0.
+Status: historical first Tier 0 core release decision, 2026-08-08. T4 is
+deferred and T6 remains stopped. The strong T5 physical-interruption promise
+also remains stopped; later revision 5 separately implements a weaker,
+explicitly operator-gated Tier 0.5 input claim. None delays the Tier 0 core.
 
 ## Goals
 
@@ -95,9 +96,13 @@ the roadmap's separate human-interruption requirement.
 
 The generic Tier 0 X11 environment cannot distinguish injected and human input
 well enough to honor the promised suppression contract. T5 meets its stop
-condition and remains unsupported. `input_injection` and `human_activity` are
-not advertised, and there is no pointer, keyboard, text, or emergency-stop MCP
-surface in revision 3.
+condition and remains unsupported. Revision 3 therefore has no pointer,
+keyboard, text, or emergency-stop MCP surface.
+
+Revision 5 later adds the separately named Tier 0.5 path: it advertises
+`input_injection` without `human_activity`, uses a volatile operator seat, and
+claims only fresh target/focus checks plus events queued to X11. It does not
+retroactively satisfy this stronger physical-interruption decision.
 
 Reconsideration requires a separately trusted input source outside ordinary
 same-user X11—such as compositor/window-manager cooperation or an explicitly

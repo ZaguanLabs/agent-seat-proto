@@ -50,7 +50,7 @@ pub(crate) fn run(
         return close(
             &mut stream,
             ErrorCode::IncompatibleRevision,
-            "exact Agent Seat revision 4 is required",
+            "exact Agent Seat revision 5 is required",
         );
     }
     let Some(seat_permit) = seat.permit() else {
@@ -80,8 +80,14 @@ pub(crate) fn run(
         Feature::EwmhManagement,
         Feature::DesktopLaunch,
     ];
-    if config.broker().is_some() {
-        features.extend([Feature::InputInjection, Feature::HumanActivity]);
+    if granted.iter().any(|capability| {
+        matches!(
+            capability,
+            agent_seat_proto::Capability::InputPointer
+                | agent_seat_proto::Capability::InputKeyboard
+        )
+    }) {
+        features.push(Feature::InputInjection);
     }
     let welcome = Welcome {
         protocol: text::<128>(PROTOCOL_NAME)?,
@@ -267,6 +273,8 @@ fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
                 | Call::ClientState(_)
                 | Call::ClientGeometry(_)
                 | Call::PointerMove(_)
+                | Call::PointerClick(_)
+                | Call::KeyboardType(_)
         ) || granted.contains(&agent_seat_proto::Capability::ObserveStructure))
         && (!matches!(call, Call::ApplicationLaunch(_))
             || granted.contains(&agent_seat_proto::Capability::LaunchList))
@@ -337,28 +345,24 @@ fn provider_call(
         )
         .map(Reply::Launched)
         .map_err(CallFailure::Launch),
-        Call::PointerMove(arguments) => {
-            let Some((broker_socket, broker_peer_uid)) = context.config.broker() else {
-                return protocol_error(
-                    ErrorCode::Unavailable,
-                    Retry::Reconnect,
-                    "activity broker is not configured",
-                );
-            };
-            observer_for(observer, context.granted, context.config)
-                .and_then(|observer| {
-                    observer.pointer_move(
-                        arguments,
-                        broker_socket,
-                        broker_peer_uid,
-                        context.config.io_timeout(),
-                        context.seat,
-                        context.seat_permit,
-                    )
-                })
-                .map(Reply::Input)
-                .map_err(CallFailure::Observation)
-        }
+        Call::PointerMove(arguments) => observer_for(observer, context.granted, context.config)
+            .and_then(|observer| {
+                observer.pointer_move(arguments, context.seat, context.seat_permit)
+            })
+            .map(Reply::Input)
+            .map_err(CallFailure::Observation),
+        Call::PointerClick(arguments) => observer_for(observer, context.granted, context.config)
+            .and_then(|observer| {
+                observer.pointer_click(arguments, context.seat, context.seat_permit)
+            })
+            .map(Reply::Input)
+            .map_err(CallFailure::Observation),
+        Call::KeyboardType(arguments) => observer_for(observer, context.granted, context.config)
+            .and_then(|observer| {
+                observer.keyboard_type(arguments, context.seat, context.seat_permit)
+            })
+            .map(Reply::Input)
+            .map_err(CallFailure::Observation),
     };
     match result {
         Ok(reply) => Outcome::Ok(reply),

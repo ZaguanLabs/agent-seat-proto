@@ -1,8 +1,8 @@
 # Tier 0.5 volatile seat gate
 
 Status: experimental provider profile, 2026-08-09. This is a working local
-operator gate, not a new wire assurance value and not approval of the complete
-T5 input deployment.
+operator gate and the runtime prerequisite for the revision-5 X11 input
+surface, not a new wire assurance value or a physical-user priority claim.
 
 ## Purpose
 
@@ -52,16 +52,17 @@ each request. A disable acknowledgement means later requests cannot begin in
 the old generation. One request that was already executing may still finish;
 the runtime switch is not process cancellation and does not claim otherwise.
 
-The experimental pointer action has an additional gate check after target and
-broker validation while the X server is grabbed. It also rechecks the gate
-after synchronization before reporting `queued`. A concurrent disable can
-therefore turn the result into `interrupted`, but the already documented bound
-of one atomic action remains.
+Every pointer or keyboard action additionally rechecks this generation after
+fresh target validation while the X server is grabbed. It checks again after
+synchronization before reporting `queued`. A concurrent disable can therefore
+turn the result into `interrupted`; a text request checks between its bounded
+character actions and may report a partial count.
 
-The gate does not replace the physical-activity broker, target validation,
-session eligibility, device-loss handling, or the unresolved credential-
-surface ordering test. In particular, an automatic lock must not be treated as
-safe merely because some desktop component requested `seat disable`.
+The gate does not replace target validation and is not evidence of an unlocked
+session or physical-user inactivity. Ordinary X11 cannot reliably distinguish
+XTEST from physical input, so a physical event can overlap an agent action. An
+automatic lock must not be treated as safe merely because some desktop
+component requested `seat disable`.
 
 ## Authority boundary
 
@@ -104,7 +105,7 @@ similar startup conventions do not prove identical lifetime behavior.
 
 ## Settings integration
 
-`agent-seat-settings` 0.1.5 shows the selected provider's volatile status in a
+`agent-seat-settings` 0.1.6 shows the selected provider's volatile status in a
 fourth `RUNTIME SEAT` state-rail node and in a dedicated Overview panel. The
 panel provides manual Refresh, **Enable for this instance**, and immediate
 **Disable now** controls. Enable requires a confirmation that names the current
@@ -117,8 +118,10 @@ derivation, bounded I/O, and provider peer authentication as the command. It
 does not duplicate the fixed control protocol, invoke a shell, or spawn
 `agent-seat-x11`.
 
-Saved policy, active-policy evidence, and volatile seat state remain separate
-facts. Opening Settings performs only a status request. Opening, saving,
+The Access page separately grants `input_pointer` and `input_keyboard`; neither
+grant enables the runtime seat. Saved policy, active-policy evidence, and
+volatile seat state remain separate facts. Opening Settings performs only a
+status request. Opening, saving,
 reloading, restoring, logging in, and unlocking never send Enable. The
 display-independent policy model and terminal recovery commands never
 initialize GTK, inspect X11, or contact the control plane. The command

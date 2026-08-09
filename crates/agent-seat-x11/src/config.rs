@@ -76,8 +76,8 @@ const FIRST_RUN_TEMPLATE_SUFFIX: &str = r#"
 # Uncomment capabilities deliberately. `observe_titles`, `observe_events`,
 # and all `manage_*` capabilities require `observe_structure`.
 # `launch_execute` requires `launch_list`.
-# `input_pointer` requires `observe_structure` and an explicit
-# activity-broker socket below.
+# Pointer and keyboard input require `observe_structure`. They are additionally
+# denied unless the running provider's volatile seat has been enabled locally.
 capabilities = [
   "observe_structure",
   # "observe_titles",     # Read window titles; also set titles = true below.
@@ -89,7 +89,8 @@ capabilities = [
   # "manage_geometry",    # Move or resize a client frame.
   # "launch_list",        # List applications admitted by launch policy.
   # "launch_execute",     # Start an admitted desktop entry without a shell.
-  # "input_pointer",     # Move only inside the unobscured target.
+  # "input_pointer",      # Move or click only inside the unobscured target.
+  # "input_keyboard",     # Type bounded text only into a focused target.
 ]
 
 [observation]
@@ -117,16 +118,9 @@ deny = []
 allow_user_entries = false
 
 [input]
-# Input remains unavailable unless this is an absolute pathname to the
-# separately installed, armed activity broker socket.
-# broker_socket = "/run/agent-seat-activity/provider.sock"
-# Socket activation is normally owned by the system manager (UID 0), while the
-# broker process itself runs as a separate unprivileged account.
-# broker_peer_uid = 0
-# A supported input deployment also runs the provider in the documented
-# private-device user service. When true, startup requires /dev/input and
-# /dev/uinput to be absent and application launches are delegated to the user
-# manager so applications retain their ordinary device namespace.
+# Optional defense in depth for the separately documented private-device
+# service. Ordinary Tier 0.5 input does not require this service, root, evdev,
+# uinput, or membership in the input group.
 provider_private_devices = false
 "#;
 
@@ -232,8 +226,6 @@ struct Observation {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct InputPolicy {
-    broker_socket: Option<PathBuf>,
-    broker_peer_uid: Option<u32>,
     provider_private_devices: bool,
 }
 
@@ -533,6 +525,7 @@ const fn capability_name(capability: Capability) -> &'static str {
         Capability::LaunchList => "launch_list",
         Capability::LaunchExecute => "launch_execute",
         Capability::InputPointer => "input_pointer",
+        Capability::InputKeyboard => "input_keyboard",
     }
 }
 
@@ -653,13 +646,6 @@ impl Config {
 
     pub(crate) const fn launch_policy(&self) -> &LaunchPolicy {
         &self.launch
-    }
-
-    pub(crate) fn broker(&self) -> Option<(&Path, u32)> {
-        Some((
-            self.input.broker_socket.as_deref()?,
-            self.input.broker_peer_uid?,
-        ))
     }
 
     pub(crate) const fn provider_private_devices(&self) -> bool {
@@ -1099,18 +1085,6 @@ impl RawConfig {
             .map(|grant| grant.validate(provider_uid))
             .transpose()?;
         let input = self.input.validate()?;
-        if grant.as_ref().is_some_and(|grant| {
-            grant
-                .capabilities
-                .iter()
-                .any(|capability| matches!(capability, Capability::InputPointer))
-        }) && (input.broker_socket.is_none() || input.broker_peer_uid.is_none())
-        {
-            return Err(
-                "input capabilities require input.broker_socket and input.broker_peer_uid"
-                    .to_owned(),
-            );
-        }
         Ok(Config {
             max_sessions: usize::from(self.max_sessions),
             max_requests: self.max_requests_per_session,
@@ -1177,11 +1151,12 @@ impl RawGrant {
         {
             return Err("launch_execute requires launch_list".to_owned());
         }
-        if self
-            .capabilities
-            .iter()
-            .any(|capability| matches!(capability, Capability::InputPointer))
-            && !self.capabilities.contains(&Capability::ObserveStructure)
+        if self.capabilities.iter().any(|capability| {
+            matches!(
+                capability,
+                Capability::InputPointer | Capability::InputKeyboard
+            )
+        }) && !self.capabilities.contains(&Capability::ObserveStructure)
         {
             return Err("input capabilities require observe_structure".to_owned());
         }
@@ -1218,35 +1193,12 @@ struct RawLaunch {
 #[serde(deny_unknown_fields)]
 struct RawInput {
     #[serde(default)]
-    broker_socket: Option<PathBuf>,
-    #[serde(default)]
-    broker_peer_uid: Option<u32>,
-    #[serde(default)]
     provider_private_devices: bool,
 }
 
 impl RawInput {
     fn validate(self) -> Result<InputPolicy, String> {
-        if self.broker_socket.is_some() != self.broker_peer_uid.is_some() {
-            return Err(
-                "input.broker_socket and input.broker_peer_uid must be set together".to_owned(),
-            );
-        }
-        if self
-            .broker_socket
-            .as_ref()
-            .is_some_and(|path| !path.is_absolute())
-        {
-            return Err("input.broker_socket must be absolute".to_owned());
-        }
-        if self.provider_private_devices && self.broker_socket.is_none() {
-            return Err(
-                "input.provider_private_devices requires a complete broker endpoint".to_owned(),
-            );
-        }
         Ok(InputPolicy {
-            broker_socket: self.broker_socket,
-            broker_peer_uid: self.broker_peer_uid,
             provider_private_devices: self.provider_private_devices,
         })
     }
@@ -1395,6 +1347,7 @@ mod tests {
             ("manage_activate", "observe_structure"),
             ("launch_execute", "launch_list"),
             ("input_pointer", "observe_structure"),
+            ("input_keyboard", "observe_structure"),
         ] {
             let source =
                 format!("enabled = true\n[grant]\nuid = {uid}\ncapabilities = [\"{capability}\"]");
@@ -1405,45 +1358,29 @@ mod tests {
     }
 
     #[test]
-    fn input_requires_a_complete_absolute_authenticated_broker_endpoint() {
+    fn input_uses_the_operator_gate_without_a_broker_or_device_permission() {
         let uid = geteuid().as_raw();
-        for input in [
-            "broker_socket = \"/run/agent-seat-activity/test.sock\"",
+        let simple = format!(
+            "enabled = true\n[grant]\nuid = {uid}\n\
+             capabilities = [\"observe_structure\", \"input_pointer\", \"input_keyboard\"]"
+        );
+        let simple: RawConfig = toml::from_str(&simple).expect("parse simple input fixture");
+        assert!(
+            !simple
+                .validate(uid)
+                .expect("validate input")
+                .provider_private_devices()
+        );
+
+        for removed in [
+            "broker_socket = \"/tmp/broker.sock\"",
             "broker_peer_uid = 0",
-            "broker_socket = \"relative.sock\"\nbroker_peer_uid = 0",
         ] {
-            let source = format!("enabled = true\n[input]\n{input}");
-            let accepted =
-                toml::from_str::<RawConfig>(&source).is_ok_and(|raw| raw.validate(uid).is_ok());
-            assert!(!accepted, "accepted incomplete broker input {input:?}");
+            let source = format!("enabled = true\n[input]\n{removed}");
+            assert!(toml::from_str::<RawConfig>(&source).is_err());
         }
 
-        let missing = format!(
-            "enabled = true\n[grant]\nuid = {uid}\n\
-             capabilities = [\"observe_structure\", \"input_pointer\"]"
-        );
-        let missing: RawConfig = toml::from_str(&missing).expect("parse missing broker fixture");
-        assert!(missing.validate(uid).is_err());
-
-        let complete = format!(
-            "enabled = true\n[grant]\nuid = {uid}\n\
-             capabilities = [\"observe_structure\", \"input_pointer\"]\n\
-             [input]\nbroker_socket = \"/run/agent-seat-activity/test.sock\"\n\
-             broker_peer_uid = 0"
-        );
-        let complete: RawConfig = toml::from_str(&complete).expect("parse complete broker fixture");
-        let complete = complete
-            .validate(uid)
-            .expect("validate complete broker fixture");
-        assert_eq!(
-            complete.broker(),
-            Some((Path::new("/run/agent-seat-activity/test.sock"), 0))
-        );
-        assert!(!complete.provider_private_devices());
-
-        let private = "enabled = true\n[input]\n\
-                       broker_socket = \"/run/agent-seat-activity/test.sock\"\n\
-                       broker_peer_uid = 0\nprovider_private_devices = true";
+        let private = "enabled = true\n[input]\nprovider_private_devices = true";
         let private: RawConfig = toml::from_str(private).expect("parse private-device fixture");
         assert!(
             private
@@ -1451,11 +1388,6 @@ mod tests {
                 .expect("validate private-device fixture")
                 .provider_private_devices()
         );
-
-        let private_without_broker: RawConfig =
-            toml::from_str("enabled = true\n[input]\nprovider_private_devices = true")
-                .expect("parse incomplete private-device fixture");
-        assert!(private_without_broker.validate(uid).is_err());
     }
 
     #[test]

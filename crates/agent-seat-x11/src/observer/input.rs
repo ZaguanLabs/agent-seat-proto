@@ -1,13 +1,16 @@
-//! One-action XTEST gate backed by an independent physical-activity broker.
+//! Provider-local, target-aware XTEST input behind the volatile seat gate.
 
-use std::path::Path;
-use std::time::Duration;
-
-use agent_seat_activity_broker::{BrokerConnection, BrokerState};
-use agent_seat_proto::{InputReply, InputTerminal, PointerMoveRequest};
+use agent_seat_proto::{
+    InputReply, InputTerminal, KeyboardTypeRequest, PointerButton, PointerClickRequest,
+    PointerMoveRequest,
+};
 use x11rb::CURRENT_TIME;
+use x11rb::connection::Connection as _;
 use x11rb::protocol::shape::{ConnectionExt as _, SK};
-use x11rb::protocol::xproto::{ConnectionExt as _, MOTION_NOTIFY_EVENT};
+use x11rb::protocol::xproto::{
+    BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _, KEY_PRESS_EVENT,
+    KEY_RELEASE_EVENT, MOTION_NOTIFY_EVENT,
+};
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 
@@ -17,33 +20,118 @@ use crate::seat::{SeatGate, SeatPermit};
 const MAX_WINDOW_ANCESTORS: usize = 64;
 const MAX_HIT_TEST_CHILDREN: usize = 256;
 const MAX_HIT_TEST_RECTANGLES: usize = 256;
+const POINTER_ROOT_FOCUS: u32 = 1;
+const XK_TAB: u32 = 0xff09;
+const XK_RETURN: u32 = 0xff0d;
+const XK_SHIFT_L: u32 = 0xffe1;
+const XK_SHIFT_R: u32 = 0xffe2;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct KeyStroke {
+    keycode: u8,
+    shift: bool,
+}
 
 impl Observer {
     pub(crate) fn pointer_move(
         &mut self,
         request: PointerMoveRequest,
-        broker_socket: &Path,
-        broker_peer_uid: u32,
-        timeout: Duration,
         seat: &SeatGate,
         seat_permit: SeatPermit,
     ) -> Result<InputReply, Failure> {
-        let mut broker = BrokerConnection::connect(broker_socket, timeout, broker_peer_uid)
-            .map_err(|_| Failure::unavailable("cannot connect to the activity broker"))?;
-        let initial = broker
-            .status()
-            .map_err(|_| Failure::unavailable("cannot read activity broker state"))?;
-        if !matches!(initial.state, BrokerState::Ready) {
-            return Err(Failure::unavailable("physical activity gate is not ready"));
-        }
+        let sent = self.under_server_grab(|observer| {
+            let (_, root_x, root_y) =
+                observer.pointer_destination(request.target, request.x, request.y)?;
+            if !seat.accepts(seat_permit) {
+                return Ok(false);
+            }
+            observer.fake_input(MOTION_NOTIFY_EVENT, 0, root_x, root_y)?;
+            Ok(true)
+        })?;
+        Ok(action_reply(sent, seat.accepts(seat_permit)))
+    }
 
+    pub(crate) fn pointer_click(
+        &mut self,
+        request: PointerClickRequest,
+        seat: &SeatGate,
+        seat_permit: SeatPermit,
+    ) -> Result<InputReply, Failure> {
+        let sent = self.under_server_grab(|observer| {
+            let (_, root_x, root_y) =
+                observer.pointer_destination(request.target, request.x, request.y)?;
+            if !seat.accepts(seat_permit) {
+                return Ok(false);
+            }
+            observer.fake_input(MOTION_NOTIFY_EVENT, 0, root_x, root_y)?;
+            observer.click_button(request.button, root_x, root_y)?;
+            Ok(true)
+        })?;
+        Ok(action_reply(sent, seat.accepts(seat_permit)))
+    }
+
+    pub(crate) fn keyboard_type(
+        &mut self,
+        request: KeyboardTypeRequest,
+        seat: &SeatGate,
+        seat_permit: SeatPermit,
+    ) -> Result<InputReply, Failure> {
+        let requested = u16::try_from(request.text.chars().count())
+            .map_err(|_| Failure::invalid("keyboard text exceeds the action bound"))?;
+        let (strokes, shift_keycode) = self.under_server_grab(|observer| {
+            observer.refresh()?;
+            let target = observer.target(request.target)?;
+            observer.require_focus_owned_by(target.xid)?;
+            observer.resolve_text(request.text.as_str())
+        })?;
+        let mut completed = 0_u16;
+        for stroke in strokes {
+            let result = self.under_server_grab(|observer| {
+                observer.refresh()?;
+                let target = observer.target(request.target)?;
+                observer.require_focus_owned_by(target.xid)?;
+                if !seat.accepts(seat_permit) {
+                    return Ok(false);
+                }
+                observer.type_key(stroke, shift_keycode)?;
+                Ok(true)
+            });
+            match result {
+                Ok(true) => {
+                    completed = completed
+                        .checked_add(1)
+                        .ok_or_else(|| Failure::internal("keyboard action count overflowed"))?;
+                }
+                Ok(false) => break,
+                Err(error) if completed == 0 => return Err(error),
+                Err(_) => break,
+            }
+            if !seat.accepts(seat_permit) {
+                break;
+            }
+        }
+        let complete = completed == requested && seat.accepts(seat_permit);
+        Ok(InputReply {
+            completed,
+            requested,
+            terminal: if complete {
+                InputTerminal::Queued
+            } else {
+                InputTerminal::Interrupted
+            },
+        })
+    }
+
+    fn under_server_grab<T>(
+        &mut self,
+        action: impl FnOnce(&mut Self) -> Result<T, Failure>,
+    ) -> Result<T, Failure> {
         self.connection
             .grab_server()
             .map_err(|_| Failure::unavailable("cannot request an X11 server grab"))?
             .check()
             .map_err(|_| Failure::unavailable("cannot acquire an X11 server grab"))?;
-
-        let sent = self.prepare_and_move(request, &mut broker, initial, seat, seat_permit);
+        let result = action(self);
         let released = self
             .connection
             .ungrab_server()
@@ -53,39 +141,27 @@ impl Observer {
                     .check()
                     .map_err(|_| Failure::unavailable("cannot release the X11 server grab"))
             });
-        let sent = sent?;
-        released?;
-
-        let terminal = match (sent, broker.status()) {
-            (true, Ok(status)) if initial.is_same_ready(status) && seat.accepts(seat_permit) => {
-                InputTerminal::Queued
-            }
-            _ => InputTerminal::Interrupted,
-        };
-        Ok(InputReply {
-            completed: u16::from(sent),
-            requested: 1,
-            terminal,
-        })
+        match (result, released) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+        }
     }
 
-    fn prepare_and_move(
+    fn pointer_destination(
         &mut self,
-        request: PointerMoveRequest,
-        broker: &mut BrokerConnection,
-        initial: agent_seat_activity_broker::BrokerStatus,
-        seat: &SeatGate,
-        seat_permit: SeatPermit,
-    ) -> Result<bool, Failure> {
+        target_request: agent_seat_proto::TargetRequest,
+        x: u32,
+        y: u32,
+    ) -> Result<(u32, i16, i16), Failure> {
         self.refresh()?;
-        let target = self.target(request.target)?;
+        let target = self.target(target_request)?;
         let geometry = self
             .connection
             .get_geometry(target.xid)
             .map_err(|_| Failure::unavailable("cannot inspect target geometry"))?
             .reply()
             .map_err(|_| Failure::unavailable("cannot inspect target geometry"))?;
-        if request.x >= u32::from(geometry.width) || request.y >= u32::from(geometry.height) {
+        if x >= u32::from(geometry.width) || y >= u32::from(geometry.height) {
             return Err(Failure::invalid(
                 "pointer destination is outside the target client",
             ));
@@ -96,44 +172,172 @@ impl Observer {
             .map_err(|_| Failure::unavailable("cannot translate target coordinates"))?
             .reply()
             .map_err(|_| Failure::unavailable("cannot translate target coordinates"))?;
-        let root_x = i32::from(origin.dst_x)
-            .checked_add(i32::try_from(request.x).map_err(|_| {
-                Failure::invalid("pointer destination exceeds X11 coordinate range")
-            })?)
-            .and_then(|value| i16::try_from(value).ok())
-            .ok_or_else(|| Failure::invalid("pointer destination exceeds X11 coordinate range"))?;
-        let root_y = i32::from(origin.dst_y)
-            .checked_add(i32::try_from(request.y).map_err(|_| {
-                Failure::invalid("pointer destination exceeds X11 coordinate range")
-            })?)
-            .and_then(|value| i16::try_from(value).ok())
-            .ok_or_else(|| Failure::invalid("pointer destination exceeds X11 coordinate range"))?;
-
+        let root_x = checked_root_coordinate(origin.dst_x, x)?;
+        let root_y = checked_root_coordinate(origin.dst_y, y)?;
         self.require_point_owned_by(target.xid, root_x, root_y)?;
-        let under_grab = broker
-            .status()
-            .map_err(|_| Failure::unavailable("activity broker evidence was lost"))?;
-        if !initial.is_same_ready(under_grab) || !seat.accepts(seat_permit) {
-            return Ok(false);
-        }
+        Ok((target.xid, root_x, root_y))
+    }
 
+    fn click_button(&self, button: PointerButton, root_x: i16, root_y: i16) -> Result<(), Failure> {
+        let detail = match button {
+            PointerButton::Primary => 1,
+            PointerButton::Middle => 2,
+            PointerButton::Secondary => 3,
+        };
+        self.fake_input(BUTTON_PRESS_EVENT, detail, root_x, root_y)?;
+        if let Err(error) = self.fake_input(BUTTON_RELEASE_EVENT, detail, root_x, root_y) {
+            self.best_effort_release(BUTTON_RELEASE_EVENT, detail);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn type_key(&self, stroke: KeyStroke, shift_keycode: Option<u8>) -> Result<(), Failure> {
+        let shift =
+            if stroke.shift {
+                Some(shift_keycode.ok_or_else(|| {
+                    Failure::unavailable("current X11 keyboard map has no Shift key")
+                })?)
+            } else {
+                None
+            };
+        if let Some(shift) = shift {
+            self.fake_input(KEY_PRESS_EVENT, shift, 0, 0)?;
+        }
+        if let Err(error) = self.fake_input(KEY_PRESS_EVENT, stroke.keycode, 0, 0) {
+            if let Some(shift) = shift {
+                self.best_effort_release(KEY_RELEASE_EVENT, shift);
+            }
+            return Err(error);
+        }
+        if let Err(error) = self.fake_input(KEY_RELEASE_EVENT, stroke.keycode, 0, 0) {
+            self.best_effort_release(KEY_RELEASE_EVENT, stroke.keycode);
+            if let Some(shift) = shift {
+                self.best_effort_release(KEY_RELEASE_EVENT, shift);
+            }
+            return Err(error);
+        }
+        if let Some(shift) = shift {
+            if let Err(error) = self.fake_input(KEY_RELEASE_EVENT, shift, 0, 0) {
+                self.best_effort_release(KEY_RELEASE_EVENT, shift);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    fn fake_input(
+        &self,
+        event_type: u8,
+        detail: u8,
+        root_x: i16,
+        root_y: i16,
+    ) -> Result<(), Failure> {
         self.connection
             .xtest_fake_input(
-                MOTION_NOTIFY_EVENT,
-                0,
+                event_type,
+                detail,
                 CURRENT_TIME,
                 self.root,
                 root_x,
                 root_y,
                 0,
             )
-            .map_err(|_| Failure::unavailable("cannot queue pointer movement"))?
+            .map_err(|_| Failure::unavailable("cannot queue XTEST input"))?
             .check()
-            .map_err(|_| Failure::unavailable("the X server refused pointer movement"))?;
+            .map_err(|_| Failure::unavailable("the X server refused XTEST input"))?;
         self.connection
             .sync()
-            .map_err(|_| Failure::unavailable("cannot synchronize pointer movement"))?;
-        Ok(true)
+            .map_err(|_| Failure::unavailable("cannot synchronize XTEST input"))
+    }
+
+    fn best_effort_release(&self, event_type: u8, detail: u8) {
+        if let Ok(cookie) =
+            self.connection
+                .xtest_fake_input(event_type, detail, CURRENT_TIME, self.root, 0, 0, 0)
+        {
+            cookie.ignore_error();
+            let _ = self.connection.sync();
+        }
+    }
+
+    fn resolve_text(&self, text: &str) -> Result<(Vec<KeyStroke>, Option<u8>), Failure> {
+        let setup = self.connection.setup();
+        let count = setup
+            .max_keycode
+            .checked_sub(setup.min_keycode)
+            .and_then(|difference| difference.checked_add(1))
+            .ok_or_else(|| Failure::unavailable("X11 keyboard range is invalid"))?;
+        let mapping = self
+            .connection
+            .get_keyboard_mapping(setup.min_keycode, count)
+            .map_err(|_| Failure::unavailable("cannot inspect the X11 keyboard map"))?
+            .reply()
+            .map_err(|_| Failure::unavailable("cannot inspect the X11 keyboard map"))?;
+        let columns = usize::from(mapping.keysyms_per_keycode);
+        if columns == 0 || mapping.keysyms.len() != usize::from(count) * columns {
+            return Err(Failure::unavailable("X11 keyboard map is incomplete"));
+        }
+        let strokes = text
+            .chars()
+            .map(|character| {
+                let keysym = keysym_for_character(character);
+                find_stroke(&mapping.keysyms, columns, setup.min_keycode, keysym).ok_or_else(|| {
+                    Failure::invalid(
+                        "text contains a character unavailable in the current X11 keyboard layout",
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let shift_keycode = strokes
+            .iter()
+            .any(|stroke| stroke.shift)
+            .then(|| {
+                find_keycode(
+                    &mapping.keysyms,
+                    columns,
+                    setup.min_keycode,
+                    &[XK_SHIFT_L, XK_SHIFT_R],
+                )
+                .ok_or_else(|| Failure::unavailable("current X11 keyboard map has no Shift key"))
+            })
+            .transpose()?;
+        Ok((strokes, shift_keycode))
+    }
+
+    fn require_focus_owned_by(&self, target: u32) -> Result<(), Failure> {
+        let focus = self
+            .connection
+            .get_input_focus()
+            .map_err(|_| Failure::unavailable("cannot inspect X11 input focus"))?
+            .reply()
+            .map_err(|_| Failure::unavailable("cannot inspect X11 input focus"))?
+            .focus;
+        if focus == x11rb::NONE || focus == POINTER_ROOT_FOCUS {
+            return Err(Failure::invalid(
+                "keyboard focus is not owned by the target client",
+            ));
+        }
+        let mut window = focus;
+        for _ in 0..MAX_WINDOW_ANCESTORS {
+            if window == target {
+                return Ok(());
+            }
+            let parent = self
+                .connection
+                .query_tree(window)
+                .map_err(|_| Failure::unavailable("cannot inspect keyboard focus ancestry"))?
+                .reply()
+                .map_err(|_| Failure::unavailable("cannot inspect keyboard focus ancestry"))?
+                .parent;
+            if parent == x11rb::NONE || parent == self.root {
+                break;
+            }
+            window = parent;
+        }
+        Err(Failure::invalid(
+            "keyboard focus is not owned by the target client",
+        ))
     }
 
     fn require_point_owned_by(&self, target: u32, root_x: i16, root_y: i16) -> Result<(), Failure> {
@@ -150,8 +354,6 @@ impl Observer {
             ));
         }
         let mut destination = None;
-        // QueryTree returns siblings from bottom to top; inspect the effective
-        // input shapes in reverse so the first match is the actual top level.
         for child in children.into_iter().rev() {
             let attributes = self
                 .connection
@@ -222,6 +424,83 @@ impl Observer {
     }
 }
 
+fn action_reply(sent: bool, seat_still_enabled: bool) -> InputReply {
+    InputReply {
+        completed: u16::from(sent),
+        requested: 1,
+        terminal: if sent && seat_still_enabled {
+            InputTerminal::Queued
+        } else {
+            InputTerminal::Interrupted
+        },
+    }
+}
+
+fn checked_root_coordinate(origin: i16, offset: u32) -> Result<i16, Failure> {
+    i32::from(origin)
+        .checked_add(
+            i32::try_from(offset).map_err(|_| {
+                Failure::invalid("pointer destination exceeds X11 coordinate range")
+            })?,
+        )
+        .and_then(|value| i16::try_from(value).ok())
+        .ok_or_else(|| Failure::invalid("pointer destination exceeds X11 coordinate range"))
+}
+
+fn keysym_for_character(character: char) -> u32 {
+    match character {
+        '\t' => XK_TAB,
+        '\n' => XK_RETURN,
+        value if u32::from(value) <= 0xff => u32::from(value),
+        value => 0x0100_0000 | u32::from(value),
+    }
+}
+
+fn find_stroke(keysyms: &[u32], columns: usize, minimum: u8, wanted: u32) -> Option<KeyStroke> {
+    if columns == 0 {
+        return None;
+    }
+    keysyms
+        .chunks_exact(columns)
+        .enumerate()
+        .find_map(|(row, symbols)| {
+            symbols
+                .iter()
+                .take(2)
+                .enumerate()
+                .find_map(|(level, symbol)| {
+                    (*symbol == wanted).then(|| {
+                        u8::try_from(row)
+                            .ok()
+                            .and_then(|row| minimum.checked_add(row))
+                            .map(|keycode| KeyStroke {
+                                keycode,
+                                shift: level == 1,
+                            })
+                    })?
+                })
+        })
+}
+
+fn find_keycode(keysyms: &[u32], columns: usize, minimum: u8, wanted: &[u32]) -> Option<u8> {
+    if columns == 0 {
+        return None;
+    }
+    keysyms
+        .chunks_exact(columns)
+        .enumerate()
+        .find_map(|(row, symbols)| {
+            symbols
+                .iter()
+                .any(|symbol| wanted.contains(symbol))
+                .then(|| {
+                    u8::try_from(row)
+                        .ok()
+                        .and_then(|row| minimum.checked_add(row))
+                })?
+        })
+}
+
 fn rectangle_contains(rectangle: &x11rb::protocol::xproto::Rectangle, x: i16, y: i16) -> bool {
     let x = i32::from(x);
     let y = i32::from(y);
@@ -249,5 +528,30 @@ mod tests {
         assert!(rectangle_contains(&rectangle, 2, 9));
         assert!(!rectangle_contains(&rectangle, 3, 9));
         assert!(!rectangle_contains(&rectangle, 2, 10));
+    }
+
+    #[test]
+    fn first_group_keysyms_resolve_without_backend_keycodes_on_the_wire() {
+        let keysyms = [
+            u32::from('a'),
+            u32::from('A'),
+            u32::from('1'),
+            u32::from('!'),
+        ];
+        assert_eq!(
+            find_stroke(&keysyms, 2, 8, u32::from('a')),
+            Some(KeyStroke {
+                keycode: 8,
+                shift: false,
+            })
+        );
+        assert_eq!(
+            find_stroke(&keysyms, 2, 8, u32::from('!')),
+            Some(KeyStroke {
+                keycode: 9,
+                shift: true,
+            })
+        );
+        assert_eq!(find_stroke(&keysyms, 2, 8, u32::from('z')), None);
     }
 }

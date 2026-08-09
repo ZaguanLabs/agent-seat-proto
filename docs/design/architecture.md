@@ -42,17 +42,15 @@ arbitrary same-UID processes.
 
 The core profile is observation, supported management, and controlled launch.
 Capture, input, and accessibility remain separately reviewed optional
-profiles. Revision 3 exposes no calls for absent profiles; their feature atoms
-remain unadvertised. A future revision that defines optional calls must return
-typed `unsupported` results when its backend does not advertise them.
+profiles. Revision 5 defines an explicitly weaker Tier 0.5 X11 input profile;
+providers that do not implement it simply omit its grants and feature.
 
-The experimental revision-4 pointer profile keeps raw physical activity in a
-separate broker. Its reference provider unit uses a private `/dev` and refuses
-startup if input paths remain visible. Because ordinary desktop applications
-must not inherit that restriction, controlled launches are submitted as
-separate transient user-manager services; the provider supervises only the
-bounded waiting launcher processes. This service-manager deployment is
-reference architecture, not part of the display-neutral wire contract.
+The experimental revision-5 input path uses the provider's existing X11
+connection, XTEST, current target/focus evidence, the live keyboard map, and
+the volatile seat generation. It does not read raw input devices or claim
+physical-user priority. The older separately confined activity broker and
+private-device service remain optional research/hardening components, not
+dependencies of the ordinary input path or the display-neutral wire contract.
 
 The crate also owns the non-runtime settings API used by the
 `agent-seat-settings` application. It exposes a typed, bounded draft of a
@@ -109,11 +107,11 @@ The portable contract is factored further: the
 [serialization-neutral information model](../protocol/information-model.md) defines
 session, authority, identity, freshness, operation, and outcome semantics,
 while [`specification.md`](../protocol/specification.md) remains the concrete local
-Unix-stream/strict-JSON revision-4 binding.
+Unix-stream/strict-JSON revision-5 binding.
 
 An integrated window manager or compositor can satisfy a conformance profile
 using state and ordering it owns directly. The standalone X11 reference may
-need external observation and an optional Linux activity broker to make a
-narrower claim. Neither systemd/evdev deployment details nor MCP translation
+make a deliberately narrower, non-physical-priority claim. Neither
+systemd/evdev deployment details nor MCP translation
 belong in the normative desktop protocol, and matching a tool surface does not
 permit one backend to claim another backend's assurance level.

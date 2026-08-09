@@ -1,6 +1,6 @@
 # Protocol and conformance reference
 
-- [Local JSON binding, wire revision 4](specification.md)
+- [Local JSON binding, wire revision 5](specification.md)
 - [Serialization-neutral information model](information-model.md)
 - [Pre-RFC draft](r0-protocol-rfc.md)
 - [Registry custody](registries.md) and the

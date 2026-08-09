@@ -5,6 +5,7 @@
 - [T5 activity broker deployment contract](t5-broker-deployment.md)
 - [T5 lock-state integration study](t5-lock-state-study.md)
 
-These documents define authority boundaries and stop conditions. A candidate
-design or experimental profile is not a supported security claim until its
-stated gates and verification requirements pass.
+These documents define authority boundaries and stop conditions for a possible
+future profile that claims trusted physical-activity interruption. They are
+not prerequisites for the deliberately weaker revision-5 Tier 0.5 XTEST path.
+A candidate design is not a supported stronger claim until its own gates pass.

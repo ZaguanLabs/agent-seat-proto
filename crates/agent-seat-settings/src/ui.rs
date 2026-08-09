@@ -1391,7 +1391,7 @@ struct CapabilitySpec {
     dependency: &'static str,
 }
 
-fn capability_groups() -> [(&'static str, &'static str, Vec<CapabilitySpec>); 3] {
+fn capability_groups() -> [(&'static str, &'static str, Vec<CapabilitySpec>); 4] {
     [
         (
             "Observe",
@@ -1478,6 +1478,26 @@ fn capability_groups() -> [(&'static str, &'static str, Vec<CapabilitySpec>); 3]
                     atom: "launch_execute",
                     description: "Start an admitted desktop entry.",
                     dependency: "List applications",
+                },
+            ],
+        ),
+        (
+            "Input",
+            "Use X11 input only while the current provider seat is enabled.",
+            vec![
+                CapabilitySpec {
+                    capability: Capability::InputPointer,
+                    title: "Pointer movement and clicks",
+                    atom: "input_pointer",
+                    description: "Move or click only at a currently visible point inside the target client.",
+                    dependency: "Window structure and an enabled runtime seat",
+                },
+                CapabilitySpec {
+                    capability: Capability::InputKeyboard,
+                    title: "Keyboard text",
+                    atom: "input_keyboard",
+                    description: "Type bounded text only when the target already owns keyboard focus.",
+                    dependency: "Window structure and an enabled runtime seat",
                 },
             ],
         ),
@@ -1639,5 +1659,33 @@ mod tests {
         assert_eq!(unavailable.rail, "Unavailable · denied");
         assert!(!unavailable.can_enable);
         assert!(!unavailable.can_disable);
+    }
+
+    #[test]
+    fn access_page_exposes_separate_pointer_and_keyboard_grants() {
+        let groups = capability_groups();
+        let input = groups
+            .iter()
+            .find(|(name, _, _)| *name == "Input")
+            .expect("Input capability group");
+        assert_eq!(input.2.len(), 2);
+        assert!(
+            input
+                .2
+                .iter()
+                .any(|spec| spec.capability == Capability::InputPointer)
+        );
+        assert!(
+            input
+                .2
+                .iter()
+                .any(|spec| spec.capability == Capability::InputKeyboard)
+        );
+        assert!(
+            input
+                .2
+                .iter()
+                .all(|spec| spec.dependency.contains("enabled runtime seat"))
+        );
     }
 }

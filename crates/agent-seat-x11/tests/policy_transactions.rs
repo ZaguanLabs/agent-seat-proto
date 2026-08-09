@@ -223,8 +223,6 @@ fn settings_edits_preserve_the_private_device_profile() {
     let directory = FixtureDir::new("private-device-profile");
     let source = "enabled = false\n\
                   [input]\n\
-                  broker_socket = \"/run/agent-seat-activity/provider.sock\"\n\
-                  broker_peer_uid = 0\n\
                   provider_private_devices = true\n";
     let path = directory.policy(source);
     let snapshot = read_policy(&path).expect("read private-device policy");
@@ -235,7 +233,6 @@ fn settings_edits_preserve_the_private_device_profile() {
 
     let rendered = draft.render().expect("render private-device policy");
     assert!(rendered.contains("provider_private_devices = true"));
-    assert!(rendered.contains("broker_socket = \"/run/agent-seat-activity/provider.sock\""));
     replace_policy(&snapshot, &rendered).expect("save private-device policy");
 }
 

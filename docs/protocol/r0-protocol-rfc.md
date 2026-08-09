@@ -2,7 +2,7 @@
 
 Status: repository draft, 2026-08-09. This document has no IETF, freedesktop.org,
 or other external standards status. The normative contract implemented by the
-current product remains [wire revision 4](specification.md).
+current product remains [wire revision 5](specification.md).
 
 ## Abstract
 
@@ -36,11 +36,11 @@ value, session, desktop, operation, outcome, binding, and profile semantics are
 factored into [`information-model.md`](information-model.md). A concrete wire
 revision MUST define the exact encoding, framing, bounds, message grammar,
 registries, and revision identifier needed to implement that contract.
-Conformance to this draft does not imply wire compatibility with revision 3,
-revision 4, or any future revision.
+Conformance to this draft does not imply wire compatibility with revisions 3,
+4, 5, or any future revision.
 
 The current repository wire specification takes precedence if this draft and
-revision 4 differ. Resolving such a difference requires an explicit future wire
+revision 5 differ. Resolving such a difference requires an explicit future wire
 revision; it MUST NOT silently change a released revision.
 
 ## 2. Goals and non-goals
@@ -415,11 +415,9 @@ The following table is descriptive, not a new compatibility promise:
 
 | Profile | Current status | Claim |
 | --- | --- | --- |
-| revision 3 core and the retained revision 4 core | implemented | Strict local lifecycle, bounded observation, qualified EWMH management, and controlled desktop-entry launch. |
+| revision 3 core and the retained revision 4/5 core | implemented | Strict local lifecycle, bounded observation, qualified EWMH management, and controlled desktop-entry launch. |
 | standalone X11/EWMH Tier 0 | implemented for the core | Convergent observation beside a foreign window manager; no atomic WM-state claim. |
-| revision-4 pointer movement | experimental, deployment gate open | One target-relative action with broker epoch and live destination checks; generic lock-state evidence is insufficient. |
-| pointer click | unsupported | No approved wire call or passed profile. |
-| keyboard input | unsupported | No approved wire call or passed profile. |
+| revision-5 Tier 0.5 input | experimental, locally implemented | Volatile-seat-gated target-relative movement/click and focus-bound bounded text; no physical-user priority claim. |
 | capture | unsupported | No approved wire call or passed profile. |
 | accessibility semantics | unsupported | No approved wire call or passed profile. |
 | integrated Tier 1 backend | profile not yet specified here | No implementation may claim it from tool compatibility alone. |
@@ -475,7 +473,7 @@ Normative terminology:
 
 Repository contracts and evidence:
 
-- [Agent Seat wire revision 4](specification.md)
+- [Agent Seat wire revision 5](specification.md)
 - [Architecture](../design/architecture.md)
 - [Security model](../security/security-model.md)
 - [Optional-profile decisions](../design/optional-profiles.md)

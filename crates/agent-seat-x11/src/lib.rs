@@ -123,6 +123,14 @@ RUNTIME SEAT GATE:
   reconnect after a later enable. The state is never written to configuration
   and disappears whenever the provider or its X11 display exits.
 
+OPTIONAL INPUT:
+  Grant observe_structure plus input_pointer and/or input_keyboard, restart the
+  provider after changing policy, then enable the runtime seat. Pointer actions
+  are limited to a fresh, visible target; text requires that target to already
+  own keyboard focus. This path uses X11/XTEST and needs no root, broker, evdev,
+  uinput, or input-group access. It cannot guarantee priority over simultaneous
+  physical input and reports only what was queued to X11.
+
 FIRST RUN:
   When run with no options, a missing default configuration is created at
   $XDG_CONFIG_HOME/agent-seat/config.toml, or

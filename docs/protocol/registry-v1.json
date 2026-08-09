@@ -14,6 +14,10 @@
       {
         "id": 4,
         "status": "experimental"
+      },
+      {
+        "id": 5,
+        "status": "experimental"
       }
     ]
   },
@@ -32,7 +36,7 @@
       "schema": "conformance-report-v1.schema.json"
     }
   ],
-  "revision_4": {
+  "revision_5": {
     "client_messages": [
       "hello",
       "request",
@@ -62,7 +66,8 @@
         "manage_geometry",
         "launch_list",
         "launch_execute",
-        "input_pointer"
+        "input_pointer",
+        "input_keyboard"
       ]
     },
     "features": {
@@ -131,6 +136,14 @@
       {
         "name": "pointer.move",
         "capability": "input_pointer"
+      },
+      {
+        "name": "pointer.click",
+        "capability": "input_pointer"
+      },
+      {
+        "name": "keyboard.type",
+        "capability": "input_keyboard"
       }
     ],
     "event_kinds": {
@@ -232,7 +245,7 @@
       "status": "experimental",
       "specification": "profiles/x11-ewmh-core-v1.md",
       "wire_revisions": [
-        4
+        5
       ],
       "backend": "x11_ewmh",
       "assurance": "tier0"

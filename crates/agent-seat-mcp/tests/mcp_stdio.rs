@@ -72,8 +72,16 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
             .as_array()
             .expect("tool array")
             .len(),
-        13
+        15
     );
+    let tool_names = responses[1]["result"]["tools"]
+        .as_array()
+        .expect("tool array")
+        .iter()
+        .filter_map(|tool| tool["name"].as_str())
+        .collect::<Vec<_>>();
+    assert!(tool_names.contains(&"pointer_click"));
+    assert!(tool_names.contains(&"keyboard_type"));
     assert_eq!(responses[2]["result"]["isError"], true);
     assert_eq!(
         responses[2]["result"]["structuredContent"]["body"]["code"],

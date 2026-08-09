@@ -3,22 +3,33 @@
 Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
 complete. R0 has an initial repository pre-RFC draft. The Tier 0 core and C0
 shipped in product release v0.1.0; S0 is complete on `main` in
-`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. T5R now has an approved
-experimental pointer-move slice; deployment remains gated. E0 evidence is
+`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. Revision 5 now has a
+working experimental Tier 0.5 pointer/click/text slice; the more complex T5R
+physical-priority research remains separately gated. E0 evidence is
 recorded in
 [`e0-verification.md`](../verification/e0-verification.md).
 
 ## T0.5 — volatile provider seat gate
 
-Status: implemented experimentally in `agent-seat-x11` 0.1.20 and
-`agent-seat-settings` 0.1.5, 2026-08-09.
+Status: runtime gate implemented in `agent-seat-x11` 0.1.20 and Settings
+0.1.5; revision-5 input implemented in `agent-seat-proto` 0.1.3,
+`agent-seat-mcp` 0.1.4, `agent-seat-x11` 0.1.21, and Settings 0.1.6,
+2026-08-09.
 
 The provider now starts with a disabled runtime seat independently of saved
 policy. A separate local operator command can inspect, enable, or disable the
 current provider instance; the command is not an MCP operation and state is
 never persisted. Sessions are generation-bound, so disable revokes existing
-sessions and re-enable requires a new handshake. Pointer movement rechecks the
-same generation under its X11 server grab.
+sessions and re-enable requires a new handshake. Pointer movement, clicking,
+and bounded focused text recheck the same generation under their X11 server
+grab. They use XTEST and the live keyboard map without root, evdev, uinput,
+group membership, or a broker.
+
+The profile intentionally advertises `input_injection` but not
+`human_activity`. It proves fresh target/focus checks and what X11 queued, not
+physical-user priority or application acceptance. This weaker but useful claim
+is the ordinary path; an operator can stop it immediately for later requests
+by disabling the current runtime seat.
 
 This is the launcher-neutral [Tier 0.5 seat-gate contract](../tier-0.5-seat-gate.md):
 provider or X11 death denies everything and every new provider begins disabled.
@@ -44,6 +55,11 @@ spellings. Its pre-logout LightDM evidence is recorded; the deliberate
 logout/relogin observation now passes for the recorded released
 LightDM/Openbox/systemd combination. Other launchers and the separate trusted
 lock-transition ordering gate remain unverified.
+
+The separate [revision-5 input record](../verification/t0.5-input-verification.md)
+captures isolated Openbox pointer movement, a real button event, live-keymap
+text, focus and covering-window refusals, the volatile-seat lifecycle, and the
+absence of a human-activity claim.
 
 ## Goals
 
@@ -215,14 +231,15 @@ Tier 0 core.
 Status: first-release decisions complete, 2026-08-08. The evidence and stop
 conditions are recorded in
 [`optional-profiles.md`](optional-profiles.md). T4 output/core-window capture,
-T5 input, and T6 semantics remain unsupported. A narrowly target-owned
+the strong T5 physical-interruption claim, and T6 semantics remain unsupported.
+Revision 5 separately implements a weaker operator-gated Tier 0.5 input claim. A narrowly target-owned
 Composite `obscured_capture` is deferred to a new wire revision and does not
 delay C0.
 
 - T4 may add capture only for modes that can reapply visibility and scope at
   capture time without returning unrelated pixels.
-- T5 may add best-effort client-relative XTEST input only where human activity
-  suppression and a local emergency stop can meet their stated contract.
+- T5 may claim human-activity suppression only when a stronger backend can
+  meet that contract. Tier 0.5 advertises no such feature.
 - T6 may add bounded semantics only after fresh correlation and hidden-scope
   research succeeds.
 
@@ -301,7 +318,7 @@ run maps without touching the person's desktop, creates only a disabled mode
 0600 policy, and does not fabricate provider state. Provider lifecycle tests
 distinguish matching, changed, and crash-stale active-policy evidence.
 
-## T5R — input reconsideration
+## T5R — optional physical-priority research
 
 Status: broker authority and a narrow experimental implementation were approved
 on 2026-08-08. Revision 4, one pointer-move tool, the broker protocol/runtime,
@@ -345,8 +362,9 @@ service-manager-connected provider descriptor inside private network, device,
 filesystem, process, and execution boundaries. Its hostile test passes for a
 UID that can otherwise open uinput, and an installed worker reached live
 `seat_status`. The physical replacement matrix and LightDM lock-transition
-contract are not yet proven. The external harness boundary, click, and keyboard
-input remain gated and unsupported.
+contract are not yet proven. Those gates block only a future profile claiming
+trusted physical-user interruption; they do not block the explicitly weaker
+Tier 0.5 pointer, click, and focused-text surface.
 
 The remaining evidence now has a participant-facing integration contract with
 stable harness, physical-replacement, and full-system lock fixture IDs. It

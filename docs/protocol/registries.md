@@ -32,7 +32,7 @@ contains:
 - protocol identity and historical wire-revision allocations;
 - portable conformance-report format allocations;
 - the repository-reserved core namespace;
-- exact revision-4 message, capability, feature, backend, assurance, call,
+- exact revision-5 message, capability, feature, backend, assurance, call,
   reply, event, state, action, result, error, and retry atoms; and
 - separately allocated profile and extension records. The first profile is
   `agent-seat.x11-ewmh-core.v1`; no extensions are allocated.

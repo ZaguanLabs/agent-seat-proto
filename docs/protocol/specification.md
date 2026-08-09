@@ -1,12 +1,13 @@
-# Agent Seat local JSON binding, wire revision 4
+# Agent Seat local JSON binding, wire revision 5
 
-Status: experimental T5 extension over the released E1 contract. Revision 4
-is intentionally incompatible with Agent Seat revision 3 and Nobox revision 2.
+Status: experimental Tier 0.5 input extension over the released E1 contract.
+Revision 5 is intentionally incompatible with Agent Seat revisions 3 and 4
+and Nobox revision 2.
 
 This document is the concrete pathname-Unix-stream and strict-JSON binding for
 the portable semantics in the pre-RFC
 [`information model`](information-model.md). Its JSON field names, framing,
-socket discovery, and byte limits belong to revision 4, not to the abstract
+socket discovery, and byte limits belong to revision 5, not to the abstract
 model. This binding remains the repository's normative implemented wire
 contract if the pre-RFC documents differ.
 
@@ -37,10 +38,12 @@ sent request that timed out or lost its target. Compatibility with all those
 required shapes was not established for revision 2, so the independent
 product does not reuse that number.
 
-Revision 4 adds one separately gated `pointer.move` call and its qualified
-input result. Strict revision-3 decoders cannot safely interpret the added
-capability, call, feature combination, or reply variant, so the extension does
-not change revision 3 in place. Pointer click and keyboard input are absent.
+Revision 4 added one broker-gated `pointer.move` experiment and its qualified
+input result. Revision 5 replaces that deployment requirement with the
+provider-owned volatile seat gate and adds `pointer.click`, `keyboard.type`,
+and a separate `input_keyboard` grant. It deliberately does not claim trusted
+physical-activity detection. Strict older decoders cannot safely interpret
+the additions, so revision 5 does not change an earlier revision in place.
 
 An advertisement and opening message name one exact revision. There is no
 range negotiation. A mismatched pair closes with `incompatible_revision` and
@@ -71,7 +74,7 @@ exactly that many UTF-8 JSON bytes:
 - The JSON value is one complete object. Trailing bytes, duplicate known
   fields, unknown fields, unknown enum values, and wrong JSON types are
   malformed.
-- Serde's finite JSON recursion limit applies; revision 4 defines no recursive
+- Serde's finite JSON recursion limit applies; revision 5 defines no recursive
   message value.
 
 Lengths constrain encoded bytes, not Unicode scalar counts. Bounded lists stop
@@ -88,7 +91,7 @@ The first client message is `hello`. A provider answers with exactly one
   "type": "hello",
   "body": {
     "protocol": "agent-seat",
-    "revision": 4,
+    "revision": 5,
     "peer": {
       "name": "agent-seat-mcp",
       "version": "0.1.3",
@@ -108,7 +111,7 @@ unique, canonical list of at most 32 atoms.
   "type": "welcome",
   "body": {
     "protocol": "agent-seat",
-    "revision": 4,
+    "revision": 5,
     "session": 1,
     "provider": {"name": "agent-seat-x11", "version": "0.1.0"},
     "backend": "x11_ewmh",
@@ -149,6 +152,7 @@ Canonical capability order is:
 9. `launch_list`
 10. `launch_execute`
 11. `input_pointer`
+12. `input_keyboard`
 
 Core features are `ewmh_observation`, `ewmh_management`, and
 `desktop_launch`. Reserved optional feature names are
@@ -209,6 +213,8 @@ The core call names and arguments are:
 | `applications.list` | `launch_list` | cursor and page `limit` 1..256 |
 | `application.launch` | `launch_execute` | canonical `.desktop` application ID |
 | `pointer.move` | `input_pointer` | fresh client and client-relative unsigned `x`, `y` |
+| `pointer.click` | `input_pointer` | fresh client, client-relative unsigned `x`, `y`, and primary/middle/secondary button |
+| `keyboard.type` | `input_keyboard` | fresh client and bounded nonempty `text` |
 
 Client IDs are nonzero provider-session handles. They are not XIDs. A
 generation and sequence are provider-local unsigned 64-bit freshness values;
@@ -247,15 +253,41 @@ reply proves that a request was sent and carries exactly one observation:
 None of these values claims that a foreign window manager or application
 accepted an event internally.
 
-## Pointer-move result
+## Input result
 
-`pointer.move` is an optional Tier 0 profile operation, never a core promise.
-The provider must revalidate the target generation, client geometry, visible
-hit-test ancestry, broker identity, and unchanged physical-activity epoch
-before one X11 movement. A reply carries `completed`, `requested`, and a
-terminal value of `queued` or `interrupted`. `queued` means the one action was
-queued and synchronized; it does not claim application handling. `interrupted`
-may report zero completed actions when broker or target evidence changed.
+Input is an optional Tier 0.5 X11 profile, never a Tier 0 core promise. Every
+input call requires a fresh scoped target, its separate input grant, and the
+same enabled volatile-seat generation that admitted the session. For each
+independently reportable action, the provider briefly grabs the X server,
+refreshes target evidence, rechecks the seat generation, queues bounded XTEST
+events, synchronizes, releases the server, and checks the seat again.
+
+`pointer.move` accepts one client-relative destination. `pointer.click` moves
+to that destination and sends one complete primary, middle, or secondary
+press/release pair. Both require the current point to be inside the target and
+the topmost visible X11 input ancestry to belong to that target; another window
+covering the point causes `invalid_argument` without a click.
+
+`keyboard.type` requires actual X11 input focus to be the fresh target or one
+of its descendants. It never forces focus. Text is at most 1,024 UTF-8 bytes
+and 256 Unicode scalar actions. Newline and tab are the only accepted control
+characters. The provider resolves every character against the first two
+levels of the live X11 map's first keyboard group before sending any key, so an
+unavailable character is refused instead of guessed or written through a
+shell. Each accepted character is one complete key press/release action with
+a bounded Shift pair when required.
+
+The input reply carries `completed`, `requested`, and `queued` or
+`interrupted`. `queued` means only that every reported action was queued and
+synchronized with X11. It does not prove that an application accepted,
+rendered, or understood the input. `interrupted` may carry a partial count if
+the operator disables the seat or required target, focus, or backend evidence
+is lost between text actions.
+
+This profile does not advertise `human_activity`. Ordinary same-user X11
+cannot distinguish XTEST from physical input or guarantee that physical input
+will always win a race. A person and the agent can therefore overlap. Stop the
+provider or disable its volatile seat to revoke later Agent Seat requests.
 
 ## Launch result
 
@@ -304,7 +336,7 @@ Retry is one of `never`, `reobserve`, or `reconnect`.
 three NUL-separated UTF-8 fields and no trailing NUL:
 
 ```text
-agent-seat NUL 4 NUL /absolute/pathname/socket
+agent-seat NUL 5 NUL /absolute/pathname/socket
 ```
 
 The revision uses canonical decimal. The socket is nonempty, absolute, has no
@@ -323,8 +355,8 @@ filesystem or product-specific fallback.
 
 ## End result
 
-Revision 4 retains the bounded T0--T3 contract and adds only the experimental
-pointer-move operation. It gives the MCP translator no authority and keeps
-every core outcome externally testable. A
+Revision 5 retains the bounded T0--T3 contract and adds the explicitly
+operator-gated Tier 0.5 pointer and keyboard surface. It gives the MCP
+translator no authority and keeps every core outcome externally testable. A
 later incompatible field, enum, or semantic change allocates another revision
 instead of weakening strict decoding.

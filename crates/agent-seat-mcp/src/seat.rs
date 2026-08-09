@@ -70,6 +70,7 @@ impl Seat {
             Capability::LaunchList,
             Capability::LaunchExecute,
             Capability::InputPointer,
+            Capability::InputKeyboard,
         ])
         .map_err(|error| internal(error.to_string()))?;
         let hello = ClientMessage::Hello(Hello {

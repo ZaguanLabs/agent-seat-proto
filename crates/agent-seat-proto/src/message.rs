@@ -1,4 +1,4 @@
-//! Strict revision-4 messages and core Tier 0 values.
+//! Strict revision-5 messages and core Tier 0 values.
 
 use serde::{Deserialize, Serialize};
 
@@ -34,6 +34,10 @@ pub const MAX_CLIENTS: usize = 1024;
 pub const MAX_EVENTS: usize = 1024;
 /// Maximum applications in one page.
 pub const MAX_APPLICATIONS: usize = 256;
+/// Maximum UTF-8 bytes in one bounded text-input request.
+pub const MAX_INPUT_TEXT_BYTES: usize = 1024;
+/// Maximum independently reportable actions in one input request.
+pub const MAX_INPUT_ACTIONS: usize = 256;
 /// Longest event poll wait.
 pub const MAX_POLL_WAIT_MS: u32 = 30_000;
 
@@ -49,6 +53,8 @@ pub type Diagnostic = BoundedText<MAX_DIAGNOSTIC_BYTES>;
 pub type Title = BoundedText<MAX_TITLE_BYTES>;
 /// A canonical desktop application identifier.
 pub type ApplicationId = BoundedText<MAX_APPLICATION_ID_BYTES>;
+/// Text to type through the live X11 keyboard map.
+pub type InputText = BoundedText<MAX_INPUT_TEXT_BYTES>;
 /// A workspace name.
 pub type WorkspaceName = BoundedText<MAX_WORKSPACE_NAME_BYTES>;
 
@@ -225,8 +231,10 @@ pub enum Capability {
     LaunchList,
     /// Launch a policy-approved desktop entry.
     LaunchExecute,
-    /// Move the pointer only within an unobscured target.
+    /// Move or click the pointer only within an unobscured target.
     InputPointer,
+    /// Type bounded text only into a focused target.
+    InputKeyboard,
 }
 
 /// Functionality implemented by the current provider/backend.
@@ -409,6 +417,12 @@ pub enum Call {
     /// Move the pointer to a client-relative location.
     #[serde(rename = "pointer.move")]
     PointerMove(PointerMoveRequest),
+    /// Click once at a client-relative location.
+    #[serde(rename = "pointer.click")]
+    PointerClick(PointerClickRequest),
+    /// Type bounded text into the currently focused target.
+    #[serde(rename = "keyboard.type")]
+    KeyboardType(KeyboardTypeRequest),
 }
 
 impl Call {
@@ -425,7 +439,8 @@ impl Call {
             Self::ClientGeometry(_) => Capability::ManageGeometry,
             Self::ApplicationsList(_) => Capability::LaunchList,
             Self::ApplicationLaunch(_) => Capability::LaunchExecute,
-            Self::PointerMove(_) => Capability::InputPointer,
+            Self::PointerMove(_) | Self::PointerClick(_) => Capability::InputPointer,
+            Self::KeyboardType(_) => Capability::InputKeyboard,
         }
     }
 }
@@ -444,6 +459,8 @@ impl Validate for Call {
             Self::ApplicationsList(value) => value.validate(),
             Self::ApplicationLaunch(value) => value.validate(),
             Self::PointerMove(value) => value.validate(),
+            Self::PointerClick(value) => value.validate(),
+            Self::KeyboardType(value) => value.validate(),
         }
     }
 }
@@ -711,6 +728,72 @@ impl Validate for PointerMoveRequest {
     }
 }
 
+/// Logical pointer button independent of an X11 numeric button detail.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PointerButton {
+    /// Ordinary primary action, normally the left button.
+    Primary,
+    /// Middle-button action.
+    Middle,
+    /// Ordinary context action, normally the right button.
+    Secondary,
+}
+
+/// One client-relative pointer click.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PointerClickRequest {
+    /// Fresh target whose live visible area must contain the destination.
+    #[serde(flatten)]
+    pub target: TargetRequest,
+    /// Horizontal offset from the current client origin.
+    pub x: u32,
+    /// Vertical offset from the current client origin.
+    pub y: u32,
+    /// Logical button to press and release once.
+    pub button: PointerButton,
+}
+
+impl Validate for PointerClickRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()
+    }
+}
+
+/// Bounded text for the current keyboard layout and focused target.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeyboardTypeRequest {
+    /// Fresh target that must own the current X11 input focus.
+    #[serde(flatten)]
+    pub target: TargetRequest,
+    /// Nonempty text; newline and tab are the only accepted controls.
+    pub text: InputText,
+}
+
+impl Validate for KeyboardTypeRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()?;
+        if self.text.is_empty() {
+            return Err("keyboard text is empty");
+        }
+        let mut actions = 0_usize;
+        for character in self.text.chars() {
+            if character.is_control() && !matches!(character, '\n' | '\t') {
+                return Err("keyboard text contains an unsupported control character");
+            }
+            actions = actions
+                .checked_add(1)
+                .ok_or("keyboard action count overflowed")?;
+        }
+        if actions > MAX_INPUT_ACTIONS {
+            return Err("keyboard text exceeds the action bound");
+        }
+        Ok(())
+    }
+}
+
 /// One response paired to a request.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -916,7 +999,7 @@ impl Validate for Reply {
 pub enum InputTerminal {
     /// Every reported action was queued and synchronized with X11.
     Queued,
-    /// Broker or target evidence changed before the complete request.
+    /// Required seat, target, focus, or backend evidence was lost before completion.
     Interrupted,
 }
 
@@ -1408,6 +1491,52 @@ mod tests {
             }
             .validate()
             .is_ok()
+        );
+    }
+
+    #[test]
+    fn keyboard_text_is_nonempty_control_safe_and_action_bounded() {
+        let target = TargetRequest {
+            client: ClientId::new(NonZeroU64::MIN),
+            generation: Generation::new(0),
+        };
+        let request = |value: &str| KeyboardTypeRequest {
+            target,
+            text: InputText::new(value).expect("bounded keyboard fixture"),
+        };
+        assert!(request("Agent Seat\n").validate().is_ok());
+        assert!(request("").validate().is_err());
+        assert!(request("unsafe\0text").validate().is_err());
+        assert!(
+            request(&"a".repeat(MAX_INPUT_ACTIONS + 1))
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn input_calls_keep_pointer_and_keyboard_grants_separate() {
+        let target = TargetRequest {
+            client: ClientId::new(NonZeroU64::MIN),
+            generation: Generation::new(0),
+        };
+        assert_eq!(
+            Call::PointerClick(PointerClickRequest {
+                target,
+                x: 0,
+                y: 0,
+                button: PointerButton::Primary,
+            })
+            .required_capability(),
+            Capability::InputPointer
+        );
+        assert_eq!(
+            Call::KeyboardType(KeyboardTypeRequest {
+                target,
+                text: InputText::new("a").expect("keyboard fixture"),
+            })
+            .required_capability(),
+            Capability::InputKeyboard
         );
     }
 }

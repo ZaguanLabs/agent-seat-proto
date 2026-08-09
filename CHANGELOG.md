@@ -6,6 +6,16 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added experimental wire revision 5 and the simple Tier 0.5 X11 input path:
+  `pointer_move`, target-relative `pointer_click`, and focus-bound bounded
+  `keyboard_type`. The provider uses its existing X11/XTEST authority, current
+  keyboard map, fresh target/focus evidence, and volatile seat generation. It
+  needs no broker, root service, evdev/uinput permission, or input group and
+  deliberately does not advertise `human_activity`. Separate pointer/keyboard
+  grants, closed MCP schemas, Settings controls, strict text bounds, and
+  isolated Openbox positive/cover/focus tests accompany `agent-seat-proto`
+  0.1.3, `agent-seat-mcp` 0.1.4, `agent-seat-x11` 0.1.21, and Settings 0.1.6.
+
 - Added the Tier 0.5 Settings control surface in `agent-seat-settings` 0.1.5
   and a typed provider-library control boundary in `agent-seat-x11` 0.1.20.
   The GTK state rail and Overview page keep saved activation, active-policy

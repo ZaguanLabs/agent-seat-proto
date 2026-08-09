@@ -6,8 +6,9 @@ use std::sync::OnceLock;
 
 use agent_seat_proto::{
     ApplicationLaunchRequest, ApplicationListRequest, Call, ClientGeometryRequest,
-    ClientStateRequest, ClientWorkspaceRequest, Empty, Outcome, PointerMoveRequest, PollRequest,
-    SubscribeRequest, TargetRequest, Validate as _, WorkspaceRequest,
+    ClientStateRequest, ClientWorkspaceRequest, Empty, KeyboardTypeRequest, Outcome,
+    PointerClickRequest, PointerMoveRequest, PollRequest, SubscribeRequest, TargetRequest,
+    Validate as _, WorkspaceRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -512,13 +513,35 @@ fn build_tools() -> Box<[Tool]> {
         Tool {
             name: "pointer_move",
             title: "Move pointer within client",
-            description: "Move the pointer once to a visible client-relative point after fresh target and physical-activity checks.",
+            description: "Move the pointer once to a currently visible client-relative point while the operator seat remains enabled.",
             input_schema: object_with_target(
                 json!({
                     "x":{"type":"integer","minimum":0,"maximum":4294967295_u64},
                     "y":{"type":"integer","minimum":0,"maximum":4294967295_u64}
                 }),
                 &["x", "y"],
+            ),
+        },
+        Tool {
+            name: "pointer_click",
+            title: "Click within client",
+            description: "Move to and click one currently visible client-relative point while the operator seat remains enabled.",
+            input_schema: object_with_target(
+                json!({
+                    "x":{"type":"integer","minimum":0,"maximum":4294967295_u64},
+                    "y":{"type":"integer","minimum":0,"maximum":4294967295_u64},
+                    "button":{"enum":["primary","middle","secondary"]}
+                }),
+                &["x", "y", "button"],
+            ),
+        },
+        Tool {
+            name: "keyboard_type",
+            title: "Type text into client",
+            description: "Type bounded text through the current X11 keyboard layout only when the target already owns keyboard focus.",
+            input_schema: object_with_target(
+                json!({"text":{"type":"string","minLength":1,"maxLength":256}}),
+                &["text"],
             ),
         },
     ]
@@ -581,6 +604,8 @@ fn translate_call(name: &str, arguments: Option<Value>) -> Result<Call, CallErro
         "applications_list" => arguments!(ApplicationListRequest, ApplicationsList),
         "application_launch" => arguments!(ApplicationLaunchRequest, ApplicationLaunch),
         "pointer_move" => arguments!(PointerMoveRequest, PointerMove),
+        "pointer_click" => arguments!(PointerClickRequest, PointerClick),
+        "keyboard_type" => arguments!(KeyboardTypeRequest, KeyboardType),
         _ => Err(CallError::UnknownTool),
     }?;
     call.validate()
@@ -640,7 +665,7 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_closed_object_schema() {
-        assert_eq!(tools().len(), 13);
+        assert_eq!(tools().len(), 15);
         for tool in tools() {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -677,6 +702,14 @@ mod tests {
             (
                 "pointer_move",
                 json!({"client":1,"generation":0,"x":10,"y":20}),
+            ),
+            (
+                "pointer_click",
+                json!({"client":1,"generation":0,"x":10,"y":20,"button":"primary"}),
+            ),
+            (
+                "keyboard_type",
+                json!({"client":1,"generation":0,"text":"Agent Seat\n"}),
             ),
         ];
         for (name, arguments) in calls {

@@ -80,8 +80,9 @@ The pages divide one policy into bounded tasks:
 
 - **Overview** explicitly enables or disables the policy and exposes the exact
   saved and recovery paths.
-- **Access** manages all observation, management, and launch capability atoms.
-  Dependencies are stated beside each control and are never enabled silently.
+- **Access** manages observation, management, launch, pointer, and keyboard
+  capability atoms. Dependencies are stated beside each control and are never
+  enabled silently.
 - **Visible windows** selects no clients, the current workspace, or all
   workspaces and independently gates title text.
 - **Applications** selects deny, allow-list, or allow-installed mode and shows
@@ -123,6 +124,9 @@ inspects or changes the volatile runtime seat.
 ## Current authority boundary
 
 Agent Seat Tier 0 can observe scoped EWMH state, request supported EWMH window
-management, and launch admitted desktop entries. It cannot capture the screen,
-type, click, inject input, or use an accessibility tree. Settings deliberately
-does not offer controls for those unsupported optional profiles.
+management, and launch admitted desktop entries. The separately granted Tier
+0.5 profile can also move or click inside a freshly observed visible target and
+type bounded text when that target already owns keyboard focus. These actions
+require the current volatile seat to be enabled and do not claim physical-user
+priority or application acceptance. Agent Seat still cannot capture the screen
+or use an accessibility tree.

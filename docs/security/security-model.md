@@ -17,9 +17,12 @@ T0.5 adds a volatile provider-owned operator latch. A provider begins disabled
 even when its saved policy permits startup. A separate mode-0600 local control
 socket verifies the desktop UID and can inspect, enable, or disable the current
 process only. MCP has no corresponding operation. Sessions are bound to one
-enabled generation and are revoked after a transition; pointer input rechecks
-that generation under its X11 server grab. A request already executing may
-finish, so this is not cancellation or a lock-transition guarantee. The GTK
+enabled generation and are revoked after a transition; pointer move/click and
+bounded focused text recheck that generation under their X11 server grab. The
+provider uses only its ordinary X11 connection, XTEST, target/focus evidence,
+and the live keyboard map. It advertises no `human_activity` guarantee, and a
+physical event can overlap an action. A request already executing may finish,
+so this is not cancellation or a lock-transition guarantee. The GTK
 Settings shell may invoke the same typed operator boundary, but it neither owns
 the socket nor derives runtime state from saved policy; opening and saving send
 no Enable request.
@@ -61,7 +64,7 @@ provider channel is their only desktop path. The provider cannot manufacture
 that confinement from inside the desktop session, and conformance to the wire
 protocol alone never proves it.
 
-T5R's optional reference deployment introduces two additional boundaries. The
+T5R's optional physical-priority research introduces two additional boundaries. The
 activity broker alone receives exact read-only evdev descriptors and reduces
 them to readiness, instance, epoch, and terminal stop state. The X11 provider
 receives no raw device descriptor or event field. When its private-device
@@ -70,7 +73,8 @@ policy switch is active, a systemd user service removes `/dev/input` and
 ownership. Controlled applications are then launched in separate transient
 user services so their ordinary device permissions do not require widening the
 provider's authority. Failure to create either boundary is input-unavailable,
-not a degraded mode.
+not a degraded mode for that stronger profile. These components are not
+required by the weaker Tier 0.5 input path.
 
 The matching companion profile does not enter that provider's X11 namespace.
 The user manager connects the fixed private provider socket first, passes the

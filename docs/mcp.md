@@ -23,7 +23,7 @@ act on their structured fields.
 
 ## Tools
 
-The companion publishes thirteen closed-object schemas:
+The companion publishes fifteen closed-object schemas:
 
 - `seat_status`
 - `desktop_snapshot`
@@ -38,8 +38,10 @@ The companion publishes thirteen closed-object schemas:
 - `applications_list`
 - `application_launch`
 - `pointer_move`
+- `pointer_click`
+- `keyboard_type`
 
-Each maps one-to-one to a typed revision-4 call. Results contain matching JSON
+Each maps one-to-one to a typed revision-5 call. Results contain matching JSON
 in `structuredContent` and a text block for clients that do not consume
 structured results. A wire error sets `isError: true` without converting its
 stable code or retry action into English control flow.
@@ -71,10 +73,11 @@ Register it with an MCP host using the equivalent of:
 Pass `DISPLAY` when the host sanitizes its environment, or provide `--socket`
 or `AGENT_SEAT_SOCKET`. `--print-mcp-config` prints the minimal registration.
 
-## Private companion profile for optional input
+## Optional private companion hardening
 
-The optional input deployment uses a stronger registration instead of giving
-the ordinary companion the desktop user's ambient device and X11 access. With
+Ordinary Tier 0.5 input works with the normal companion and needs no device
+permission. A stronger optional registration can additionally prevent the
+companion from inheriting the desktop user's ambient device and X11 access. With
 the private-device provider user service running, print the exact registration:
 
 ```sh

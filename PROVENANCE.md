@@ -173,6 +173,16 @@ then binds Openbox's reparenting frame to the already scoped client. The lower
 and covering override-window fixtures were written specifically for this
 repository; no external hit-test implementation or fixture was consulted.
 
+The revision-5 Tier 0.5 pointer-click and keyboard-text path is original work
+from this repository's volatile-seat contract and the public X11 core and
+XTEST interfaces. It uses `GetInputFocus`, `QueryTree`,
+`GetKeyboardMapping`, server grabs, and XTEST fake input through the existing
+safe `x11rb` dependency. Its logical pointer buttons, bounded text schema,
+first-group keysym mapping, focus/cover fixtures, MCP tools, and prose were
+written for this repository. No Nobox or third-party automation code, schema,
+fixture, comment, or prose was consulted or adapted, and no runtime dependency
+was added.
+
 The read-only enrollment inspection command is original work based on the
 public Linux sysfs device view and the documented `udevadm info` query surface.
 It requests only the input-class and seat properties listed in the deployment
