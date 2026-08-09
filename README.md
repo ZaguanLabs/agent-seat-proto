@@ -123,9 +123,10 @@ production identities, zero capabilities, no supplementary groups,
 also passes under the system manager with the production identity models. An
 installed no-event synthetic-device transition additionally proves that a real
 kernel input hotplug stops eligibility, closes every event descriptor, and
-requires a fresh broker instance. An exact installed-unit fixture, physical
-replacement matrix, and trusted lock-transition behavior remain open approval
-gates.
+requires a fresh broker instance. Hostile probes derived from the exact
+root-owned installed service bytes also pass for both production identity
+models while leaving the live services untouched. The physical replacement
+matrix and trusted lock-transition behavior remain open approval gates.
 
 The private identity record binds each relevant event device to its canonical
 sysfs path, udev physical path, classes, selected hardware IDs, complete kernel

@@ -216,6 +216,14 @@ used only public systemd state, the fixed broker status frame, `/proc` descripto
 links, and udev settling behavior. It adds no dependency, input realization,
 physical-device access, persistent unit, or third-party fixture.
 
+The installed-unit-derived confinement gate is original work over the
+repository renderer's installed output and its existing hostile executable. It
+uses public systemd unit loading, volatile `/run/systemd/system` units, process
+result properties, and the already recorded confinement directives. The test
+retains those directives and changes only explicitly enumerated fixture
+plumbing. It adds no dependency, persistent unit, runtime feature, external
+implementation input, or third-party fixture.
+
 The live rootless guard gate is original integration work over the repository's
 own renderer, guard, unit contract, and fixed wire frame. It observes only the
 current public sysfs, kernel uevent, systemd user-manager, Unix peer-credential,

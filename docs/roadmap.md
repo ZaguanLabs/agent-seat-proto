@@ -274,10 +274,11 @@ groups, `NoNewPrivileges`, seccomp, and private device views. A repeatable
 hostile test also passes under the system manager with the production identity
 models. An installed no-event synthetic-device transition proves that a real
 kernel input hotplug latches eligibility off, advances the broker epoch, closes
-every event descriptor, and requires a newly identified broker cycle. An exact
-installed-unit hostile fixture, physical replacement matrix, and the LightDM
-lock-transition contract are not yet proven. Click and keyboard input remain
-gated and unsupported.
+every event descriptor, and requires a newly identified broker cycle. Hostile
+probes derived from the exact root-owned installed service bytes pass under the
+production broker and guard identities without changing the live services. The
+physical replacement matrix and LightDM lock-transition contract are not yet
+proven. Click and keyboard input remain gated and unsupported.
 
 Re-evaluate T5 using a separately trusted Linux input source rather than
 weakening the ordinary-X11 stop decision. The review in

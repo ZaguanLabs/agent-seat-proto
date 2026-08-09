@@ -361,8 +361,10 @@ one task each, zero capabilities, no supplementary groups,
 `NoNewPrivileges`, seccomp, private device views, and the exact inherited
 descriptors. A repeatable hostile test also passes under the real system manager
 with the production dynamic broker and static guard identity models. An exact
-installed-unit hostile fixture and physical replacement lifecycle tests remain.
-Until they pass, the service source is not a supported deployment.
+installed-unit-derived hostile fixture now passes for both identities while
+changing only executable and inherited-channel test plumbing. Physical
+replacement lifecycle tests remain. Until they pass, the service source is not
+a supported deployment.
 The broker has `DevicePolicy=strict` with one read-only allow entry per enrolled
 node so systemd can prepare the corresponding `OpenFile=` descriptor. The
 dynamic UID has no matching DAC permission and its private `/dev` contains no
@@ -567,7 +569,16 @@ the same hostile executable as transient system units with the production
 dynamic broker and static guard identities. It preserves only the exact
 inherited read-only descriptor and guard system-bus channel while denying the
 same unowned authority. It changes no persistent unit, enrollment, or running
-provider. The exact installed-unit hostile fixture remains open.
+provider.
+
+A third explicit gate reads the root-owned installed service bytes, retains
+every confinement directive, replaces only the executable, dependency,
+standard-stream, and inherited-file plumbing needed by the hostile fixture,
+and installs a uniquely named mode-0600 unit under `/run/systemd/system`. Both
+production identity models pass. The test removes that exact volatile unit,
+reloads the manager, and verifies separately that the live broker remains
+untouched. It does not claim that a substituted executable is the production
+binary or expand the installed runtime's authority.
 
 Run the two probes explicitly; ordinary workspace tests ignore both:
 
@@ -577,6 +588,8 @@ cargo test -p agent-seat-activity-broker --test systemd_confinement \
   -- --ignored
 cargo test -p agent-seat-activity-broker --test systemd_confinement \
   production_identities_deny_unowned_authority_under_the_system_manager \
+  -- --ignored
+cargo test -p agent-seat-activity-broker --test systemd_installed_confinement \
   -- --ignored
 ```
 
@@ -623,8 +636,10 @@ package's udev rules and never leaves group membership or device ACLs.
 - **Retained privilege and confinement:** candidate. Rootless hostile probes
   pass both profiles and preserve only their intended inherited/system-bus
   channels. The production authority inventory and production-identity
-  system-manager hostile probes pass. An exact installed-unit hostile fixture
-  on the compatibility matrix remains.
+  system-manager hostile probes pass. Hostile probes derived from the exact
+  installed broker and guard service bytes also pass without touching the live
+  services. Provider and companion negative-authority evidence remains part of
+  the complete compatibility matrix.
 - **IPC minimization:** experimental implementation pass. Fixed status and
   eligibility frames expose no event, device, coordinate, or timestamp data.
 - **Session activity and VT lifecycle:** candidate, needs deterministic logind

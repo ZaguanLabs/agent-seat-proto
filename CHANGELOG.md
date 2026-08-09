@@ -80,6 +80,11 @@ All notable changes to this project are documented here.
   run proved real kernel lifecycle delivery, terminal eligibility and epoch
   transition, closure of every event descriptor, and a fresh-instance rearm
   without changing a physical device or emitting pointer movement.
+- Added an exact-installed-unit confinement gate. It reads the root-owned
+  rendered broker and guard service bytes, retains every confinement directive,
+  substitutes only bounded hostile-test plumbing, runs both production identity
+  models through uniquely named volatile system units, and removes those units
+  without disturbing the ready installed broker.
 - Added an explicit live rootless guard gate. Under the hardened transient
   profile it consumes a freshly rendered complete input-class manifest through
   fd 3, opens the real kernel uevent subscription, reaches the single
@@ -145,7 +150,7 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- Patch-bumped `agent-seat-activity-broker` to 0.1.16 for exact bundle
+- Patch-bumped `agent-seat-activity-broker` to 0.1.17 for exact bundle
   verification, the documented unprivileged pre-installation workflow,
   fail-closed runtime input-device lifecycle monitoring, and initial input
   class-set reconciliation. Manifest ownership is bound to the already
@@ -167,7 +172,8 @@ All notable changes to this project are documented here.
   test under the production identity models. Version 0.1.16 adds the installed
   synthetic-hotplug fixture and makes `arm` replace any prior terminal broker
   cycle after fresh verification, guaranteeing a new instance rather than a
-  no-op start of an already active service.
+  no-op start of an already active service. Version 0.1.17 adds the
+  installed-unit-derived hostile confinement gate.
 - Rewired the broker's inherited sockets without raw-descriptor conversion:
   PID 1 connects eligibility to standard input, places the socket-activated
   provider listener on standard output, passes the exact enrolled-device record
