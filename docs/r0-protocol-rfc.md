@@ -15,7 +15,8 @@ actually prove.
 
 This pre-RFC separates three layers:
 
-1. a display-server-neutral core model;
+1. a display-server-neutral
+   [information model](information-model.md);
 2. independently testable backend conformance profiles; and
 3. non-normative implementations, deployment recipes, and test fixtures.
 
@@ -30,11 +31,13 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**,
 **OPTIONAL** are to be interpreted as described by BCP 14 when, and only when,
 they appear in capitals.
 
-This draft defines an abstract protocol contract. A concrete wire revision MUST
-define the exact encoding, framing, bounds, message grammar, registries, and
-revision identifier needed to implement that contract. Conformance to this
-draft does not imply wire compatibility with revision 3, revision 4, or any
-future revision.
+This draft defines an abstract protocol contract. The serialization-neutral
+value, session, desktop, operation, outcome, binding, and profile semantics are
+factored into [`information-model.md`](information-model.md). A concrete wire
+revision MUST define the exact encoding, framing, bounds, message grammar,
+registries, and revision identifier needed to implement that contract.
+Conformance to this draft does not imply wire compatibility with revision 3,
+revision 4, or any future revision.
 
 The current repository wire specification takes precedence if this draft and
 revision 4 differ. Resolving such a difference requires an explicit future wire
@@ -101,6 +104,12 @@ mutable self-asserted metadata as authentication unless a profile explicitly
 defines the limited evidence and resulting assurance.
 
 ## 4. Core protocol model
+
+This section summarizes the serialization-neutral information model. The
+separate [information-model document](information-model.md) states the common
+value algebra and the complete boundary between semantic model, transport
+binding, and backend profile. JSON objects, Unix sockets, MCP messages, X11
+identifiers, and service-manager deployment are not core-model values.
 
 ### 4.1 Local authenticated session
 
@@ -424,8 +433,6 @@ negative authority without importing implementation internals.
 This draft is ready for independent review, not external standards submission.
 The next revision SHOULD:
 
-- split the abstract core into a serialization-neutral information model and a
-  concrete transport binding;
 - publish machine-readable registries without making generated artifacts the
   source of truth;
 - specify at least one complete backend conformance profile independently from

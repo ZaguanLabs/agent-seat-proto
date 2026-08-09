@@ -88,6 +88,12 @@ The wire model is intended to remain implementation-independent. The initial
 grants, scope, freshness, outcomes, interruption, and assurance vocabulary from
 backend conformance profiles and non-normative reference deployments.
 
+The portable contract is factored further: the
+[serialization-neutral information model](information-model.md) defines
+session, authority, identity, freshness, operation, and outcome semantics,
+while [`specification.md`](specification.md) remains the concrete local
+Unix-stream/strict-JSON revision-4 binding.
+
 An integrated window manager or compositor can satisfy a conformance profile
 using state and ordering it owns directly. The standalone X11 reference may
 need external observation and an optional Linux activity broker to make a

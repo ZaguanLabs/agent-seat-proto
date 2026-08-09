@@ -1,7 +1,14 @@
-# Agent Seat wire revision 4
+# Agent Seat local JSON binding, wire revision 4
 
 Status: experimental T5 extension over the released E1 contract. Revision 4
 is intentionally incompatible with Agent Seat revision 3 and Nobox revision 2.
+
+This document is the concrete pathname-Unix-stream and strict-JSON binding for
+the portable semantics in the pre-RFC
+[`information model`](information-model.md). Its JSON field names, framing,
+socket discovery, and byte limits belong to revision 4, not to the abstract
+model. This binding remains the repository's normative implemented wire
+contract if the pre-RFC documents differ.
 
 ## Goal
 

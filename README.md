@@ -221,7 +221,9 @@ subscriptions, supported EWMH management, and controlled XDG application
 discovery and launch. The gated pointer-move profile is present in source but
 is not part of the supported Tier 0 core.
 
-The normative wire contract is [`docs/specification.md`](docs/specification.md),
+The portable pre-RFC semantics are in the
+[`information model`](docs/information-model.md). The normative implemented
+wire contract is [`docs/specification.md`](docs/specification.md),
 the companion contract is [`docs/mcp.md`](docs/mcp.md), and provider setup is
 [`docs/provider.md`](docs/provider.md). Settings usage is
 [`docs/settings.md`](docs/settings.md). Optional-profile stop decisions are in

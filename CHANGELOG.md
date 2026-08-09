@@ -6,6 +6,10 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Split the protocol pre-RFC's portable semantics into an explicit
+  serialization-neutral information model and identified the existing
+  pathname-Unix-stream, strict-JSON revision 4 contract as one concrete
+  binding. This changes no released wire value.
 - Added `agent-seat-mcp` 0.1.3 and `agent-seat-x11` 0.1.16 private companion
   deployment. The provider user unit uses one fixed mode-0600 socket. The
   emitted MCP registration has systemd preconnect only that socket with

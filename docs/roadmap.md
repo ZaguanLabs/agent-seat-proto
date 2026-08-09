@@ -40,11 +40,13 @@ recorded in
 
 ## R0 — protocol RFC preparation
 
-Status: initial repository draft complete, 2026-08-09. The
+Status: repository draft in progress, 2026-08-09. The
 [pre-RFC draft](r0-protocol-rfc.md) separates the portable core, backend
-conformance profiles, and non-normative reference mapping. Existing revisions
-remain the repository's normative wire contract; no external standards status
-is currently claimed.
+conformance profiles, and non-normative reference mapping. The portable core
+is now factored into a [serialization-neutral information model](information-model.md)
+and the existing concrete local Unix-stream/strict-JSON binding. Existing
+revisions remain the repository's normative wire contract; no external
+standards status is currently claimed.
 
 Prepare an implementation-independent RFC from behavior that has survived the
 reference implementation and hostile tests. The RFC must have three clearly
@@ -68,8 +70,8 @@ R0 also defines revision allocation, extension ownership, capability
 negotiation, security considerations, conformance terminology, and the process
 for independent implementations to report compatible subsets. Publication as
 an external RFC or standard remains a later maintainer/community decision. The
-draft records the remaining work for independent review, registry governance,
-serialization-neutral modeling, and external publication.
+draft records the remaining work for independent review, machine-readable
+registries, registry governance, and external publication.
 
 ## E0 — bootstrap
 
