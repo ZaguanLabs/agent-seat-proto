@@ -1,0 +1,61 @@
+# Reference user service for the optional Tier 0 input profile.
+# Installation and activation are explicit administrator/user actions.
+[Unit]
+Description=Agent Seat X11 provider with private input devices
+Documentation=https://github.com/ZaguanLabs/agent-seat-proto
+ConditionFileIsExecutable=/usr/bin/agent-seat-x11
+StartLimitIntervalSec=infinity
+StartLimitBurst=1
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/agent-seat-x11
+
+# The provider gets X11 and user-manager IPC, but no host input devices.
+# Admitted applications are launched as separate transient user units and do
+# not inherit this private device namespace.
+PrivateDevices=yes
+DevicePolicy=strict
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RemoveIPC=yes
+
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+# PrivateTmp hides the filesystem X11 socket; re-expose only its socket directory.
+BindReadOnlyPaths=/tmp/.X11-unix
+ProtectProc=invisible
+ProcSubset=pid
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+InaccessiblePaths=-/dev/input -/dev/uinput
+RuntimeDirectory=agent-seat
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+ReadWritePaths=%t/agent-seat
+NoExecPaths=/
+ExecPaths=/usr/bin/agent-seat-x11 /usr/bin/systemd-run -/usr/lib -/usr/lib64 -/lib -/lib64
+
+UMask=0077
+TasksMax=128
+LimitNOFILE=256
+LimitCORE=0
+MemoryMax=256M
+KillMode=mixed
+Restart=no

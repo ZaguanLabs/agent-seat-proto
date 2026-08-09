@@ -123,6 +123,11 @@ allow_user_entries = false
 # Socket activation is normally owned by the system manager (UID 0), while the
 # broker process itself runs as a separate unprivileged account.
 # broker_peer_uid = 0
+# A supported input deployment also runs the provider in the documented
+# private-device user service. When true, startup requires /dev/input and
+# /dev/uinput to be absent and application launches are delegated to the user
+# manager so applications retain their ordinary device namespace.
+provider_private_devices = false
 "#;
 
 #[derive(Clone, Debug)]
@@ -229,6 +234,7 @@ struct Observation {
 pub(crate) struct InputPolicy {
     broker_socket: Option<PathBuf>,
     broker_peer_uid: Option<u32>,
+    provider_private_devices: bool,
 }
 
 /// Application admission mode selected by the saved launch policy.
@@ -654,6 +660,10 @@ impl Config {
             self.input.broker_socket.as_deref()?,
             self.input.broker_peer_uid?,
         ))
+    }
+
+    pub(crate) const fn provider_private_devices(&self) -> bool {
+        self.input.provider_private_devices
     }
 }
 
@@ -1211,6 +1221,8 @@ struct RawInput {
     broker_socket: Option<PathBuf>,
     #[serde(default)]
     broker_peer_uid: Option<u32>,
+    #[serde(default)]
+    provider_private_devices: bool,
 }
 
 impl RawInput {
@@ -1227,9 +1239,15 @@ impl RawInput {
         {
             return Err("input.broker_socket must be absolute".to_owned());
         }
+        if self.provider_private_devices && self.broker_socket.is_none() {
+            return Err(
+                "input.provider_private_devices requires a complete broker endpoint".to_owned(),
+            );
+        }
         Ok(InputPolicy {
             broker_socket: self.broker_socket,
             broker_peer_uid: self.broker_peer_uid,
+            provider_private_devices: self.provider_private_devices,
         })
     }
 }
@@ -1421,6 +1439,23 @@ mod tests {
             complete.broker(),
             Some((Path::new("/run/agent-seat-activity/test.sock"), 0))
         );
+        assert!(!complete.provider_private_devices());
+
+        let private = "enabled = true\n[input]\n\
+                       broker_socket = \"/run/agent-seat-activity/test.sock\"\n\
+                       broker_peer_uid = 0\nprovider_private_devices = true";
+        let private: RawConfig = toml::from_str(private).expect("parse private-device fixture");
+        assert!(
+            private
+                .validate(uid)
+                .expect("validate private-device fixture")
+                .provider_private_devices()
+        );
+
+        let private_without_broker: RawConfig =
+            toml::from_str("enabled = true\n[input]\nprovider_private_devices = true")
+                .expect("parse incomplete private-device fixture");
+        assert!(private_without_broker.validate(uid).is_err());
     }
 
     #[test]

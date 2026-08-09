@@ -20,9 +20,10 @@ pub use config::{
 pub use launch::{MAX_INSTALLED_APPLICATIONS, installed_applications};
 
 use std::ffi::OsString;
+use std::fs;
 use std::io;
 use std::num::NonZeroU64;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -90,6 +91,9 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
         return Ok(());
     }
     let (policy_snapshot, config) = config::Config::load(&config_path)?;
+    if config.provider_private_devices() {
+        require_private_input_devices(Path::new("/dev"))?;
+    }
     let config = Arc::new(config);
 
     let screen = ownership::selected_screen()?;
@@ -126,7 +130,9 @@ fn serve(
 ) -> Result<(), String> {
     let mut sessions: Vec<JoinHandle<Result<(), String>>> =
         Vec::with_capacity(config.max_sessions());
-    let launcher = Arc::new(launch::LaunchSupervisor::new());
+    let launcher = Arc::new(launch::LaunchSupervisor::new(
+        config.provider_private_devices(),
+    )?);
     let mut next_session = 1_u64;
     let mut ownership_lost = false;
 
@@ -172,6 +178,26 @@ fn serve(
         ownership.withdraw()?;
         Ok(())
     }
+}
+
+fn require_private_input_devices(device_root: &Path) -> Result<(), String> {
+    for relative in ["input", "uinput"] {
+        let path = device_root.join(relative);
+        match fs::symlink_metadata(&path) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Ok(_) => {
+                return Err(format!(
+                    "input.provider_private_devices requires {path:?} to be hidden; start the documented private-device user service"
+                ));
+            }
+            Err(_) => {
+                return Err(format!(
+                    "input.provider_private_devices cannot verify that {path:?} is hidden"
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 fn reap(sessions: &mut Vec<JoinHandle<Result<(), String>>>) {
@@ -252,5 +278,44 @@ impl Options {
             return Err("--socket requires an absolute path".to_owned());
         }
         Ok(Command::Run(options))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::{self, DirBuilder};
+    use std::os::unix::fs::DirBuilderExt as _;
+
+    struct DeviceRoot(PathBuf);
+
+    impl DeviceRoot {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("agent-seat-private-devices-{}", std::process::id()));
+            let _ = fs::remove_dir_all(&path);
+            let mut builder = DirBuilder::new();
+            builder.mode(0o700).create(&path).expect("device fixture");
+            Self(path)
+        }
+    }
+
+    impl Drop for DeviceRoot {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn private_device_gate_requires_input_nodes_to_be_absent() {
+        let root = DeviceRoot::new();
+        assert!(require_private_input_devices(&root.0).is_ok());
+
+        fs::write(root.0.join("uinput"), []).expect("uinput fixture");
+        assert!(require_private_input_devices(&root.0).is_err());
+        fs::remove_file(root.0.join("uinput")).expect("remove uinput fixture");
+
+        fs::create_dir(root.0.join("input")).expect("input fixture");
+        assert!(require_private_input_devices(&root.0).is_err());
     }
 }

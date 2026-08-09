@@ -6,6 +6,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added `agent-seat-x11` 0.1.15 provider-side input confinement. An explicit
+  `input.provider_private_devices` switch fails startup unless `/dev/input` and
+  `/dev/uinput` are absent under the new non-enableable systemd user unit.
+  Controlled launches use fixed, shell-free `systemd-run` delegation with
+  unique random unit names and retain the existing 64-child bound, so admitted
+  applications keep the user's ordinary device namespace without widening the
+  provider. Static unit/configuration tests and an explicit live rootless
+  hostile gate cover both sides of that boundary.
 - Added the initial R0 pre-RFC draft. It separates the display-neutral core,
   evidence-based backend conformance profiles, assurance vocabulary, revision
   and extension governance, security considerations, and non-normative

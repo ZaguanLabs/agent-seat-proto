@@ -30,6 +30,14 @@ profiles. Revision 3 exposes no calls for absent profiles; their feature atoms
 remain unadvertised. A future revision that defines optional calls must return
 typed `unsupported` results when its backend does not advertise them.
 
+The experimental revision-4 pointer profile keeps raw physical activity in a
+separate broker. Its reference provider unit uses a private `/dev` and refuses
+startup if input paths remain visible. Because ordinary desktop applications
+must not inherit that restriction, controlled launches are submitted as
+separate transient user-manager services; the provider supervises only the
+bounded waiting launcher processes. This service-manager deployment is
+reference architecture, not part of the display-neutral wire contract.
+
 The crate also owns the non-runtime settings API used by the
 `agent-seat-settings` application. It exposes a typed, bounded draft of a
 validated policy, the same launchable XDG application catalog used at runtime,

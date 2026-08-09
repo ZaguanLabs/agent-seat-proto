@@ -187,6 +187,8 @@ allow_user_entries = false
 # broker_socket = "/run/agent-seat/1000/activity.sock"
 # PID 1 owns the socket-activated listener in the system deployment.
 # broker_peer_uid = 0
+# Enable only with the private-device user service documented below.
+provider_private_devices = false
 ```
 
 `grant.uid` must equal the provider's effective UID. The private runtime
@@ -212,6 +214,7 @@ omitted grant denies every peer.
 | `launch.allow_user_entries` | `false` | boolean |
 | `input.broker_socket` | absent | bounded absolute pathname, paired with peer UID |
 | `input.broker_peer_uid` | absent | numeric socket-listener UID observed through `SO_PEERCRED` |
+| `input.provider_private_devices` | `false` | boolean; `true` requires a complete broker endpoint and the private-device service |
 
 `deny` exposes and launches nothing. `allow_listed` admits only IDs in
 `allow`, after applying `deny`. `allow_installed` admits each valid discovered
@@ -331,7 +334,12 @@ Desktop Entry 1.5 string, quoting, and field-code rules, removes the standard
 file/URL and deprecated field codes because launch accepts no document, expands
 `%c`, `%i`, `%k`, and `%%`, and rejects unknown or ambiguous codes. It invokes
 the executable directly with `std::process::Command`; no shell, command string,
-or peer argument is involved. `Terminal=true` is unsupported because silently
+or peer argument is involved. Under the private-device input profile, it
+instead invokes fixed `/usr/bin/systemd-run` with a generated argument vector.
+The user manager creates one transient application service outside the
+provider's private device namespace. The waiting `systemd-run` child remains
+inside the same 64-child supervision bound until that application service
+ends. `Terminal=true` is unsupported because silently
 choosing a terminal would add another executable outside policy. This provider
 does not implement D-Bus activation and therefore uses the required compatible
 `Exec` fallback when `DBusActivatable=true`.
@@ -345,6 +353,64 @@ child. That exact match returns the session's opaque client handle. Missing,
 late, filtered, absent, or spoofed metadata produces `client = null`; the
 provider never guesses from PID, title, class, timing, or “only new window.”
 The ID is same-user X11 evidence, not an authentication or causality guarantee.
+
+## Optional private-device input service
+
+An input-enabled provider must not inherit the desktop user's evdev or uinput
+permissions. Set `input.provider_private_devices = true` only after installing
+the source unit
+`contrib/systemd/user/agent-seat-x11-input.service` as
+`agent-seat-x11-input.service` in the system or user systemd unit search path.
+The packaged location is `/usr/lib/systemd/user/`; a source-checkout test can
+install the same bytes for only the current user:
+
+```sh
+install -Dm0644 contrib/systemd/user/agent-seat-x11-input.service \
+  "$HOME/.config/systemd/user/agent-seat-x11-input.service"
+systemctl --user daemon-reload
+```
+
+The unit is deliberately missing `[Install]`: it cannot be enabled and no
+package preset starts it. In the X11 session that will run the provider, import
+the display variables actually present, validate the policy, stop any existing
+foreground provider, and start one explicit cycle:
+
+```sh
+systemctl --user import-environment DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP
+agent-seat-x11 --check-config
+systemctl --user start agent-seat-x11-input.service
+systemctl --user status agent-seat-x11-input.service
+```
+
+The service keeps local `AF_UNIX` access for X11 and the user manager, but
+applies `PrivateDevices=yes`, a strict device policy, no capabilities,
+`NoNewPrivileges=yes`, syscall and filesystem restrictions, and fixed resource
+bounds. Its private temporary directory re-exposes only the host's read-only
+X11 socket directory, and only its private mode-0700 runtime directory remains
+writable under the read-only filesystem view. When the configuration switch is
+true, the provider independently checks that both `/dev/input` and
+`/dev/uinput` are absent before connecting to X11. Missing isolation is a
+startup error; there is no warning-only fallback.
+
+Admitted applications do not inherit this namespace. The provider delegates
+their already parsed absolute executable and bounded arguments directly to a
+uniquely named transient user service, with no shell. A live hostile gate
+proves that the provider cannot see either input path even when the user can
+open uinput, while the delegated application retains exactly that user's
+baseline device namespace:
+
+```sh
+cargo test -p agent-seat-x11 --test systemd_input_confinement \
+  provider_loses_input_devices_while_delegated_application_keeps_baseline \
+  -- --ignored
+```
+
+Neither this user service nor the desktop user needs membership in `input`.
+The separate broker enrollment remains the only root-controlled operation and
+passes exact reviewed descriptors to its own unprivileged process. This
+provider service closes one negative-authority gate; it does not pass the
+remaining physical-device and trusted-lock gates or make generic Openbox input
+supported.
 
 ## Running beside Openbox
 

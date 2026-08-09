@@ -318,6 +318,20 @@ Agent Seat implementation code, schema, test, fixture, comment, or prose was
 consulted, copied, translated, or adapted. The draft adds no runtime behavior,
 dependency, wire revision, or external standards claim.
 
+## Provider private-device deployment
+
+The optional provider user unit, startup absence check, user-manager launch
+delegation, and hostile two-namespace fixture are original work from this
+repository's approved process-authority inventory. They use public systemd
+user-service, transient-unit, execution, device, namespace, and resource-
+control behavior already cited in `docs/t5-broker-deployment.md`. The local
+systemd-258 probe independently established that a confined process can submit
+a transient user unit which receives the user's ordinary device namespace. No
+Nobox or other project code, unit, schema, test, fixture, comment, or prose was
+consulted, copied, translated, or adapted. The change adds no dependency,
+evdev descriptor, raw activity field, input operation, root requirement, or
+external protocol claim.
+
 ## First-run configuration workflow
 
 The generated configuration template, creation behavior, CLI guidance,

@@ -277,8 +277,13 @@ kernel input hotplug latches eligibility off, advances the broker epoch, closes
 every event descriptor, and requires a newly identified broker cycle. Hostile
 probes derived from the exact root-owned installed service bytes pass under the
 production broker and guard identities without changing the live services. The
-physical replacement matrix and LightDM lock-transition contract are not yet
-proven. Click and keyboard input remain gated and unsupported.
+provider now also has a non-enableable private-device user unit and an enforced
+configuration switch. A live rootless hostile gate proves that the provider
+loses `/dev/input` and `/dev/uinput` even when its UID can open uinput, while a
+controlled launch delegated by that confined provider retains the UID's normal
+device namespace. The physical replacement matrix and LightDM lock-transition
+contract are not yet proven. Companion/harness confinement, click, and keyboard
+input remain gated and unsupported.
 
 Re-evaluate T5 using a separately trusted Linux input source rather than
 weakening the ordinary-X11 stop decision. The review in

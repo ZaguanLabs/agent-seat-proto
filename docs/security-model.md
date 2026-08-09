@@ -40,6 +40,17 @@ The standalone provider is a policy boundary against accidental overreach,
 malformed peers, and a compromised translator. It is not an isolation boundary
 against another process that already has the same user's X11 authority.
 
+T5R's optional reference deployment introduces two additional boundaries. The
+activity broker alone receives exact read-only evdev descriptors and reduces
+them to readiness, instance, epoch, and terminal stop state. The X11 provider
+receives no raw device descriptor or event field. When its private-device
+policy switch is active, a systemd user service removes `/dev/input` and
+`/dev/uinput`; the provider verifies both absences before claiming X11
+ownership. Controlled applications are then launched in separate transient
+user services so their ordinary device permissions do not require widening the
+provider's authority. Failure to create either boundary is input-unavailable,
+not a degraded mode.
+
 ## Trusted
 
 - the session owner who controls provider configuration and grants;
@@ -79,6 +90,9 @@ against another process that already has the same user's X11 authority.
 - Launch correlation requires one exact startup-ID match on a newly visible,
   in-scope client. It never falls back to PID, title, class, timing, or window
   count, and lack of evidence is successful launch with no client handle.
+- An input-profile provider must not see evdev or uinput paths even when its
+  login UID normally can; an admitted application must not inherit the
+  provider's private device namespace.
 
 Same-user X11 clients may inspect or spoof desktop state and bypass the
 provider entirely. Stronger isolation requires a different OS user/session or

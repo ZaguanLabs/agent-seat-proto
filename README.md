@@ -128,6 +128,15 @@ root-owned installed service bytes also pass for both production identity
 models while leaving the live services untouched. The physical replacement
 matrix and trusted lock-transition behavior remain open approval gates.
 
+The optional provider side now has a separate, non-enableable systemd user
+unit at `contrib/systemd/user/agent-seat-x11-input.service`. With
+`input.provider_private_devices = true`, startup fails unless `/dev/input` and
+`/dev/uinput` are absent. Allowed applications are delegated, without a shell,
+to separate transient user services so they retain the ordinary desktop-user
+device namespace instead of inheriting the provider sandbox. This needs no
+root or `input`-group membership for the provider; see the
+[private-device provider workflow](docs/provider.md#optional-private-device-input-service).
+
 The private identity record binds each relevant event device to its canonical
 sysfs path, udev physical path, classes, selected hardware IDs, complete kernel
 event-capability bitmaps, and a short serial when one exists. Devices without a

@@ -2,9 +2,11 @@
 
 use std::collections::{HashMap, HashSet};
 use std::env;
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::Read as _;
 use std::num::NonZeroU64;
+use std::os::unix::ffi::OsStrExt as _;
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -27,6 +29,8 @@ const MAX_ENTRY_KEYS: usize = 256;
 const MAX_EXEC_ARGUMENTS: usize = 128;
 const MAX_DATA_ROOTS: usize = 32;
 const MAX_ACTIVE_CHILDREN: usize = 64;
+const MAX_DELEGATED_ENVIRONMENT_BYTES: usize = 4_096;
+const SYSTEMD_RUN: &str = "/usr/bin/systemd-run";
 
 pub(crate) struct SessionCatalog {
     cached: Option<Vec<ApplicationDescriptor>>,
@@ -79,14 +83,27 @@ impl SessionCatalog {
 pub(crate) struct LaunchSupervisor {
     next_token: AtomicU64,
     children: Mutex<Vec<Child>>,
+    delegate_via_systemd: bool,
+    delegated_unit_stem: String,
 }
 
 impl LaunchSupervisor {
-    pub(crate) const fn new() -> Self {
-        Self {
+    pub(crate) fn new(delegate_via_systemd: bool) -> Result<Self, String> {
+        let delegated_unit_stem = if delegate_via_systemd {
+            format!(
+                "agent-seat-launched-{}-{:016x}",
+                std::process::id(),
+                random_instance()?
+            )
+        } else {
+            String::new()
+        };
+        Ok(Self {
             next_token: AtomicU64::new(1),
             children: Mutex::new(Vec::new()),
-        }
+            delegate_via_systemd,
+            delegated_unit_stem,
+        })
     }
 
     pub(crate) fn reap(&self) {
@@ -128,22 +145,125 @@ impl LaunchSupervisor {
                 "active application launch bound is reached",
             ));
         }
-        let mut command = Command::new(&entry.program);
-        command
-            .args(&entry.arguments)
-            .env("DESKTOP_STARTUP_ID", &startup_id)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        if let Some(directory) = entry.working_directory {
-            command.current_dir(directory);
-        }
+        let mut command = if self.delegate_via_systemd {
+            delegated_command(&entry, &startup_id, &self.delegated_unit_stem, numeric)?
+        } else {
+            direct_command(&entry, &startup_id)
+        };
         let child = command
             .spawn()
             .map_err(|_| Failure::unavailable("desktop application could not be started"))?;
         children.push(child);
         Ok(Started { token, startup_id })
     }
+}
+
+fn direct_command(entry: &CatalogEntry, startup_id: &str) -> Command {
+    let mut command = Command::new(&entry.program);
+    command
+        .args(&entry.arguments)
+        .env("DESKTOP_STARTUP_ID", startup_id);
+    if let Some(directory) = &entry.working_directory {
+        command.current_dir(directory);
+    }
+    configure_stdio(&mut command);
+    command
+}
+
+fn delegated_command(
+    entry: &CatalogEntry,
+    startup_id: &str,
+    unit_stem: &str,
+    numeric: u64,
+) -> Result<Command, Failure> {
+    let metadata = fs::metadata(SYSTEMD_RUN)
+        .map_err(|_| Failure::unavailable("systemd launch delegation is unavailable"))?;
+    if !metadata.is_file() || metadata.permissions().mode() & 0o111 == 0 {
+        return Err(Failure::unavailable(
+            "systemd launch delegation is unavailable",
+        ));
+    }
+
+    let mut command = Command::new(SYSTEMD_RUN);
+    command.args([
+        "--user",
+        "--wait",
+        "--collect",
+        "--quiet",
+        "--service-type=exec",
+    ]);
+    command.arg(format!("--unit={unit_stem}-{numeric}.service"));
+    command.arg(format!("--setenv=DESKTOP_STARTUP_ID={startup_id}"));
+    let mut environment_bytes = startup_id.len();
+    for name in [
+        "DISPLAY",
+        "XAUTHORITY",
+        "WAYLAND_DISPLAY",
+        "XDG_RUNTIME_DIR",
+        "XDG_CURRENT_DESKTOP",
+        "XDG_SESSION_DESKTOP",
+        "DBUS_SESSION_BUS_ADDRESS",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "LANG",
+        "LC_ALL",
+        "LC_MESSAGES",
+    ] {
+        let Some(value) = env::var_os(name) else {
+            continue;
+        };
+        environment_bytes = environment_bytes
+            .checked_add(name.len())
+            .and_then(|bytes| bytes.checked_add(value.as_bytes().len()))
+            .ok_or_else(|| {
+                Failure::too_large("delegated application environment exceeds its bound")
+            })?;
+        if environment_bytes > MAX_DELEGATED_ENVIRONMENT_BYTES {
+            return Err(Failure::too_large(
+                "delegated application environment exceeds its bound",
+            ));
+        }
+        let mut assignment = OsString::from("--setenv=");
+        assignment.push(name);
+        assignment.push("=");
+        assignment.push(value);
+        command.arg(assignment);
+    }
+    if let Some(directory) = &entry.working_directory {
+        let mut option = OsString::from("--working-directory=");
+        option.push(directory);
+        command.arg(option);
+    }
+    command.arg("--").arg(&entry.program).args(&entry.arguments);
+    configure_stdio(&mut command);
+    Ok(command)
+}
+
+fn random_instance() -> Result<u64, String> {
+    let mut bytes = [0_u8; 8];
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let count =
+            rustix::rand::getrandom(&mut bytes[offset..], rustix::rand::GetRandomFlags::empty())
+                .map_err(|error| format!("cannot create launch instance identifier: {error}"))?;
+        if count == 0 {
+            return Err("random source returned no launch instance bytes".to_owned());
+        }
+        offset += count;
+    }
+    let instance = u64::from_ne_bytes(bytes);
+    if instance == 0 {
+        return Err("random launch instance identifier was zero".to_owned());
+    }
+    Ok(instance)
+}
+
+fn configure_stdio(command: &mut Command) {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
 }
 
 pub(crate) struct Started {
@@ -804,6 +924,53 @@ impl Failure {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixture_entry() -> CatalogEntry {
+        CatalogEntry {
+            descriptor: ApplicationDescriptor {
+                id: ApplicationId::new("example.desktop").expect("application ID"),
+                name: Name::new("Example").expect("application name"),
+                user_entry: false,
+            },
+            program: PathBuf::from("/bin/true"),
+            arguments: vec!["literal;argument".to_owned(), "two words".to_owned()],
+            working_directory: Some(PathBuf::from("/tmp")),
+        }
+    }
+
+    #[test]
+    fn delegated_launch_uses_the_user_manager_without_a_shell() {
+        let Ok(command) = delegated_command(
+            &fixture_entry(),
+            "agent-seat-test-1",
+            "agent-seat-launched-test",
+            7,
+        ) else {
+            panic!("systemd launch command was rejected");
+        };
+        assert_eq!(command.get_program(), OsString::from(SYSTEMD_RUN));
+        let arguments = command.get_args().map(OsString::from).collect::<Vec<_>>();
+        assert!(arguments.contains(&OsString::from("--user")));
+        assert!(arguments.contains(&OsString::from("--wait")));
+        assert!(arguments.contains(&OsString::from("--collect")));
+        assert!(arguments.contains(&OsString::from("--service-type=exec")));
+        assert!(arguments.contains(&OsString::from("--unit=agent-seat-launched-test-7.service")));
+        assert!(arguments.contains(&OsString::from(
+            "--setenv=DESKTOP_STARTUP_ID=agent-seat-test-1"
+        )));
+        assert!(arguments.contains(&OsString::from("--working-directory=/tmp")));
+        let separator = arguments
+            .iter()
+            .position(|argument| argument == "--")
+            .expect("argument separator");
+        assert_eq!(
+            &arguments[separator..],
+            ["--", "/bin/true", "literal;argument", "two words"]
+                .map(OsString::from)
+                .as_slice()
+        );
+        assert!(arguments.iter().all(|argument| argument != "sh"));
+    }
 
     #[test]
     fn exec_parser_expands_without_shell_interpretation() {

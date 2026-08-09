@@ -44,6 +44,31 @@ revision 4 rather than changing revision 3 in place.
 
 ## Components and authority
 
+### X11 provider private-device profile
+
+The provider never opens an evdev or uinput node. The optional input profile
+adds a separate systemd user unit with `PrivateDevices=yes`, strict device,
+syscall, filesystem, capability, and resource bounds, while retaining only
+local `AF_UNIX` connectivity needed for X11 and user-manager IPC. An explicit
+`input.provider_private_devices = true` policy switch makes startup verify that
+both `/dev/input` and `/dev/uinput` are absent. Namespace setup failure or a
+visible path is terminal; direct foreground startup cannot silently retain the
+same UID's device ACLs.
+
+Controlled application launch cannot inherit this restriction. After applying
+the existing desktop-entry policy and strict shell-free parser, the confined
+provider runs fixed `/usr/bin/systemd-run --user --wait --collect` with one
+bounded argument vector. The user manager creates a uniquely named transient
+application unit outside the provider's private device namespace. The waiting
+launcher remains counted by the provider's existing 64-child bound. No peer
+selects a unit property, command path, environment key, or service name.
+
+The source user unit has no `[Install]` section and is never enabled by package
+preset. Starting it, like enabling the configuration switch, is a separate
+user action. It requires neither root nor membership in the group owning event
+nodes. Root remains confined to the separately reviewed broker enrollment and
+lifecycle transactions.
+
 ### Administrator enrollment tool
 
 A separately packaged, short-lived tool exposes read-only inspection and inert
@@ -596,6 +621,21 @@ cargo test -p agent-seat-activity-broker --test systemd_installed_confinement \
 The second command invokes fixed `/usr/bin/sudo -n /usr/bin/systemd-run`
 internally and therefore requires an explicit passwordless administrator
 authorization. It creates only bounded transient collected units.
+The provider boundary has its own rootless gate:
+
+```sh
+cargo test -p agent-seat-x11 --test systemd_input_confinement \
+  provider_loses_input_devices_while_delegated_application_keeps_baseline \
+  -- --ignored
+```
+
+It captures the current user's uinput baseline, runs a hostile provider fixture
+under the source unit's confinement properties, proves both input paths are
+absent there, then delegates a second process through the user manager and
+proves that process sees the ordinary host paths and the same baseline access.
+Both services are transient and collected; no policy, installed unit, desktop,
+or input event is changed.
+
 An additional explicit live guard probe passes under the same hardened
 rootless profile against the current sysfs mapping, kernel uevent group, and
 logind session. Every individual owner, seat, foreground, active, local, type,
@@ -638,8 +678,10 @@ package's udev rules and never leaves group membership or device ACLs.
   channels. The production authority inventory and production-identity
   system-manager hostile probes pass. Hostile probes derived from the exact
   installed broker and guard service bytes also pass without touching the live
-  services. Provider and companion negative-authority evidence remains part of
-  the complete compatibility matrix.
+  services. The provider-private-device hostile gate also passes while
+  preserving ordinary application device access through bounded launch
+  delegation. Companion and harness negative-authority evidence remains part
+  of the complete compatibility matrix.
 - **IPC minimization:** experimental implementation pass. Fixed status and
   eligibility frames expose no event, device, coordinate, or timestamp data.
 - **Session activity and VT lifecycle:** candidate, needs deterministic logind
