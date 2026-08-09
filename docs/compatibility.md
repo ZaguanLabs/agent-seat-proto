@@ -24,6 +24,12 @@ session was idle. The call succeeds, while provider shutdown remains bounded.
 The external harness itself is not confined by that result.
 Stable candidate fixtures and the required isolated review bundle are defined
 in the [T5 participant contract](t5-participation-contract.md).
+The current development command environment is explicitly nonqualifying: the
+reference hostile probe reached uinput, Xauthority, provider, broker, user-
+manager connection and unit submission, both filesystem and abstract X11, and
+parent-process data. Only direct evdev open was denied, for a 9/10 ambient-
+authority result. It inherited no input descriptor. This is baseline evidence,
+not a harness-boundary pass.
 
 ## Pre-RFC publication matrix
 

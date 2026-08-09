@@ -37,6 +37,8 @@ All notable changes to this project are documented here.
   checks, inherited-input inspection, and a bounded real user-manager escape
   attempt. Four standalone unit tests and a transient confined probe pass; it
   remains participant test material, not an installed component or gate result.
+  The current development command environment reaches 9/10 direct authorities
+  (all except raw evdev) and therefore explicitly fails the harness boundary.
 - Added `agent-seat-mcp` 0.1.3 and `agent-seat-x11` 0.1.16 private companion
   deployment. The provider user unit uses one fixed mode-0600 socket. The
   emitted MCP registration has systemd preconnect only that socket with

@@ -133,6 +133,9 @@ impl Reachability {
         let x11_filesystem_path = Path::new(&display_name);
         let x11_abstract_address = SocketAddr::from_abstract_name(display_name.as_bytes())
             .map_err(|error| format!("cannot construct bounded X11 abstract address: {error}"))?;
+        // Sample first: a successful probe open must not be mistaken for an
+        // inherited descriptor through temporary-lifetime extension.
+        let inherited_input = inherited_input_descriptor()?;
 
         Ok(Self {
             input_device: File::open(&options.input_device).is_ok(),
@@ -149,7 +152,7 @@ impl Reachability {
             x11_filesystem: UnixStream::connect(x11_filesystem_path).is_ok(),
             x11_abstract: UnixStream::connect_addr(&x11_abstract_address).is_ok(),
             parent_process: File::open(format!("/proc/{}/status", options.parent_pid)).is_ok(),
-            inherited_input: inherited_input_descriptor()?,
+            inherited_input,
         })
     }
 
