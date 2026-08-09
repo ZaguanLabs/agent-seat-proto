@@ -1,5 +1,6 @@
-//! Minimal MCP 2025-11-25 stdio server.
+//! Minimal dual-era MCP stdio server.
 
+use std::collections::BTreeMap;
 use std::io::{self, BufRead as _, BufReader, BufWriter, Read as _};
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -16,7 +17,14 @@ use serde_json::{Value, json};
 use crate::discovery;
 use crate::seat::Seat;
 
-const MCP_VERSION: &str = "2025-11-25";
+const MODERN_MCP_VERSION: &str = "2026-07-28";
+const LEGACY_MCP_VERSION: &str = "2025-11-25";
+const SUPPORTED_MCP_VERSIONS: [&str; 2] = [MODERN_MCP_VERSION, LEGACY_MCP_VERSION];
+const MODERN_PROTOCOL_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
+const MODERN_CLIENT_INFO: &str = "io.modelcontextprotocol/clientInfo";
+const MODERN_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
+const STATIC_RESULT_TTL_MS: u64 = 3_600_000;
+const MAX_MODERN_CONTEXTS: usize = 8;
 const MAX_MCP_LINE_BYTES: usize = 1024 * 1024;
 
 pub(crate) fn serve(socket: Option<PathBuf>, seat: Option<Seat>) -> Result<(), String> {
@@ -46,7 +54,18 @@ pub(crate) fn serve(socket: Option<PathBuf>, seat: Option<Seat>) -> Result<(), S
             write_error(&mut output, Value::Null, -32600, "empty request")?;
             continue;
         }
-        let request = match serde_json::from_str::<RpcRequest>(&line) {
+        let value = match serde_json::from_str::<Value>(&line) {
+            Ok(value) => value,
+            Err(_) => {
+                write_error(&mut output, Value::Null, -32700, "parse error")?;
+                continue;
+            }
+        };
+        if value.get("id").is_some_and(Value::is_null) {
+            write_error(&mut output, Value::Null, -32600, "invalid JSON-RPC request")?;
+            continue;
+        }
+        let request = match serde_json::from_value::<RpcRequest>(value) {
             Ok(request)
                 if request.jsonrpc == "2.0"
                     && !request.method.is_empty()
@@ -60,7 +79,7 @@ pub(crate) fn serve(socket: Option<PathBuf>, seat: Option<Seat>) -> Result<(), S
                 continue;
             }
             Err(_) => {
-                write_error(&mut output, Value::Null, -32700, "parse error")?;
+                write_error(&mut output, Value::Null, -32600, "invalid JSON-RPC request")?;
                 continue;
             }
         };
@@ -70,25 +89,29 @@ pub(crate) fn serve(socket: Option<PathBuf>, seat: Option<Seat>) -> Result<(), S
 
 struct Server {
     socket: Option<PathBuf>,
-    seat: Option<Seat>,
-    negotiated: bool,
-    initialized: bool,
+    inherited_seat: Option<Seat>,
+    legacy_seat: Option<Seat>,
+    legacy_negotiated: bool,
+    legacy_initialized: bool,
+    modern_contexts: Contexts<Seat>,
 }
 
 impl Server {
     fn new(socket: Option<PathBuf>, seat: Option<Seat>) -> Self {
         Self {
             socket,
-            seat,
-            negotiated: false,
-            initialized: false,
+            inherited_seat: seat,
+            legacy_seat: None,
+            legacy_negotiated: false,
+            legacy_initialized: false,
+            modern_contexts: Contexts::new(MAX_MODERN_CONTEXTS),
         }
     }
 
     fn handle<W: io::Write>(&mut self, request: RpcRequest, output: &mut W) -> Result<(), String> {
         if request.method == "notifications/initialized" {
-            if self.negotiated {
-                self.initialized = true;
+            if self.legacy_negotiated {
+                self.legacy_initialized = true;
             }
             return Ok(());
         }
@@ -99,11 +122,20 @@ impl Server {
         let Some(id) = request.id else {
             return Ok(());
         };
+        if request.method == "initialize" {
+            return self.initialize(id, request.params, output);
+        }
+        if has_modern_version(&request.params) || request.method == "server/discover" {
+            return self.handle_modern(id, &request.method, request.params, output);
+        }
         match request.method.as_str() {
-            "initialize" => self.initialize(id, request.params, output),
             "ping" => write_result(output, id, &json!({})),
-            "tools/list" if self.initialized => self.list_tools(id, request.params, output),
-            "tools/call" if self.initialized => self.call_tool(id, request.params, output),
+            "tools/list" if self.legacy_initialized => {
+                self.list_tools(id, request.params, Era::Legacy, output)
+            }
+            "tools/call" if self.legacy_initialized => {
+                self.call_tool_legacy(id, request.params, output)
+            }
             "tools/list" | "tools/call" => {
                 write_error(output, id, -32002, "server is not initialized")
             }
@@ -117,7 +149,7 @@ impl Server {
         params: Value,
         output: &mut W,
     ) -> Result<(), String> {
-        if self.negotiated {
+        if self.legacy_negotiated {
             return write_error(output, id, -32600, "initialize was already completed");
         }
         let params: InitializeParams = match serde_json::from_value(params) {
@@ -129,11 +161,11 @@ impl Server {
         if !params.capabilities.is_object() || !valid_implementation(&params.client_info) {
             return write_error(output, id, -32602, "invalid initialize parameters");
         }
-        self.negotiated = true;
-        let version = if params.protocol_version == MCP_VERSION {
+        self.legacy_negotiated = true;
+        let version = if params.protocol_version == LEGACY_MCP_VERSION {
             params.protocol_version
         } else {
-            MCP_VERSION.to_owned()
+            LEGACY_MCP_VERSION.to_owned()
         };
         write_result(
             output,
@@ -151,10 +183,63 @@ impl Server {
         )
     }
 
+    fn handle_modern<W: io::Write>(
+        &mut self,
+        id: Value,
+        method: &str,
+        params: Value,
+        output: &mut W,
+    ) -> Result<(), String> {
+        match validate_modern_metadata(&params) {
+            Ok(()) => {}
+            Err(ModernMetadataError::Invalid) => {
+                return write_error(output, id, -32602, "invalid modern request metadata");
+            }
+            Err(ModernMetadataError::Unsupported(requested)) => {
+                return write_error_data(
+                    output,
+                    id,
+                    -32022,
+                    "Unsupported protocol version",
+                    json!({"supported":SUPPORTED_MCP_VERSIONS,"requested":requested}),
+                );
+            }
+        }
+        match method {
+            "server/discover" => self.discover(id, params, output),
+            "tools/list" => self.list_tools(id, params, Era::Modern, output),
+            "tools/call" => self.call_tool_modern(id, params, output),
+            _ => write_error(output, id, -32601, "method not found"),
+        }
+    }
+
+    fn discover<W: io::Write>(
+        &self,
+        id: Value,
+        params: Value,
+        output: &mut W,
+    ) -> Result<(), String> {
+        if serde_json::from_value::<DiscoverParams>(params).is_err() {
+            return write_error(output, id, -32602, "invalid server/discover parameters");
+        }
+        write_result(
+            output,
+            id,
+            &modern_result(json!({
+                "supportedVersions": SUPPORTED_MCP_VERSIONS,
+                "capabilities": {"tools":{"listChanged":false}},
+                "instructions": "Check the seat, observe before acting, refresh stale targets, prefer metadata over pixels, and report queued work as queued.",
+                "ttlMs": STATIC_RESULT_TTL_MS,
+                "cacheScope": "public"
+            })),
+        )
+    }
+
     fn list_tools<W: io::Write>(
         &self,
         id: Value,
         params: Value,
+        era: Era,
         output: &mut W,
     ) -> Result<(), String> {
         let params = if params.is_null() { json!({}) } else { params };
@@ -162,11 +247,25 @@ impl Server {
             Ok(params) if params.cursor.is_none() => params,
             _ => return write_error(output, id, -32602, "invalid tools/list parameters"),
         };
-        let result = ToolList { tools: tools() };
-        write_result(output, id, &result)
+        let result = ToolList { tools: tools(era) };
+        match era {
+            Era::Legacy => write_result(output, id, &result),
+            Era::Modern => {
+                let value = serde_json::to_value(result)
+                    .map_err(|error| format!("cannot encode MCP tool list: {error}"))?;
+                write_result(
+                    output,
+                    id,
+                    &modern_result_with(
+                        value,
+                        json!({"ttlMs":STATIC_RESULT_TTL_MS,"cacheScope":"public"}),
+                    )?,
+                )
+            }
+        }
     }
 
-    fn call_tool<W: io::Write>(
+    fn call_tool_legacy<W: io::Write>(
         &mut self,
         id: Value,
         params: Value,
@@ -192,59 +291,305 @@ impl Server {
             }
         };
 
-        let result = match self.provider_call(call) {
+        let result = match self.provider_call_legacy(call) {
             Ok(outcome) => tool_outcome(outcome),
             Err(error) => tool_error(error.code, error.retry, &error.message),
         };
         write_result(output, id, &result)
     }
 
-    fn provider_call(&mut self, call: Call) -> Result<Outcome, ProviderFailure> {
-        if self.seat.is_none() {
-            let path = discovery::resolve(self.socket.as_deref())
-                .map_err(|error| ProviderFailure {
-                    code: error.code(),
-                    retry: error.retry(),
-                    message: error.to_string(),
-                })?
-                .ok_or_else(|| ProviderFailure {
-                    code: "unavailable",
-                    retry: "reconnect",
-                    message: "no live Agent Seat provider is advertised".to_owned(),
-                })?;
-            self.seat = Some(Seat::connect(&path).map_err(|error| ProviderFailure {
-                code: error.code(),
-                retry: error.retry(),
-                message: error.to_string(),
-            })?);
+    fn call_tool_modern<W: io::Write>(
+        &mut self,
+        id: Value,
+        params: Value,
+        output: &mut W,
+    ) -> Result<(), String> {
+        let params: CallToolParams = match serde_json::from_value(params) {
+            Ok(params) => params,
+            Err(_) => {
+                return write_error(output, id, -32602, "invalid tools/call parameters");
+            }
+        };
+        let (context, arguments) = match take_context(params.arguments) {
+            Ok(value) => value,
+            Err(message) => {
+                return write_result(
+                    output,
+                    id,
+                    &modern_tool_result(tool_error("invalid_argument", "never", message)),
+                );
+            }
+        };
+        if params.name == "seat_release" {
+            if arguments
+                .as_ref()
+                .and_then(Value::as_object)
+                .is_some_and(|arguments| !arguments.is_empty())
+            {
+                return write_result(
+                    output,
+                    id,
+                    &modern_tool_result(tool_error(
+                        "invalid_argument",
+                        "never",
+                        "seat_release accepts only context",
+                    )),
+                );
+            }
+            let result = match context {
+                Some(context) if self.modern_contexts.remove(context).is_some() => tool_result(
+                    json!({"status":"ok","body":{"kind":"context_released","value":{"context":context}}}),
+                    false,
+                ),
+                Some(_) => tool_error(
+                    "stale_context",
+                    "reconnect",
+                    "Agent Seat context is unknown or expired",
+                ),
+                None => tool_error("invalid_argument", "never", "context is required"),
+            };
+            return write_result(output, id, &modern_tool_result(result));
         }
-        let result = self
-            .seat
-            .as_mut()
-            .ok_or_else(|| ProviderFailure {
-                code: "unavailable",
+        if params.name == "seat_status" {
+            if context.is_some() {
+                return write_result(
+                    output,
+                    id,
+                    &modern_tool_result(tool_error(
+                        "invalid_argument",
+                        "never",
+                        "seat_status does not accept a context",
+                    )),
+                );
+            }
+            let call = match translate_call(&params.name, arguments) {
+                Ok(call) => call,
+                Err(error) => {
+                    return self.write_modern_call_error(id, error, output);
+                }
+            };
+            let result = match self.create_modern_context(call) {
+                Ok((context, outcome)) => tool_outcome(outcome).with_context(context),
+                Err(error) => tool_error(error.code, error.retry, &error.message),
+            };
+            return write_result(output, id, &modern_tool_result(result));
+        }
+        let call = match translate_call(&params.name, arguments) {
+            Ok(call) => call,
+            Err(error) => return self.write_modern_call_error(id, error, output),
+        };
+        let Some(context) = context else {
+            return write_result(
+                output,
+                id,
+                &modern_tool_result(tool_error(
+                    "invalid_argument",
+                    "never",
+                    "context is required",
+                )),
+            );
+        };
+        let result = match self.provider_call_modern(context, call) {
+            Ok(outcome) => tool_outcome(outcome),
+            Err(error) => tool_error(error.code, error.retry, &error.message),
+        };
+        write_result(output, id, &modern_tool_result(result))
+    }
+
+    fn write_modern_call_error<W: io::Write>(
+        &self,
+        id: Value,
+        error: CallError,
+        output: &mut W,
+    ) -> Result<(), String> {
+        match error {
+            CallError::UnknownTool => write_error(output, id, -32602, "unknown tool"),
+            CallError::Arguments(message) => write_result(
+                output,
+                id,
+                &modern_tool_result(tool_error("invalid_argument", "never", &message)),
+            ),
+        }
+    }
+
+    fn create_modern_context(&mut self, call: Call) -> Result<(u64, Outcome), ProviderFailure> {
+        if self.modern_contexts.is_full() {
+            return Err(ProviderFailure {
+                code: "capacity",
                 retry: "reconnect",
-                message: "provider session is unavailable".to_owned(),
-            })?
-            .call(call);
+                message: format!("modern Agent Seat context limit {MAX_MODERN_CONTEXTS} reached"),
+            });
+        }
+        let mut seat = self.connect_seat()?;
+        let outcome = call_seat(&mut seat, call)?;
+        let context = self.modern_contexts.insert(seat)?;
+        Ok((context, outcome))
+    }
+
+    fn provider_call_modern(
+        &mut self,
+        context: u64,
+        call: Call,
+    ) -> Result<Outcome, ProviderFailure> {
+        let result = match self.modern_contexts.get_mut(context) {
+            Some(seat) => call_seat(seat, call),
+            None => {
+                return Err(ProviderFailure {
+                    code: "stale_context",
+                    retry: "reconnect",
+                    message: "Agent Seat context is unknown or expired".to_owned(),
+                });
+            }
+        };
+        if result.is_err() {
+            self.modern_contexts.remove(context);
+        }
+        result
+    }
+
+    fn provider_call_legacy(&mut self, call: Call) -> Result<Outcome, ProviderFailure> {
+        if self.legacy_seat.is_none() {
+            self.legacy_seat = Some(self.connect_seat()?);
+        }
+        let result = call_seat(
+            self.legacy_seat
+                .as_mut()
+                .ok_or_else(unavailable_provider_session)?,
+            call,
+        );
         match result {
-            Ok(response) => Ok(response.outcome),
+            Ok(outcome) => Ok(outcome),
             Err(error) => {
-                self.seat = None;
-                Err(ProviderFailure {
-                    code: error.code(),
-                    retry: error.retry(),
-                    message: error.to_string(),
-                })
+                self.legacy_seat = None;
+                Err(error)
             }
         }
     }
+
+    fn connect_seat(&mut self) -> Result<Seat, ProviderFailure> {
+        if let Some(seat) = self.inherited_seat.take() {
+            return Ok(seat);
+        }
+        let path = discovery::resolve(self.socket.as_deref())
+            .map_err(provider_failure)?
+            .ok_or_else(|| ProviderFailure {
+                code: "unavailable",
+                retry: "reconnect",
+                message: "no live Agent Seat provider is advertised".to_owned(),
+            })?;
+        Seat::connect(&path).map_err(provider_failure)
+    }
 }
 
+fn call_seat(seat: &mut Seat, call: Call) -> Result<Outcome, ProviderFailure> {
+    seat.call(call)
+        .map(|response| response.outcome)
+        .map_err(provider_failure)
+}
+
+fn provider_failure(error: impl ProviderError) -> ProviderFailure {
+    ProviderFailure {
+        code: error.code(),
+        retry: error.retry(),
+        message: error.to_string(),
+    }
+}
+
+trait ProviderError: std::fmt::Display {
+    fn code(&self) -> &'static str;
+    fn retry(&self) -> &'static str;
+}
+
+impl ProviderError for discovery::DiscoveryError {
+    fn code(&self) -> &'static str {
+        self.code()
+    }
+
+    fn retry(&self) -> &'static str {
+        self.retry()
+    }
+}
+
+impl ProviderError for crate::seat::SeatError {
+    fn code(&self) -> &'static str {
+        self.code()
+    }
+
+    fn retry(&self) -> &'static str {
+        self.retry()
+    }
+}
+
+fn unavailable_provider_session() -> ProviderFailure {
+    ProviderFailure {
+        code: "unavailable",
+        retry: "reconnect",
+        message: "provider session is unavailable".to_owned(),
+    }
+}
+
+#[derive(Debug)]
 struct ProviderFailure {
     code: &'static str,
     retry: &'static str,
     message: String,
+}
+
+struct Contexts<T> {
+    limit: usize,
+    next: u64,
+    entries: BTreeMap<u64, T>,
+}
+
+impl<T> Contexts<T> {
+    fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            next: 1,
+            entries: BTreeMap::new(),
+        }
+    }
+
+    fn is_full(&self) -> bool {
+        self.entries.len() >= self.limit
+    }
+
+    fn insert(&mut self, value: T) -> Result<u64, ProviderFailure> {
+        if self.is_full() {
+            return Err(ProviderFailure {
+                code: "capacity",
+                retry: "reconnect",
+                message: format!("context limit {} reached", self.limit),
+            });
+        }
+        let context = self.next;
+        self.next = self.next.checked_add(1).ok_or_else(|| ProviderFailure {
+            code: "capacity",
+            retry: "reconnect",
+            message: "context identity space is exhausted".to_owned(),
+        })?;
+        self.entries.insert(context, value);
+        Ok(context)
+    }
+
+    fn get_mut(&mut self, context: u64) -> Option<&mut T> {
+        self.entries.get_mut(&context)
+    }
+
+    fn remove(&mut self, context: u64) -> Option<T> {
+        self.entries.remove(&context)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Era {
+    Legacy,
+    Modern,
+}
+
+enum ModernMetadataError {
+    Invalid,
+    Unsupported(String),
 }
 
 #[derive(Deserialize)]
@@ -266,6 +611,13 @@ struct InitializeParams {
     client_info: Value,
     #[serde(default, rename = "_meta")]
     _meta: Option<Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DiscoverParams {
+    #[serde(rename = "_meta")]
+    _meta: Value,
 }
 
 #[derive(Deserialize)]
@@ -305,6 +657,8 @@ struct RpcError<'a> {
 struct ErrorBody<'a> {
     code: i32,
     message: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<Value>,
 }
 
 fn write_result<W: io::Write, T: Serialize>(
@@ -333,9 +687,130 @@ fn write_error<W: io::Write>(
         &RpcError {
             jsonrpc: "2.0",
             id,
-            error: ErrorBody { code, message },
+            error: ErrorBody {
+                code,
+                message,
+                data: None,
+            },
         },
     )
+}
+
+fn write_error_data<W: io::Write>(
+    output: &mut W,
+    id: Value,
+    code: i32,
+    message: &str,
+    data: Value,
+) -> Result<(), String> {
+    write_json(
+        output,
+        &RpcError {
+            jsonrpc: "2.0",
+            id,
+            error: ErrorBody {
+                code,
+                message,
+                data: Some(data),
+            },
+        },
+    )
+}
+
+fn has_modern_version(params: &Value) -> bool {
+    params
+        .get("_meta")
+        .and_then(Value::as_object)
+        .is_some_and(|metadata| metadata.contains_key(MODERN_PROTOCOL_VERSION))
+}
+
+fn validate_modern_metadata(params: &Value) -> Result<(), ModernMetadataError> {
+    let metadata = params
+        .get("_meta")
+        .and_then(Value::as_object)
+        .ok_or(ModernMetadataError::Invalid)?;
+    let requested = metadata
+        .get(MODERN_PROTOCOL_VERSION)
+        .and_then(Value::as_str)
+        .ok_or(ModernMetadataError::Invalid)?;
+    if requested != MODERN_MCP_VERSION {
+        return Err(ModernMetadataError::Unsupported(requested.to_owned()));
+    }
+    if !metadata
+        .get(MODERN_CLIENT_CAPABILITIES)
+        .is_some_and(Value::is_object)
+    {
+        return Err(ModernMetadataError::Invalid);
+    }
+    if metadata
+        .get(MODERN_CLIENT_INFO)
+        .is_some_and(|client| !valid_implementation(client))
+    {
+        return Err(ModernMetadataError::Invalid);
+    }
+    Ok(())
+}
+
+fn server_info() -> Value {
+    json!({
+        "name":"agent-seat-mcp",
+        "title":"Agent Seat",
+        "version":env!("CARGO_PKG_VERSION")
+    })
+}
+
+fn modern_result(mut value: Value) -> Value {
+    if let Value::Object(object) = &mut value {
+        object.insert(
+            "resultType".to_owned(),
+            Value::String("complete".to_owned()),
+        );
+        object.insert(
+            "_meta".to_owned(),
+            json!({"io.modelcontextprotocol/serverInfo":server_info()}),
+        );
+    }
+    value
+}
+
+fn modern_result_with(mut value: Value, extra: Value) -> Result<Value, String> {
+    let Value::Object(object) = &mut value else {
+        return Err("modern MCP result must be an object".to_owned());
+    };
+    let Value::Object(extra) = extra else {
+        return Err("modern MCP result fields must be an object".to_owned());
+    };
+    object.extend(extra);
+    Ok(modern_result(value))
+}
+
+fn modern_tool_result(result: ToolResult) -> Value {
+    match serde_json::to_value(result) {
+        Ok(value) => modern_result(value),
+        Err(error) => modern_result(json!({
+            "content":[{"type":"text","text":error.to_string()}],
+            "isError":true
+        })),
+    }
+}
+
+fn take_context(arguments: Option<Value>) -> Result<(Option<u64>, Option<Value>), &'static str> {
+    let mut arguments = match arguments {
+        None => serde_json::Map::new(),
+        Some(Value::Object(arguments)) => arguments,
+        Some(_) => return Err("tool arguments must be an object"),
+    };
+    let context = match arguments.remove("context") {
+        Some(Value::Number(number)) => Some(
+            number
+                .as_u64()
+                .filter(|value| *value != 0)
+                .ok_or("context must be a positive integer")?,
+        ),
+        Some(_) => return Err("context must be a positive integer"),
+        None => None,
+    };
+    Ok((context, Some(Value::Object(arguments))))
 }
 
 fn write_json<W: io::Write, T: Serialize>(output: &mut W, value: &T) -> Result<(), String> {
@@ -349,7 +824,7 @@ fn write_json<W: io::Write, T: Serialize>(output: &mut W, value: &T) -> Result<(
 
 fn valid_id(id: &Option<Value>) -> bool {
     match id {
-        None | Some(Value::Null | Value::String(_)) => true,
+        None | Some(Value::String(_)) => true,
         Some(Value::Number(number)) => number.as_i64().is_some() || number.as_u64().is_some(),
         _ => false,
     }
@@ -373,7 +848,7 @@ struct ToolList<'a> {
     tools: &'a [Tool],
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Tool {
     name: &'static str,
@@ -382,9 +857,13 @@ struct Tool {
     input_schema: Value,
 }
 
-fn tools() -> &'static [Tool] {
-    static TOOLS: OnceLock<Box<[Tool]>> = OnceLock::new();
-    TOOLS.get_or_init(build_tools)
+fn tools(era: Era) -> &'static [Tool] {
+    static LEGACY_TOOLS: OnceLock<Box<[Tool]>> = OnceLock::new();
+    static MODERN_TOOLS: OnceLock<Box<[Tool]>> = OnceLock::new();
+    match era {
+        Era::Legacy => LEGACY_TOOLS.get_or_init(build_tools),
+        Era::Modern => MODERN_TOOLS.get_or_init(build_modern_tools),
+    }
 }
 
 fn build_tools() -> Box<[Tool]> {
@@ -554,6 +1033,43 @@ fn build_tools() -> Box<[Tool]> {
     .into_boxed_slice()
 }
 
+fn build_modern_tools() -> Box<[Tool]> {
+    let mut tools = build_tools().into_vec();
+    for tool in &mut tools {
+        if tool.name == "seat_status" {
+            tool.description = "Open one of at most eight Agent Seat contexts and report status; carry the returned context until seat_release, provider failure, or companion exit.";
+        } else {
+            add_context_schema(&mut tool.input_schema);
+        }
+    }
+    tools.push(Tool {
+        name: "seat_release",
+        title: "Release Agent Seat context",
+        description: "Release one explicit Agent Seat context when desktop work is complete.",
+        input_schema: json!({
+            "type":"object",
+            "properties":{"context":{"type":"integer","minimum":1}},
+            "required":["context"],
+            "additionalProperties":false
+        }),
+    });
+    tools.into_boxed_slice()
+}
+
+fn add_context_schema(schema: &mut Value) {
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+    let properties = object.entry("properties").or_insert_with(|| json!({}));
+    if let Some(properties) = properties.as_object_mut() {
+        properties.insert("context".to_owned(), json!({"type":"integer","minimum":1}));
+    }
+    let required = object.entry("required").or_insert_with(|| json!([]));
+    if let Some(required) = required.as_array_mut() {
+        required.push(Value::String("context".to_owned()));
+    }
+}
+
 fn object_with_target(extra: Value, extra_required: &[&str]) -> Value {
     let mut properties = serde_json::Map::new();
     properties.insert("client".to_owned(), json!({"type":"integer","minimum":1}));
@@ -626,6 +1142,18 @@ struct ToolResult {
     content: Vec<ToolContent>,
     structured_content: Value,
     is_error: bool,
+}
+
+impl ToolResult {
+    fn with_context(mut self, context: u64) -> Self {
+        if let Value::Object(object) = &mut self.structured_content {
+            object.insert("context".to_owned(), Value::from(context));
+        }
+        if let Some(ToolContent::Text(content)) = self.content.first_mut() {
+            content.text = self.structured_content.to_string();
+        }
+        self
+    }
 }
 
 #[derive(Serialize)]
@@ -714,11 +1242,45 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_closed_object_schema() {
-        assert_eq!(tools().len(), 16);
-        for tool in tools() {
+        assert_eq!(tools(Era::Legacy).len(), 16);
+        for tool in tools(Era::Legacy) {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
         }
+    }
+
+    #[test]
+    fn modern_tools_make_provider_continuity_explicit() {
+        let tools = tools(Era::Modern);
+        assert_eq!(tools.len(), 17);
+        for tool in tools {
+            assert_eq!(tool.input_schema["type"], "object");
+            assert_eq!(tool.input_schema["additionalProperties"], false);
+            if tool.name == "seat_status" {
+                assert!(tool.input_schema["properties"]["context"].is_null());
+            } else {
+                assert_eq!(tool.input_schema["properties"]["context"]["minimum"], 1);
+                assert!(
+                    tool.input_schema["required"]
+                        .as_array()
+                        .is_some_and(|required| required.contains(&json!("context")))
+                );
+            }
+        }
+        assert!(tools.iter().any(|tool| tool.name == "seat_release"));
+    }
+
+    #[test]
+    fn modern_context_store_is_bounded_and_never_reuses_an_identity() {
+        let mut contexts = Contexts::new(2);
+        let first = contexts.insert("first").expect("first context");
+        let second = contexts.insert("second").expect("second context");
+        assert_eq!((first, second), (1, 2));
+        assert!(contexts.insert("over capacity").is_err());
+        assert_eq!(contexts.remove(first), Some("first"));
+        let third = contexts.insert("third").expect("replacement context");
+        assert_eq!(third, 3);
+        assert_eq!(contexts.get_mut(second), Some(&mut "second"));
     }
 
     #[test]

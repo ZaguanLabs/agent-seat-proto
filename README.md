@@ -6,9 +6,10 @@ is owned from its first commit by
 [`ZaguanLabs`](https://github.com/ZaguanLabs).
 
 E1 and the T0--T3 Tier 0 core are complete. Current source implements strict
-Agent Seat wire revision 6, a generic MCP `2025-11-25` companion, and a standalone
-provider with bounded EWMH observation, freshness-checked management, and
-policy-controlled desktop-entry launch. The five deliverables are:
+Agent Seat wire revision 6, a dual-era MCP `2026-07-28` and `2025-11-25`
+companion, and a standalone provider with bounded EWMH observation,
+freshness-checked management, and policy-controlled desktop-entry launch. The
+five deliverables are:
 
 - `agent-seat-proto`: display-server-neutral wire types and framing only;
 - `agent-seat-mcp`: a generic MCP translator with no policy authority;
@@ -129,9 +130,12 @@ cargo test --workspace --all-targets
 cargo doc --workspace --no-deps
 ```
 
-`agent-seat-mcp` can initialize and list its static tools without a desktop.
-Its first tool call resolves `--socket`, `AGENT_SEAT_SOCKET`, or the live
-selection-bound X11 advertisement. The standalone provider answers
+`agent-seat-mcp` supports modern discovery without initialization and retains
+the legacy initialize flow. Discovery and static tool listing need no desktop;
+modern results identify their result type, and the deterministic tool list is
+publicly cacheable for one hour. The first provider-backed tool call resolves
+`--socket`, `AGENT_SEAT_SOCKET`, or the live selection-bound X11 advertisement.
+The standalone provider answers
 authenticated `seat_status`, bounded desktop snapshots, filtered event
 subscriptions, supported EWMH management, and controlled XDG application
 discovery and launch. Separately granted `pointer_move`, `pointer_click`, and

@@ -24,7 +24,7 @@ Technical material is grouped by purpose:
 - [Security](security/README.md) — trust boundaries, threat models, and gated
   input/lock deployment studies.
 - [Verification](verification/README.md) — milestone evidence and full-system
-  participation contracts.
+  participation contracts, including dual-era MCP compatibility.
 
 Documents describe only their stated assurance level. Experimental material is
 not a promise that the corresponding capability is safe or available.

@@ -6,7 +6,9 @@ shipped in product release v0.1.0; S0 is complete on `main` in
 `agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. Revision 6 now has a
 working experimental obscured-client capture profile and retains revision 5's
 Tier 0.5 pointer/click/text slice; the more complex T5R
-physical-priority research remains separately gated. E0 evidence is
+physical-priority research remains separately gated. The generic companion now
+supports MCP `2026-07-28` discovery and per-request metadata while retaining
+its complete MCP `2025-11-25` path. E0 evidence is
 recorded in
 [`e0-verification.md`](../verification/e0-verification.md).
 

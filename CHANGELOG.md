@@ -17,6 +17,18 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added `agent-seat-mcp` 0.1.6 support for MCP `2026-07-28` while retaining the
+  complete MCP `2025-11-25` path. Modern clients can use `server/discover`
+  without initialization, send version/capability metadata independently on
+  every request, cache the deterministic public tool surface for one hour, and
+  receive typed complete results with server identity. Provider continuity is
+  explicit through a bounded `seat_status` context and `seat_release`; legacy
+  clients retain their original 16 tools, schemas, lifecycle, and result
+  shapes. Process tests cover both eras, required metadata, unsupported-version
+  errors, explicit context continuity/release, lazy provider connection, and
+  JSON-RPC request handling. This changes neither Agent Seat wire revision 6
+  nor provider authority.
+
 - Added experimental wire revision 6 and the separately granted
   `agent-seat.x11-obscured-capture.v1` profile. `capture_obscured` enrolls only
   scoped clients in X Composite automatic storage and `capture_obscured` MCP

@@ -1,29 +1,62 @@
 # Generic MCP companion
 
-`agent-seat-mcp` implements MCP `2025-11-25` over newline-delimited JSON-RPC
-stdio. Its lifecycle and tool result shape follow the official
-[MCP lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)
+`agent-seat-mcp` 0.1.6 implements both MCP `2026-07-28` and `2025-11-25` over
+newline-delimited JSON-RPC stdio. A modern host should use `server/discover`;
+an existing host can continue using the legacy `initialize` lifecycle without
+configuration or schema changes.
+
+## Modern MCP 2026-07-28
+
+The modern protocol has no initialization handshake. Every request supplies
+`io.modelcontextprotocol/protocolVersion` and
+`io.modelcontextprotocol/clientCapabilities` in `_meta`; client information is
+accepted there as well. The companion validates those fields independently on
+every request and returns the specified `-32022` error with the requested and
+supported versions when the version is unsupported.
+
+`server/discover` reports both supported MCP versions, the static tools
+capability, server identity, and a short instruction budget. Discovery and
+`tools/list` return `resultType: "complete"`; their caller-independent results
+are deterministic and marked `cacheScope: "public"` with a one-hour `ttlMs`.
+They do not inspect `DISPLAY`, resolve an Agent Seat socket, or connect to a
+provider. Tool results also carry the complete result type and server identity,
+but are not marked cacheable.
+
+This path follows the official MCP
+[discovery](https://modelcontextprotocol.io/specification/2026-07-28/server/discover),
+[stdio compatibility](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio),
+[tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools),
+and [caching](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching)
+contracts. It does not implement or claim Streamable HTTP, MCP authorization,
+extensions, subscriptions, or multi-round-trip input.
+
+## Legacy MCP 2025-11-25 compatibility
+
+The legacy path is deliberately unchanged. `initialize`,
+`notifications/initialized`, `ping`, and `tools/list` remain desktop-free. The
+server advertises only the static tools capability and returns `2025-11-25`
+when that revision is requested; for another requested revision it returns its
+legacy revision so the host can accept it or disconnect. Legacy clients keep
+the original 16 tools, closed schemas, implicit provider connection, and result
+shapes—no modern `resultType`, cache fields, context argument, or
+`seat_release` is inserted.
+
+This path follows the official legacy
+[lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)
 and [tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools)
 contracts.
 
-## Static lifecycle
-
-In the ordinary lazy-discovery mode, `initialize`, `notifications/initialized`,
-`ping`, and `tools/list` do not
-inspect `DISPLAY`, resolve a socket, or connect to a provider. The server
-advertises only the static tools capability and returns the requested protocol
-version when it is `2025-11-25`; otherwise it returns the one revision it
-supports so the client can accept it or disconnect.
+## JSON-RPC boundary
 
 Each JSON-RPC line is at most 1,048,576 bytes. Oversized input terminates the
 stdio process before JSON parsing. Malformed JSON gets `-32700`, an invalid
 request `-32600`, an unknown method `-32601`, and malformed method parameters
-`-32602`. Tool argument corrections are tool execution errors so a model can
-act on their structured fields.
+`-32602`. A null request ID is rejected. Tool argument corrections are tool
+execution errors so a model can act on their structured fields.
 
 ## Tools
 
-The companion publishes sixteen closed-object schemas:
+The legacy companion publishes sixteen closed-object schemas:
 
 - `seat_status`
 - `desktop_snapshot`
@@ -42,25 +75,36 @@ The companion publishes sixteen closed-object schemas:
 - `keyboard_type`
 - `capture_obscured`
 
-Each maps one-to-one to a typed revision-6 call. Ordinary results contain matching JSON
-in `structuredContent` and a text block for clients that do not consume
-structured results. A successful capture instead contains one `image/png`
-block; its structured result retains target, dimensions, and format but omits
-the large base64 field so image data is not duplicated. A wire error sets
-`isError: true` without converting its
-stable code or retry action into English control flow.
+The modern list has the same tools plus `seat_release`. `seat_status` opens one
+of at most eight provider contexts and returns its positive integer `context`.
+Pass that context to every later modern tool call and call `seat_release` when
+finished. A context lasts until explicit release, provider transport failure,
+or companion exit; identifiers are never reused by a running process. They are
+local bookkeeping names, not authorization capabilities: the provider still
+authenticates the companion peer, owns grants and scope, and rechecks each wire
+call. A private-profile companion has only its one inherited provider
+connection, so only the first modern context can consume it.
+
+Each desktop tool maps one-to-one to a typed revision-6 call. Ordinary results
+contain matching JSON in `structuredContent` and a text block for clients that
+do not consume structured results. A successful capture instead contains one
+`image/png` block; its structured result retains target, dimensions, and format
+but omits the large base64 field so image data is not duplicated. A wire error
+sets `isError: true` without converting its stable code or retry action into
+English control flow.
 
 ## Lazy provider boundary
 
-The first `tools/call` resolves the exact source precedence and opens the local
-socket. The companion requests capabilities but grants none: the provider
-authenticates peer credentials, selects the grant, reports features and
-assurance, and rechecks every call.
+The first legacy tool call, or the modern `seat_status` creation call, resolves
+the exact source precedence and opens the local socket. The companion requests
+capabilities but grants none: the provider authenticates peer credentials,
+selects the grant, reports features and assurance, and rechecks every call.
 
-A dead connection is discarded. The next tool call resolves a provider again;
-the companion does not retain a stale automatically discovered path. Read and
-write operations have a fixed ten-second transport deadline in addition to
-provider operation deadlines.
+A dead legacy connection is discarded and the next call resolves a provider
+again. A modern provider failure discards its context and a new `seat_status`
+call is required. The companion does not retain a stale automatically
+discovered path. Read and write operations have a fixed ten-second transport
+deadline in addition to provider operation deadlines.
 
 Register it with an MCP host using the equivalent of:
 
@@ -111,16 +155,16 @@ the stdio side of `systemd-run --pipe`; neither the provider descriptor nor
 broker IPC crosses the MCP boundary.
 
 This mode connects and completes the Agent Seat opening handshake while the
-worker starts, before MCP initialization, so a missing provider fails the MCP
-process immediately. In the input profile, the provider permits exactly one
-successfully authenticated and granted session to wait idle between complete
-frames. Initial `Hello` and partial-frame reads retain the configured I/O
-deadline, additional sessions retain the ordinary deadline, and provider
+worker starts, before either MCP-era request flow begins, so a missing provider
+fails the MCP process immediately. In the input profile, the provider permits
+exactly one successfully authenticated and granted session to wait idle between
+complete frames. Initial `Hello` and partial-frame reads retain the configured
+I/O deadline, additional sessions retain the ordinary deadline, and provider
 shutdown interrupts the idle wait. This is an availability rule based on the
 provider's existing UID grant; it is not evidence that systemd confined the
 peer. The emitted unit and hostile gate establish that separate client-side
-boundary. The ordinary mode remains lazy and desktop-free through
-initialization and tool listing.
+boundary. The ordinary mode remains lazy and desktop-free through modern
+discovery, legacy initialization, and tool listing.
 
 Run the emitted-profile hostile gate explicitly:
 

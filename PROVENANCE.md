@@ -36,6 +36,13 @@ The implementation used these public standards as behavioral inputs:
 - MCP `2025-11-25` lifecycle and tools specifications:
   <https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle>
   and <https://modelcontextprotocol.io/specification/2025-11-25/server/tools>;
+- MCP `2026-07-28` discovery, versioning, stdio, tools, and caching
+  specifications:
+  <https://modelcontextprotocol.io/specification/2026-07-28/server/discover>,
+  <https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning>,
+  <https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/stdio>,
+  <https://modelcontextprotocol.io/specification/2026-07-28/server/tools>, and
+  <https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching>;
 - JSON-RPC 2.0: <https://www.jsonrpc.org/specification>; and
 - ICCCM selection ownership conventions:
   <https://www.x.org/releases/current/doc/xorg-docs/icccm/icccm.html>.

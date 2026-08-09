@@ -7,6 +7,13 @@ E1 supplies strict bounded wire decoding and an authority-free companion. A
 companion can request capabilities but cannot grant them, and it never treats
 descriptive peer metadata as identity.
 
+MCP `2026-07-28` removes the protocol session. The companion's modern
+`seat_status` therefore returns an explicit, bounded, process-local context for
+later tool calls. This identifier is continuity bookkeeping, not a credential
+or capability: it never crosses into provider policy, and the provider remains
+responsible for authenticated peer identity, grants, scope, and every call.
+Legacy MCP retains its implicit connection only for compatibility.
+
 T0 supplies the policy boundary: a private pathname socket, kernel
 `SO_PEERCRED` UID, strict owner-controlled configuration, explicit same-user
 grant, bounded sessions, and atomic selection ownership. It deliberately

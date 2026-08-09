@@ -12,9 +12,18 @@ Serde plus the minimum serialization support justified by the wire format.
 ## `agent-seat-mcp`
 
 This executable translates a static MCP tool surface into Agent Seat calls. It
-may discover and connect to a provider lazily, but it owns no grant, consent,
-scope, or desktop policy. Initialization and tool listing do not require a
-desktop connection. The provider distrusts and revalidates every call.
+supports both MCP `2026-07-28` discovery/per-request metadata and the
+`2025-11-25` initialize lifecycle. It may discover and connect to a provider
+lazily, but it owns no grant, consent, scope, or desktop policy. Discovery,
+initialization, and tool listing do not require a desktop connection. The
+provider distrusts and revalidates every call.
+
+The modern MCP path represents state explicitly: `seat_status` opens a bounded
+provider context, later tool arguments carry its identifier, and
+`seat_release` closes it. The identifier is process-local bookkeeping, not an
+authorization capability; the provider's verified peer and grant checks remain
+authoritative. The legacy path preserves its existing implicit provider
+connection for compatibility.
 
 For the optional input reference deployment, a generated systemd command has
 the user manager preconnect one exact provider socket and pass it by name to a

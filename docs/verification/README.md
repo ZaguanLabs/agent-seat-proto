@@ -5,6 +5,7 @@
 - [Tier 0.5 live verification](t0.5-verification.md)
 - [Tier 0.5 X11 input verification](t0.5-input-verification.md)
 - [T4 obscured-client capture verification](t4-obscured-capture-verification.md)
+- [MCP 2026-07-28 compatibility verification](mcp-2026-07-28-verification.md)
 - [T5 participant and full-system runner contract](t5-participation-contract.md)
 
 Verification records name their exact subject, environment, observations, and
