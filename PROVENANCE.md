@@ -334,6 +334,10 @@ gates into stable fixture identifiers and public evidence requirements. Its VM
 and harness interfaces are candidates, not copied launcher, hypervisor,
 display-manager, greeter, or authentication implementation material. No Nobox
 source, schema, test, fixture, comment, or prose was consulted or adapted.
+The dependency-free safe-Rust harness probe is original work implementing
+those public-boundary attempts with the Rust standard library and fixed
+`systemd-run`/`true` paths. It adds no crate, dependency, installed binary,
+credential access, raw input read, or external protocol allocation.
 
 ## Provider private-device deployment
 

@@ -96,6 +96,14 @@ Each negative fixture begins from a baseline demonstrating that the hostile
 probe could reach the target authority without the participant boundary. A
 denial is otherwise not meaningful.
 
+The repository supplies a dependency-free safe-Rust
+[`harness-authority-probe`](../contrib/t5/README.md) for the baseline/denial
+portion. It checks one selected event node, uinput, Xauthority, provider,
+broker, user-manager connection and transient-unit submission, filesystem and
+abstract X11 sockets, parent-process visibility, and inherited input
+descriptors. The probe does not create a sandbox, know MCP, or make a
+participant result portable by itself.
+
 ### Harness evidence
 
 The adapter records the launcher/version/configuration digest, harness binary

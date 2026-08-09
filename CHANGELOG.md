@@ -31,6 +31,12 @@ All notable changes to this project are documented here.
   barrier, one monotonic cross-boundary ordering, and the exact review bundle;
   it explicitly leaves all three gates incomplete until real participants run
   them.
+- Added a dependency-free safe-Rust harness-authority probe with strict bounded
+  arguments, baseline-versus-confined verdicts, closed Boolean-only JSON,
+  filesystem and abstract X11 checks, input/Xauthority/provider/broker/parent
+  checks, inherited-input inspection, and a bounded real user-manager escape
+  attempt. Four standalone unit tests and a transient confined probe pass; it
+  remains participant test material, not an installed component or gate result.
 - Added `agent-seat-mcp` 0.1.3 and `agent-seat-x11` 0.1.16 private companion
   deployment. The provider user unit uses one fixed mode-0600 socket. The
   emitted MCP registration has systemd preconnect only that socket with
