@@ -190,6 +190,13 @@ implementation and its public process/wire/X11 behavior. No external
 automation profile, conformance fixture, or implementation material was
 consulted or adapted.
 
+The rootless private-device input fixture is original test work over the same
+public process, wire, and X11 behavior. It uses the already installed
+Bubblewrap executable only to replace `/dev` for the real provider process,
+while an independently opened host uinput node establishes the positive
+baseline. No package, runtime dependency, privileged operation, raw event,
+Nobox material, or live desktop data was added or used.
+
 The read-only enrollment inspection command is original work based on the
 public Linux sysfs device view and the documented `udevadm info` query surface.
 It requests only the input-class and seat properties listed in the deployment

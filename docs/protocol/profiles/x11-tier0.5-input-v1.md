@@ -221,10 +221,14 @@ no-send behavior. A pre-opened private control-channel fixture disables the
 seat after the first observed key event and verifies the exact partial scalar
 count against complete Shift/key pairs; it passed 20 consecutive local runs.
 Protocol, MCP, Settings, and configuration tests exercise separate grants and
-public bounds. The local
+public bounds. A rootless process fixture establishes that the host user can
+open uinput, then runs the real provider with a private `/dev` containing
+neither `/dev/input` nor `/dev/uinput`; pointer click and keyboard text still
+produce the expected public X11 events. The local
 [verification record](../../verification/t0.5-input-verification.md) names the
 exact environment and limitations.
 
-That evidence does not yet pass this complete profile: the negative raw-device
-authority fixture still needs one complete public-boundary report. Independent
-evidence is also required before the profile can become provisional.
+The reference implementation now exercises every fixture behavior, including
+the negative raw-device authority condition, but has not emitted one complete
+implementation-independent conformance report. Independent evidence is also
+required before the profile can become provisional.

@@ -16,13 +16,15 @@ Status: runtime gate implemented in `agent-seat-x11` 0.1.20 and Settings
 `agent-seat-mcp` 0.1.4, `agent-seat-x11` 0.1.21, and Settings 0.1.6,
 2026-08-09.
 
-`agent-seat-x11` 0.1.23 expands the public X11 evidence to every logical
+`agent-seat-x11` 0.1.24 expands the public X11 evidence to every logical
 button, Return/Tab and unmapped-key behavior, hostile hit-test bounds, and the
-existing rootless private-device probe. Its event-triggered control fixture
-also verifies exact partial interruption across 20 consecutive local runs. R0
-now registers the corresponding standalone Tier 0.5 input profile; complete
-independent negative-authority evidence remains an open profile fixture, not a
-hidden implementation claim.
+existing rootless private-device probes. One probe now runs the real provider
+with a private `/dev` and observes successful click and text delivery while the
+host user's uinput baseline remains available. Its event-triggered control
+fixture also verifies exact partial interruption across 20 consecutive local
+runs. R0 now registers the corresponding standalone Tier 0.5 input profile;
+an implementation-independent report and independent evidence remain open
+profile gates, not hidden implementation claims.
 
 The provider now starts with a disabled runtime seat independently of saved
 policy. A separate local operator command can inspect, enable, or disable the

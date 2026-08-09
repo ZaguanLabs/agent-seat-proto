@@ -1,6 +1,6 @@
 //! Process-boundary T0 lifecycle, policy, ownership, and isolation tests.
 
-use std::fs::{self, DirBuilder};
+use std::fs::{self, DirBuilder, File};
 use std::io::{BufRead as _, Read as _, Write as _};
 use std::num::NonZeroU64;
 use std::os::unix::fs::DirBuilderExt as _;
@@ -161,6 +161,43 @@ impl Provider {
         assert!(
             output.status.success(),
             "cannot enable provider fixture seat: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        provider
+    }
+
+    fn start_private_devices(display: &str, config: &Path, socket: &Path) -> Self {
+        let runtime = socket.parent().expect("private provider runtime directory");
+        let child = Command::new("bwrap")
+            .args([
+                "--die-with-parent",
+                "--ro-bind",
+                "/",
+                "/",
+                "--dev",
+                "/dev",
+                "--proc",
+                "/proc",
+                "--bind",
+            ])
+            .arg(runtime)
+            .arg(runtime)
+            .arg("--")
+            .arg(env!("CARGO_BIN_EXE_agent-seat-x11"))
+            .args(["--config", config.to_str().expect("config UTF-8")])
+            .args(["--socket", socket.to_str().expect("socket UTF-8")])
+            .env("DISPLAY", display)
+            .env("XDG_RUNTIME_DIR", runtime)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("bubblewrap is required by the explicit private-device gate");
+        let provider = Self::wait_until_ready(display, socket, child);
+        let output = seat_command(display, socket, "enable");
+        assert!(
+            output.status.success(),
+            "cannot enable private-device provider seat: {}",
             String::from_utf8_lossy(&output.stderr)
         );
         provider
@@ -552,6 +589,17 @@ fn write_input_config(directory: &Path) -> PathBuf {
         format!("{source}\n[observation]\nclients = \"all_workspaces\"\ntitles = true\n"),
     )
     .expect("write input config");
+    path
+}
+
+fn write_private_input_config(directory: &Path) -> PathBuf {
+    let path = write_input_config(directory);
+    let source = fs::read_to_string(&path).expect("read input config");
+    fs::write(
+        &path,
+        format!("{source}\n[input]\nprovider_private_devices = true\n"),
+    )
+    .expect("write private-device input config");
     path
 }
 
@@ -2092,6 +2140,95 @@ fn keyboard_text_reports_the_exact_partial_count_when_the_seat_is_disabled() {
         .expect("send completed action count");
     stopper.join().expect("interruption observer");
 
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+#[ignore = "explicit rootless bubblewrap gate; requires host uinput access and runs only on request"]
+fn private_device_provider_retains_xtest_input_without_raw_device_authority() {
+    assert!(
+        File::open("/dev/uinput").is_ok(),
+        "host user must have uinput authority for the negative fixture"
+    );
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("private-device-input");
+    let config = write_private_input_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start_private_devices(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("private-device input peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::InputPointer,
+                Capability::InputKeyboard,
+            ],
+        ),
+        ServerMessage::Welcome(welcome)
+            if welcome.features.contains(&agent_seat_proto::Feature::InputInjection)
+                && !welcome.features.contains(&agent_seat_proto::Feature::HumanActivity)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "private-device-input-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "private-device-input-target")
+        })
+    });
+    let observed_target = client_named(&observed, "private-device-input-target");
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::PointerClick(PointerClickRequest {
+                target: target(&observed_target),
+                x: 25,
+                y: 30,
+                button: PointerButton::Primary,
+            }),
+        ),
+        Outcome::Ok(Reply::Input(reply))
+            if reply.completed == 1
+                && reply.requested == 1
+                && reply.terminal == InputTerminal::Queued
+    ));
+    let pointer = wait_for_input_events(&client.connection, 0, 1);
+    assert_eq!(pointer.button_presses, [1]);
+    assert_eq!(pointer.button_releases, [1]);
+
+    client
+        .connection
+        .set_input_focus(InputFocus::PARENT, client.window, CURRENT_TIME)
+        .expect("private-device focus request")
+        .check()
+        .expect("private-device focus");
+    client.connection.sync().expect("private-device focus sync");
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::KeyboardType(KeyboardTypeRequest {
+                target: target(&observed_target),
+                text: BoundedText::new("a\n").expect("private-device keyboard text"),
+            }),
+        ),
+        Outcome::Ok(Reply::Input(reply))
+            if reply.completed == 2
+                && reply.requested == 2
+                && reply.terminal == InputTerminal::Queued
+    ));
+    let keyboard = wait_for_input_events(&client.connection, 2, 0);
+    assert_eq!(sorted(keyboard.key_presses), sorted(keyboard.key_releases));
+
+    client.destroy();
     let _ = openbox.kill();
     let _ = openbox.wait();
 }
