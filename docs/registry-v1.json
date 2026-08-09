@@ -1,0 +1,222 @@
+{
+  "format": "agent-seat.registry-set/1",
+  "status": "repository_projection",
+  "updated": "2026-08-09",
+  "authority": "ZaguanLabs/agent-seat-proto",
+  "normative_source": "specification.md",
+  "protocol": {
+    "name": "agent-seat",
+    "wire_revisions": [
+      {
+        "id": 3,
+        "status": "released"
+      },
+      {
+        "id": 4,
+        "status": "experimental"
+      }
+    ]
+  },
+  "namespaces": [
+    {
+      "name": "agent-seat.",
+      "status": "reserved_core"
+    }
+  ],
+  "revision_4": {
+    "client_messages": [
+      "hello",
+      "request",
+      "goodbye"
+    ],
+    "server_messages": [
+      "welcome",
+      "response",
+      "goodbye"
+    ],
+    "backends": [
+      "x11_ewmh"
+    ],
+    "assurance": [
+      "tier0"
+    ],
+    "capabilities": {
+      "canonical_order": true,
+      "atoms": [
+        "observe_structure",
+        "observe_titles",
+        "observe_events",
+        "manage_activate",
+        "manage_close",
+        "manage_workspace",
+        "manage_state",
+        "manage_geometry",
+        "launch_list",
+        "launch_execute",
+        "input_pointer"
+      ]
+    },
+    "features": {
+      "canonical_order": true,
+      "atoms": [
+        "ewmh_observation",
+        "ewmh_management",
+        "desktop_launch",
+        "client_visible_capture",
+        "obscured_capture",
+        "output_capture",
+        "input_injection",
+        "human_activity",
+        "accessibility"
+      ]
+    },
+    "calls": [
+      {
+        "name": "seat.status",
+        "capability": "observe_structure"
+      },
+      {
+        "name": "desktop.snapshot",
+        "capability": "observe_structure"
+      },
+      {
+        "name": "events.subscribe",
+        "capability": "observe_events"
+      },
+      {
+        "name": "events.poll",
+        "capability": "observe_events"
+      },
+      {
+        "name": "client.activate",
+        "capability": "manage_activate"
+      },
+      {
+        "name": "client.close",
+        "capability": "manage_close"
+      },
+      {
+        "name": "workspace.switch",
+        "capability": "manage_workspace"
+      },
+      {
+        "name": "client.workspace",
+        "capability": "manage_workspace"
+      },
+      {
+        "name": "client.state",
+        "capability": "manage_state"
+      },
+      {
+        "name": "client.geometry",
+        "capability": "manage_geometry"
+      },
+      {
+        "name": "applications.list",
+        "capability": "launch_list"
+      },
+      {
+        "name": "application.launch",
+        "capability": "launch_execute"
+      },
+      {
+        "name": "pointer.move",
+        "capability": "input_pointer"
+      }
+    ],
+    "event_kinds": {
+      "canonical_order": true,
+      "atoms": [
+        "client_added",
+        "client_changed",
+        "client_removed",
+        "active_changed",
+        "workspace_changed",
+        "applications_changed"
+      ]
+    },
+    "events": [
+      "client_added",
+      "client_changed",
+      "client_removed",
+      "active_changed",
+      "workspace_changed",
+      "applications_changed"
+    ],
+    "replies": [
+      "seat_status",
+      "desktop_snapshot",
+      "subscribed",
+      "events",
+      "management",
+      "applications",
+      "launched",
+      "input"
+    ],
+    "outcome_status": [
+      "ok",
+      "error"
+    ],
+    "client_states": {
+      "canonical_order": true,
+      "atoms": [
+        "above",
+        "below",
+        "fullscreen",
+        "hidden",
+        "maximized_horizontal",
+        "maximized_vertical",
+        "demands_attention",
+        "sticky",
+        "shaded"
+      ]
+    },
+    "state_actions": [
+      "add",
+      "remove",
+      "toggle"
+    ],
+    "client_actions": {
+      "canonical_order": true,
+      "atoms": [
+        "activate",
+        "close",
+        "change_workspace",
+        "change_state",
+        "change_geometry"
+      ]
+    },
+    "management_observations": [
+      "observed",
+      "timed_out",
+      "target_gone"
+    ],
+    "input_terminals": [
+      "queued",
+      "interrupted"
+    ],
+    "error_codes": [
+      "unavailable",
+      "incompatible_revision",
+      "refused",
+      "no_such_client",
+      "stale",
+      "unsupported",
+      "timed_out",
+      "invalid_argument",
+      "malformed",
+      "too_large",
+      "internal",
+      "resync_required",
+      "revoked",
+      "session_closed"
+    ],
+    "retry": [
+      "never",
+      "reobserve",
+      "reconnect"
+    ]
+  },
+  "profiles": [],
+  "extensions": []
+}

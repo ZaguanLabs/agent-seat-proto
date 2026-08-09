@@ -342,6 +342,13 @@ specification:
 - error codes and retry guidance; and
 - extension namespaces and profile identifiers.
 
+The current allocations also have a hand-reviewed
+[machine-readable projection](registry-v1.json). Its
+[custody policy](registries.md) keeps released specifications authoritative,
+forbids runtime grammar changes from registry-file edits, reserves withdrawn
+names, and defines the repository review transaction. No external registry
+custodian or standards status is implied.
+
 Names beginning `agent-seat.` are reserved for the core specification. An
 experimental extension SHOULD use a collision-resistant reverse-domain
 namespace controlled by its author. An extension specification MUST name its
@@ -433,8 +440,6 @@ negative authority without importing implementation internals.
 This draft is ready for independent review, not external standards submission.
 The next revision SHOULD:
 
-- publish machine-readable registries without making generated artifacts the
-  source of truth;
 - specify at least one complete backend conformance profile independently from
   the reference implementation;
 - define a portable black-box conformance report format;

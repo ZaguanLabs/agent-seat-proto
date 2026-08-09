@@ -45,7 +45,10 @@ Status: repository draft in progress, 2026-08-09. The
 conformance profiles, and non-normative reference mapping. The portable core
 is now factored into a [serialization-neutral information model](information-model.md)
 and the existing concrete local Unix-stream/strict-JSON binding. Existing
-revisions remain the repository's normative wire contract; no external
+revisions remain the repository's normative wire contract. A hand-reviewed
+[machine-readable registry projection](registry-v1.json) and repository
+[custody policy](registries.md) now record current allocations without making
+generated data or the projection itself runtime authority. No external
 standards status is currently claimed.
 
 Prepare an implementation-independent RFC from behavior that has survived the
@@ -70,8 +73,8 @@ R0 also defines revision allocation, extension ownership, capability
 negotiation, security considerations, conformance terminology, and the process
 for independent implementations to report compatible subsets. Publication as
 an external RFC or standard remains a later maintainer/community decision. The
-draft records the remaining work for independent review, machine-readable
-registries, registry governance, and external publication.
+draft records the remaining work for an independent backend profile and report
+format, external review, external registry governance, and publication.
 
 ## E0 — bootstrap
 

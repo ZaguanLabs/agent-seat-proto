@@ -224,7 +224,9 @@ is not part of the supported Tier 0 core.
 The portable pre-RFC semantics are in the
 [`information model`](docs/information-model.md). The normative implemented
 wire contract is [`docs/specification.md`](docs/specification.md),
-the companion contract is [`docs/mcp.md`](docs/mcp.md), and provider setup is
+with a [machine-readable registry projection](docs/registry-v1.json) governed
+by the repository [registry policy](docs/registries.md). The companion contract
+is [`docs/mcp.md`](docs/mcp.md), and provider setup is
 [`docs/provider.md`](docs/provider.md). Settings usage is
 [`docs/settings.md`](docs/settings.md). Optional-profile stop decisions are in
 [`docs/optional-profiles.md`](docs/optional-profiles.md). The
