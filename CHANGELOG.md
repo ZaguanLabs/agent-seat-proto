@@ -6,6 +6,12 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added the initial R0 pre-RFC draft. It separates the display-neutral core,
+  evidence-based backend conformance profiles, assurance vocabulary, revision
+  and extension governance, security considerations, and non-normative
+  reference mapping without claiming external standards status or changing
+  wire revision 4.
+
 - Added the experimental revision-4 `pointer.move` vertical slice: an
   authority-free MCP tool, strict provider grant/config boundary, live
   target-relative hit testing, one-action XTEST realization, and qualified

@@ -285,6 +285,16 @@ uses the Linux input documentation's public `capabilities/` and `properties`
 sysfs bitmaps and adds no device access or dependency. No third-party
 enrollment record, parser, schema, fixture, or prose was copied or adapted.
 
+## R0 pre-RFC preparation
+
+The R0 pre-RFC draft is original work distilled from this repository's public
+wire specification, architecture, security model, hostile-test requirements,
+and independently observed reference behavior. Its normative-keyword
+convention uses RFC 2119 and RFC 8174 from the RFC Editor. No Nobox or other
+Agent Seat implementation code, schema, test, fixture, comment, or prose was
+consulted, copied, translated, or adapted. The draft adds no runtime behavior,
+dependency, wire revision, or external standards claim.
+
 ## First-run configuration workflow
 
 The generated configuration template, creation behavior, CLI guidance,

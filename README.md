@@ -201,7 +201,9 @@ The normative wire contract is [`docs/specification.md`](docs/specification.md),
 the companion contract is [`docs/mcp.md`](docs/mcp.md), and provider setup is
 [`docs/provider.md`](docs/provider.md). Settings usage is
 [`docs/settings.md`](docs/settings.md). Optional-profile stop decisions are in
-[`docs/optional-profiles.md`](docs/optional-profiles.md).
+[`docs/optional-profiles.md`](docs/optional-profiles.md). The
+implementation-independent standards direction is the repository's non-external
+[`R0 pre-RFC draft`](docs/r0-protocol-rfc.md).
 
 ## Project policy
 

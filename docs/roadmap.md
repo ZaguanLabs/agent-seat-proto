@@ -1,10 +1,11 @@
 # Product roadmap
 
 Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
-complete. The Tier 0 core and C0 shipped in product release v0.1.0; S0 is
-complete on `main` in `agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12.
-T5R now has an approved experimental pointer-move slice; deployment remains
-gated. E0 evidence is recorded in
+complete. R0 has an initial repository pre-RFC draft. The Tier 0 core and C0
+shipped in product release v0.1.0; S0 is complete on `main` in
+`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. T5R now has an approved
+experimental pointer-move slice; deployment remains gated. E0 evidence is
+recorded in
 [`e0-verification.md`](e0-verification.md).
 
 ## Goals
@@ -39,8 +40,11 @@ gated. E0 evidence is recorded in
 
 ## R0 — protocol RFC preparation
 
-Status: planned. Existing revisions remain the repository's normative wire
-contract; no external standards status is currently claimed.
+Status: initial repository draft complete, 2026-08-09. The
+[pre-RFC draft](r0-protocol-rfc.md) separates the portable core, backend
+conformance profiles, and non-normative reference mapping. Existing revisions
+remain the repository's normative wire contract; no external standards status
+is currently claimed.
 
 Prepare an implementation-independent RFC from behavior that has survived the
 reference implementation and hostile tests. The RFC must have three clearly
@@ -63,7 +67,9 @@ prove, with typed unsupported or qualified outcomes for the rest.
 R0 also defines revision allocation, extension ownership, capability
 negotiation, security considerations, conformance terminology, and the process
 for independent implementations to report compatible subsets. Publication as
-an external RFC or standard remains a later maintainer/community decision.
+an external RFC or standard remains a later maintainer/community decision. The
+draft records the remaining work for independent review, registry governance,
+serialization-neutral modeling, and external publication.
 
 ## E0 — bootstrap
 

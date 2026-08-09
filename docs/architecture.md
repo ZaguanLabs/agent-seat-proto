@@ -67,10 +67,10 @@ crate depends on Nobox.
 
 ## Standards direction
 
-The wire model is intended to remain implementation-independent. A future R0
-RFC track will separate its normative identities, grants, scope, freshness,
-outcomes, interruption, and assurance vocabulary from backend conformance
-profiles and non-normative reference deployments.
+The wire model is intended to remain implementation-independent. The initial
+[R0 pre-RFC draft](r0-protocol-rfc.md) separates its normative identities,
+grants, scope, freshness, outcomes, interruption, and assurance vocabulary from
+backend conformance profiles and non-normative reference deployments.
 
 An integrated window manager or compositor can satisfy a conformance profile
 using state and ordering it owns directly. The standalone X11 reference may
