@@ -76,6 +76,10 @@ All notable changes to this project are documented here.
   inherited channels, and denies X11, input-node, home, process, host-socket,
   network-socket, and direct-execution authority. Ordinary tests ignore it and
   its explicit run requires passwordless sudo.
+- Added an explicit no-event uinput hotplug fixture. An installed systemd-258
+  run proved real kernel lifecycle delivery, terminal eligibility and epoch
+  transition, closure of every event descriptor, and a fresh-instance rearm
+  without changing a physical device or emitting pointer movement.
 - Added an explicit live rootless guard gate. Under the hardened transient
   profile it consumes a freshly rendered complete input-class manifest through
   fd 3, opens the real kernel uevent subscription, reaches the single
@@ -141,7 +145,7 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- Patch-bumped `agent-seat-activity-broker` to 0.1.15 for exact bundle
+- Patch-bumped `agent-seat-activity-broker` to 0.1.16 for exact bundle
   verification, the documented unprivileged pre-installation workflow,
   fail-closed runtime input-device lifecycle monitoring, and initial input
   class-set reconciliation. Manifest ownership is bound to the already
@@ -160,7 +164,10 @@ All notable changes to this project are documented here.
   reaches `Ready` under the installed production identities and confines both
   processes with zero capabilities, no supplementary groups, seccomp, and
   private device views. Version 0.1.15 adds the explicit system-manager hostile
-  test under the production identity models.
+  test under the production identity models. Version 0.1.16 adds the installed
+  synthetic-hotplug fixture and makes `arm` replace any prior terminal broker
+  cycle after fresh verification, guaranteeing a new instance rather than a
+  no-op start of an already active service.
 - Rewired the broker's inherited sockets without raw-descriptor conversion:
   PID 1 connects eligibility to standard input, places the socket-activated
   provider listener on standard output, passes the exact enrolled-device record

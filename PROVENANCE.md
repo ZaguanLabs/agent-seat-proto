@@ -208,6 +208,14 @@ descriptor-passing, namespace, device, syscall, and resource-control behavior
 already recorded for the deployment contract. It adds no dependency,
 persistent unit, enrollment format, runtime authority, or third-party fixture.
 
+The no-event hotplug fixture and fresh-cycle arm change are original work from
+the repository's approved fail-closed lifecycle contract. The fixture uses the
+already recorded evdev dependency's safe uinput API to create one bounded
+relative-capability device without emitting events. Its installed observation
+used only public systemd state, the fixed broker status frame, `/proc` descriptor
+links, and udev settling behavior. It adds no dependency, input realization,
+physical-device access, persistent unit, or third-party fixture.
+
 The live rootless guard gate is original integration work over the repository's
 own renderer, guard, unit contract, and fixed wire frame. It observes only the
 current public sysfs, kernel uevent, systemd user-manager, Unix peer-credential,

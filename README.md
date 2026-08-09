@@ -85,8 +85,10 @@ sudo agent-seat-activity-enroll purge --uid "$(id -u)" --confirm-purge
 ```
 
 `arm` does not enable startup, and stopped brokers do not automatically rearm.
-These commands exist to exercise the remaining security gates; they do not yet
-make generic Openbox input a supported deployment.
+After fresh verification, `arm` replaces any prior terminal broker cycle before
+starting a new instance. These commands exist to exercise the remaining
+security gates; they do not yet make generic Openbox input a supported
+deployment.
 
 The optional package must install `contrib/sysusers.d/agent-seat.conf` as
 `/usr/lib/sysusers.d/agent-seat.conf` and run `systemd-sysusers` before arming.
@@ -119,8 +121,11 @@ the intended identities and bounds. A same-host inspection confirms the
 production identities, zero capabilities, no supplementary groups,
 `NoNewPrivileges`, seccomp, and private device views. A repeatable hostile test
 also passes under the system manager with the production identity models. An
-exact installed-unit fixture, actual hotplug, and trusted lock-transition
-behavior remain open approval gates.
+installed no-event synthetic-device transition additionally proves that a real
+kernel input hotplug stops eligibility, closes every event descriptor, and
+requires a fresh broker instance. An exact installed-unit fixture, physical
+replacement matrix, and trusted lock-transition behavior remain open approval
+gates.
 
 The private identity record binds each relevant event device to its canonical
 sysfs path, udev physical path, classes, selected hardware IDs, complete kernel

@@ -114,8 +114,10 @@ It does not reload, start, or enable anything.
 
 `arm --confirm-arm` again inspects the seat, reconstructs the expected bytes,
 and requires the installed three-file enrollment and four unit files to match
-exactly before a bounded `daemon-reload` and one broker-service start. It does
-not enable startup. `stop` names only those four UID-bound units. `purge
+exactly before a bounded `daemon-reload`. It then stops the exact prior unit set
+and starts one fresh broker-service cycle, so an active terminal broker cannot
+be mistaken for a successful rearm. It does not enable startup. `stop` names
+only those four UID-bound units. `purge
 --confirm-purge` stops them, refuses unexpected enrollment content, removes
 only the seven exact root-owned files and now-empty UID directory, then reloads
 the manager. These transactions have passed isolated filesystem fault and
@@ -202,11 +204,18 @@ the one re-exposed system-bus socket, and evaluated the real local X11 session.
 The root-owned installed profile has now reached broker `Ready` with the
 dynamic broker and locked static guard identities, exact named descriptors,
 zero capabilities, seccomp, private device views, and no supplementary groups.
-No installed add/remove/change transition has been exercised. A same-host live
-check also found XScreenSaver reporting the seat locked while logind still
-reported `LockedHint=no`; the provider's topmost-input-window proof correctly
-refused the pointer action. This does not make generic Openbox supported: the
-trusted lock transition and hostile lock/unlock tests below remain open.
+An installed no-event uinput relative device then produced a real kernel input
+add notification. The guard exited, the broker reported
+`Stopped`/`EligibilityChanged` at the next epoch, and inspection found zero
+remaining event descriptors. After the device disappeared and udev settled,
+the freshly verified `arm` path replaced that resident terminal broker with a
+different ready instance at epoch one. No input event was emitted and no
+physical device was changed. This proves installed synthetic lifecycle
+delivery, not physical replacement compatibility. A same-host live check also
+found XScreenSaver reporting the seat locked while logind still reported
+`LockedHint=no`; the provider's topmost-input-window proof correctly refused
+the pointer action. This does not make generic Openbox supported: the trusted
+lock transition and hostile lock/unlock tests below remain open.
 
 ### System service manager
 
@@ -352,7 +361,7 @@ one task each, zero capabilities, no supplementary groups,
 `NoNewPrivileges`, seccomp, private device views, and the exact inherited
 descriptors. A repeatable hostile test also passes under the real system manager
 with the production dynamic broker and static guard identity models. An exact
-installed-unit hostile fixture and hostile device lifecycle tests remain.
+installed-unit hostile fixture and physical replacement lifecycle tests remain.
 Until they pass, the service source is not a supported deployment.
 The broker has `DevicePolicy=strict` with one read-only allow entry per enrolled
 node so systemd can prepare the corresponding `OpenFile=` descriptor. The
@@ -377,10 +386,28 @@ notifications during the scan. It does not prove immutable identity when a
 device was replaced with the same eventual mapping before subscription.
 Installation and arming now transactionally bind fresh bundle verification to
 installed bytes, but PID 1 still opens descriptors only during the subsequent
-service start. Installed tests must also prove that
-real kernel input uevents reach the confined guard and cause terminal broker
-unavailability. Until those remaining checks pass, runtime device completeness
-is unsupported.
+service start. The installed no-event uinput transition proves that real kernel
+input uevents reach the confined guard, cause a terminal broker state, and
+close the inherited event descriptors. Physical add/remove/replacement cases
+and the isolated compatibility matrix remain. Until those remaining checks
+pass, runtime device completeness is unsupported.
+
+The repository's explicit `t5_hotplug_fixture` creates one relative-capability
+uinput device for two seconds and emits no input event. It requires root access
+to `/dev/uinput`, changes the host input class, and intentionally makes an armed
+broker terminal; it is never run by the ordinary test suite. Prefer an isolated
+system. On a reviewed development host, build and invoke it explicitly, wait
+for udev to settle after removal, inspect the terminal broker state and open
+descriptors, then perform a fresh administrator arm:
+
+```sh
+cargo build --release -p agent-seat-activity-broker \
+  --example t5_hotplug_fixture
+sudo ./target/release/examples/t5_hotplug_fixture
+udevadm settle --timeout=5
+sudo agent-seat-activity-enroll arm \
+  --uid "$(id -u)" --session "$XDG_SESSION_ID" --confirm-arm
+```
 
 Recovery requires a fresh administrator arm. If the same enrolled identities
 resolve safely, the service manager opens a new exact set. Otherwise explicit
@@ -591,8 +618,8 @@ package's udev rules and never leaves group membership or device ACLs.
   publication, exact installed-byte arm verification, rollback, and scoped
   purge are fixture-tested. The guard compares the complete initial input-class
   manifest after subscribing and latches off on bounded later input-subsystem
-  kernel notifications. Runtime descriptor placement and installed hotplug
-  tests remain.
+  kernel notifications. Runtime descriptor placement and an installed no-event
+  synthetic hotplug pass; physical replacement matrix tests remain.
 - **Retained privilege and confinement:** candidate. Rootless hostile probes
   pass both profiles and preserve only their intended inherited/system-bus
   channels. The production authority inventory and production-identity

@@ -272,9 +272,12 @@ and a live locked-seat pointer refusal. A same-host process inspection confirms
 the intended identities, one-task bound, zero capabilities, no supplementary
 groups, `NoNewPrivileges`, seccomp, and private device views. A repeatable
 hostile test also passes under the system manager with the production identity
-models. An exact installed-unit hostile fixture, hotplug transitions, and the
-LightDM lock-transition contract are not yet proven. Click and keyboard input
-remain gated and unsupported.
+models. An installed no-event synthetic-device transition proves that a real
+kernel input hotplug latches eligibility off, advances the broker epoch, closes
+every event descriptor, and requires a newly identified broker cycle. An exact
+installed-unit hostile fixture, physical replacement matrix, and the LightDM
+lock-transition contract are not yet proven. Click and keyboard input remain
+gated and unsupported.
 
 Re-evaluate T5 using a separately trusted Linux input source rather than
 weakening the ordinary-X11 stop decision. The review in

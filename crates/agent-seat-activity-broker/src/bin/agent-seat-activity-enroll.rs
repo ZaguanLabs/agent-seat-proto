@@ -61,9 +61,11 @@ creates new root-owned enrollment and unit files without overwrite. It never
 enables, reloads, starts, stops, or rearms a service and never changes groups,
 ACLs, udev rules, provider policy, or device permissions.
 
-Arm is a separate root-only current-set verification and one service start. It
-does not enable automatic startup. Stop terminates only the exact UID-bound
-broker and guard units. Neither command changes enrollment or provider policy.
+Arm is a separate root-only current-set verification and one fresh service
+cycle. After verification it stops any prior terminal cycle before starting a
+new instance. It does not enable automatic startup. Stop terminates only the
+exact UID-bound broker and guard units. Neither command changes enrollment or
+provider policy.
 Purge first stops those units, removes only exact root-owned Agent Seat files,
 and reloads the system manager. It does not remove another package's files.
 
@@ -1344,6 +1346,8 @@ fn arm(options: ArmOptions) -> Result<(), String> {
 
     let units = UnitNames::new(options.uid);
     run_systemctl(&["daemon-reload"])?;
+    stop_unit_names(&units)
+        .map_err(|error| format!("cannot replace the prior broker cycle: {error}"))?;
     let _ = run_systemctl(&["reset-failed", &units.broker_service, &units.guard_service]);
     if let Err(error) = run_systemctl(&["start", &units.broker_service]) {
         let _ = stop_unit_names(&units);
