@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus an experimental Tier 0.5 pointer and keyboard slice.
-`agent-seat-x11` 0.1.24 owns lifecycle, policy, local
+`agent-seat-x11` 0.1.25 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -291,8 +291,11 @@ refreshes the fresh target under a short X server grab and rechecks the
 volatile seat generation before XTEST.
 Pointer destinations must be visibly topmost inside the target. Keyboard text
 requires the target to own actual X11 focus and resolves through the current
-keyboard map; focus is never forced. Calls state only how many actions were
-queued and synchronized, never application acceptance.
+effective XKB group, key types, levels, and bounded safe modifiers; focus is
+never forced. Unsupported symbols, compose/IME sequences, active depressed or
+latched modifiers, and incomplete XKB evidence fail before that character is
+sent. Calls state only how many actions were queued and synchronized, never
+general application acceptance.
 
 This simple profile does not advertise `human_activity` and cannot prevent a
 physical event from overlapping an agent action. The runtime seat is an

@@ -30,6 +30,12 @@ runtime seat. It needs no root service, raw input-device permission, additional
 group membership, or activity broker. It does not claim physical-user priority;
 a person and an agent can overlap on ordinary X11.
 
+Keyboard text follows the current effective XKB layout and group. The provider
+uses XKB key types and levels, including bounded Shift, Level3, and Level5
+modifiers, and refuses before sending when a scalar cannot be produced exactly.
+It does not guess from compatibility-map columns, change the layout or group,
+run compose/IME sequences, or use clipboard paste.
+
 The repository retains the separately confined activity-broker experiment as
 research for a possible future stronger profile. It is intentionally outside
 the ordinary setup path. Its administrator workflow and unresolved physical-

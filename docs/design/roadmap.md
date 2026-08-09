@@ -16,7 +16,7 @@ Status: runtime gate implemented in `agent-seat-x11` 0.1.20 and Settings
 `agent-seat-mcp` 0.1.4, `agent-seat-x11` 0.1.21, and Settings 0.1.6,
 2026-08-09.
 
-`agent-seat-x11` 0.1.24 expands the public X11 evidence to every logical
+`agent-seat-x11` 0.1.25 expands the public X11 evidence to every logical
 button, Return/Tab and unmapped-key behavior, hostile hit-test bounds, and the
 existing rootless private-device probes. One probe now runs the real provider
 with a private `/dev` and observes successful click and text delivery while the
@@ -33,7 +33,10 @@ never persisted. Sessions are generation-bound, so disable revokes existing
 sessions and re-enable requires a new handshake. Pointer movement, clicking,
 and bounded focused text recheck the same generation under their X11 server
 grab. They use XTEST and the live keyboard map without root, evdev, uinput,
-group membership, or a broker.
+group membership, or a broker. Keyboard text resolves through the effective
+XKB group, types, levels, and bounded momentary modifiers; unavailable direct
+symbols, active depressed/latched modifiers, compose/IME, and group switching
+remain fail-closed rather than guessed.
 
 The profile intentionally advertises `input_injection` but not
 `human_activity`. It proves fresh target/focus checks and what X11 queued, not
@@ -67,8 +70,9 @@ LightDM/Openbox/systemd combination. Other launchers and the separate trusted
 lock-transition ordering gate remain unverified.
 
 The separate [revision-5 input record](../verification/t0.5-input-verification.md)
-captures isolated Openbox pointer movement, a real button event, live-keymap
-text, focus and covering-window refusals, the volatile-seat lifecycle, and the
+captures isolated Openbox pointer movement, a real button event, live-XKB
+text, Norwegian URL punctuation plus an installed-layout matrix, focus and
+covering-window refusals, the volatile-seat lifecycle, and the
 absence of a human-activity claim.
 
 ## Goals

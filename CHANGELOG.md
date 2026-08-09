@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- `agent-seat-x11` 0.1.25 resolves text from the live XKB group, key types,
+  levels, and bounded momentary modifiers instead of treating the first two
+  columns of X11's compatibility map as base/Shift. This fixes URL punctuation
+  on Norwegian and other multi-level layouts without changing wire revision 5.
+  A real xterm regression receives `https://slashdot.org` under Norwegian XKB;
+  an explicit local registry matrix exercised all 590 declared default/variant
+  combinations, with 587 loadable cases producing either exact text (363) or
+  pre-send refusal (224) and three entries rejected by `setxkbmap` itself.
+
 ### Added
 
 - Added the experimental `agent-seat.x11-tier0.5-input.v1` conformance profile

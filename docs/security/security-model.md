@@ -20,7 +20,8 @@ process only. MCP has no corresponding operation. Sessions are bound to one
 enabled generation and are revoked after a transition; pointer move/click and
 bounded focused text recheck that generation under their X11 server grab. The
 provider uses only its ordinary X11 connection, XTEST, target/focus evidence,
-and the live keyboard map. It advertises no `human_activity` guarantee, and a
+and the live XKB group/type/level map. It advertises no `human_activity`
+guarantee, and a
 physical event can overlap an action. A request already executing may finish,
 so this is not cancellation or a lock-transition guarantee. The GTK
 Settings shell may invoke the same typed operator boundary, but it neither owns

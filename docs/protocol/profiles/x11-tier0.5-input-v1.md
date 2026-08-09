@@ -128,17 +128,23 @@ replay after a new observation, drag state, button holds, or multi-click timing.
 of its descendants. The provider never activates the client or forces focus as
 a fallback.
 
-Before sending the first character, the provider reads the live X11 keyboard
-map and resolves the complete request against the first two levels of its first
-group. An unavailable character refuses the request instead of guessing a
-keycode, changing the map, using a shell, or pasting through another protocol.
-Newline maps to Return and tab maps to Tab. Other control characters are
-invalid. A shifted character uses one bounded Shift press/key pair/Shift
-release sequence, with best-effort release cleanup on failure.
+Before sending the first character, the provider negotiates XKB and resolves
+the complete request against the live effective group, key types, levels, and
+available bounded momentary modifiers. An unavailable character or incomplete
+XKB state refuses the request instead of guessing a keycode, changing the map
+or group, using a shell, or pasting through another protocol. Newline maps to
+Return and tab maps to Tab. Other control characters are invalid. Directly
+mapped symbols may use bounded Shift, Level3, or Level5 modifier pairs, with
+best-effort reverse-order release cleanup on failure. Compose/dead-key
+sequences and input methods are outside this profile.
 
 Each Unicode scalar is one independently reportable action. Target, focus, and
 seat evidence are revalidated under a separate short server grab before every
-character, allowing a request to stop with a conservative partial count.
+character. The live XKB state and map are also re-read inside that grab. A
+depressed or latched modifier makes the action unavailable; established
+Caps/Shift/Num lock state may be honored only when the selected XKB type remains
+unambiguous. These checks allow a request to stop with a conservative partial
+count.
 
 ## 8. Result and interruption semantics
 
@@ -166,9 +172,9 @@ are action-local; a provider MUST NOT hold the server across the complete
 multi-character request.
 
 Unknown fields, unknown buttons, out-of-range coordinates, unsupported control
-characters, over-bound text, absent keysyms, missing Shift, and incomplete X11
-evidence are typed failures. Peer input never raises a bound or selects raw
-backend keycodes or button numbers.
+characters, over-bound text, absent keysyms, unavailable safe modifiers,
+incomplete XKB state/maps, and incomplete X11 evidence are typed failures. Peer
+input never raises a bound or selects raw backend keycodes or button numbers.
 
 ## 10. Black-box conformance fixtures
 
@@ -179,9 +185,9 @@ observes public wire, process, socket, and X11 behavior rather than logs:
   grants, disable/revoke/re-enable, and disabled restart;
 - `input.pointer`: client-relative movement, all logical buttons with complete
   press/release observation, geometry bounds, and covering-window refusal;
-- `input.keyboard`: non-focused refusal, descendant focus, live-map lower and
-  shifted levels, Return/Tab, unavailable-character no-send, and complete
-  modifier/key cleanup;
+- `input.keyboard`: non-focused refusal, descendant focus, XKB group/type/level
+  resolution, Norwegian URL punctuation delivered exactly to an application,
+  Return/Tab, unavailable-character no-send, and complete modifier/key cleanup;
 - `input.interruption`: deterministic disable, target loss, and focus loss
   between character actions with exact conservative partial counts;
 - `input.bounds`: strict schemas, byte/scalar limits, controls, coordinates,
@@ -206,7 +212,9 @@ An implementation claiming this profile states all of the following:
 - the profile has no trusted physical-activity, lock, presence, or priority
   evidence;
 - same-user X11 clients may bypass Agent Seat or race its observations;
-- text is limited to the first two levels of the live map's first group;
+- text is limited to direct symbols in the current effective XKB group that are
+  reachable with the current lock state and bounded momentary Shift, Level3, or
+  Level5 modifiers; the provider does not switch groups or drive compose/IME;
 - focus is required and never forced;
 - pointer input is limited to the current visible target point; and
 - matching the tool surface does not confer Tier 1 assurance.
@@ -216,8 +224,11 @@ An implementation claiming this profile states all of the following:
 The repository's revision-5 provider lifecycle tests exercise admission,
 generation revocation, target-relative movement, all three logical clicks with
 complete button pairs, covering-window refusal, actual-focus refusal,
-lower/shifted/Return/Tab key pairs through the live map, and unmapped-scalar
-no-send behavior. A pre-opened private control-channel fixture disables the
+lower/shifted/Return/Tab key pairs through the live XKB map, Norwegian URL
+punctuation observed exactly by xterm, and unmapped-scalar no-send behavior. An
+explicit installed-registry matrix requires every loadable layout/variant to
+produce exact application-visible URL text or refuse before sending. A
+pre-opened private control-channel fixture disables the
 seat after the first observed key event and verifies the exact partial scalar
 count against complete Shift/key pairs; it passed 20 consecutive local runs.
 Protocol, MCP, Settings, and configuration tests exercise separate grants and

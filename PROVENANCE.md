@@ -190,6 +190,18 @@ implementation and its public process/wire/X11 behavior. No external
 automation profile, conformance fixture, or implementation material was
 consulted or adapted.
 
+The `agent-seat-x11` 0.1.25 keyboard correction is original work derived from
+the public X Keyboard Extension protocol and XKB library specification, XTEST's
+physical-keycode contract, and independently observed Norwegian-layout
+behavior. The standards references are the X.Org
+[XKB Library Specification](https://www.x.org/releases/current/doc/libX11/XKB/xkblib.html)
+and [XTEST protocol](https://www.x.org/releases/X11R7.6/doc/xextproto/xtest.html).
+It uses the existing safe `x11rb` dependency's XKB feature; it adds no runtime
+dependency. The isolated Norwegian xterm regression and exhaustive
+installed-registry matrix were written for this repository from public X11,
+process, and application-visible behavior. No Nobox code, schema, fixture,
+comment, test, or prose was consulted or adapted.
+
 The rootless private-device input fixture is original test work over the same
 public process, wire, and X11 behavior. It uses the already installed
 Bubblewrap executable only to replace `/dev` for the real provider process,

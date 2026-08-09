@@ -1097,6 +1097,105 @@ fn start_openbox(display: &str) -> Child {
     }
 }
 
+fn try_apply_keyboard_layout(
+    display: &str,
+    layout: &str,
+    variant: Option<&str>,
+) -> Result<(), String> {
+    let mut command = Command::new("setxkbmap");
+    command.args(["-display", display, "-option", "", "-layout", layout]);
+    if let Some(variant) = variant {
+        command.args(["-variant", variant]);
+    }
+    let output = command
+        .output()
+        .map_err(|error| format!("cannot run setxkbmap: {error}"))?;
+    output.status.success().then_some(()).ok_or_else(|| {
+        format!(
+            "cannot apply XKB layout {layout:?} variant {variant:?}: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
+    })
+}
+
+fn apply_keyboard_layout(display: &str, layout: &str, variant: Option<&str>) {
+    try_apply_keyboard_layout(display, layout, variant).unwrap_or_else(|error| panic!("{error}"));
+}
+
+fn command_lines(program: &str, arguments: &[&str]) -> Vec<String> {
+    let output = Command::new(program)
+        .args(arguments)
+        .output()
+        .unwrap_or_else(|error| panic!("cannot run {program}: {error}"));
+    if !output.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8(output.stdout)
+        .expect("command output UTF-8")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+fn start_text_capture_terminal(display: &str, title: &str, output: &Path) -> Child {
+    Command::new("xterm")
+        .args(["-T", title, "-e", "sh", "-c"])
+        .arg("while IFS= read -r line; do printf '%s\\n' \"$line\" >> \"$1\"; done")
+        .arg("agent-seat-text-capture")
+        .arg(output)
+        .env("DISPLAY", display)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("xterm is required by the keyboard translation gate")
+}
+
+fn focus_window_named(display: &str, title: &str) {
+    let (connection, screen) = x11rb::connect(Some(display)).expect("focus X11 connection");
+    let root = connection.setup().roots[screen].root;
+    let clients_atom = intern(&connection, b"_NET_CLIENT_LIST");
+    let name_atom = intern(&connection, b"_NET_WM_NAME");
+    let legacy_name_atom = intern(&connection, b"WM_NAME");
+    let utf8_atom = intern(&connection, b"UTF8_STRING");
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let clients = connection
+            .get_property(false, root, clients_atom, AtomEnum::WINDOW, 0, 256)
+            .expect("client-list request")
+            .reply()
+            .expect("client-list reply")
+            .value32()
+            .map(Iterator::collect::<Vec<_>>)
+            .unwrap_or_default();
+        if let Some(window) = clients.into_iter().find(|window| {
+            let modern_name = connection
+                .get_property(false, *window, name_atom, utf8_atom, 0, 256)
+                .ok()
+                .and_then(|cookie| cookie.reply().ok())
+                .is_some_and(|reply| reply.value == title.as_bytes());
+            let legacy_name = connection
+                .get_property(false, *window, legacy_name_atom, AtomEnum::STRING, 0, 256)
+                .ok()
+                .and_then(|cookie| cookie.reply().ok())
+                .is_some_and(|reply| reply.value == title.as_bytes());
+            modern_name || legacy_name
+        }) {
+            connection
+                .set_input_focus(InputFocus::PARENT, window, CURRENT_TIME)
+                .expect("terminal focus request")
+                .check()
+                .expect("terminal focus");
+            connection.sync().expect("terminal focus sync");
+            return;
+        }
+        assert!(Instant::now() < deadline, "terminal window did not appear");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn wait_snapshot(
     stream: &mut UnixStream,
     next_id: &mut u64,
@@ -2021,6 +2120,194 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
     assert_no_input_events(&client.connection);
 
     client.destroy();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn norwegian_xkb_layout_types_url_punctuation_exactly() {
+    let xvfb = Xvfb::start();
+    apply_keyboard_layout(&xvfb.display, "no", None);
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("norwegian-keyboard-input");
+    let config = write_input_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let capture = directory.0.join("typed-lines");
+    let title = "agent-seat-norwegian-keyboard-target";
+    let mut terminal = start_text_capture_terminal(&xvfb.display, title, &capture);
+    let mut stream = UnixStream::connect(&socket).expect("Norwegian keyboard peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::InputKeyboard,
+            ],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|candidate_title| candidate_title.as_str() == title)
+        })
+    });
+    let observed_target = client_named(&observed, title);
+    focus_window_named(&xvfb.display, title);
+
+    let text = "https://slashdot.org\n";
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::KeyboardType(KeyboardTypeRequest {
+                target: target(&observed_target),
+                text: BoundedText::new(text).expect("Norwegian URL text"),
+            }),
+        ),
+        Outcome::Ok(Reply::Input(reply))
+            if reply.completed == 21
+                && reply.requested == 21
+                && reply.terminal == InputTerminal::Queued
+    ));
+
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if fs::read_to_string(&capture).is_ok_and(|captured| captured == text) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Norwegian XKB translation did not produce {text:?}; captured {:?}",
+            fs::read_to_string(&capture).unwrap_or_default()
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let _ = terminal.kill();
+    let _ = terminal.wait();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+#[ignore = "explicit exhaustive gate over every layout and variant in the installed XKB registry"]
+fn every_installed_xkb_layout_types_exact_text_or_refuses_before_sending() {
+    let layouts = command_lines("localectl", &["list-x11-keymap-layouts"]);
+    assert!(!layouts.is_empty(), "installed XKB registry has no layouts");
+
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("all-keyboard-layouts");
+    let config = write_input_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let capture = directory.0.join("typed-lines");
+    let title = "agent-seat-all-keyboard-layouts-target";
+    let mut terminal = start_text_capture_terminal(&xvfb.display, title, &capture);
+    let mut stream = UnixStream::connect(&socket).expect("all-layout keyboard peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::InputKeyboard,
+            ],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|candidate_title| candidate_title.as_str() == title)
+        })
+    });
+    let observed_target = client_named(&observed, title);
+    focus_window_named(&xvfb.display, title);
+
+    let text = "https://slashdot.org\n";
+    let mut expected_capture = String::new();
+    let mut tested = 0_usize;
+    let mut exact = 0_usize;
+    let mut refused = 0_usize;
+    let mut unloadable = Vec::new();
+    for layout in layouts {
+        let variants = command_lines("localectl", &["list-x11-keymap-variants", &layout]);
+        for variant in std::iter::once(None).chain(variants.iter().map(String::as_str).map(Some)) {
+            if let Err(error) = try_apply_keyboard_layout(&xvfb.display, &layout, variant) {
+                unloadable.push(error);
+                continue;
+            }
+            let outcome = wire_call(
+                &mut stream,
+                &mut next_id,
+                Call::KeyboardType(KeyboardTypeRequest {
+                    target: target(&observed_target),
+                    text: BoundedText::new(text).expect("layout-matrix URL text"),
+                }),
+            );
+            match outcome {
+                Outcome::Ok(Reply::Input(reply))
+                    if reply.completed == 21
+                        && reply.requested == 21
+                        && reply.terminal == InputTerminal::Queued =>
+                {
+                    expected_capture.push_str(text);
+                    let deadline = Instant::now() + Duration::from_secs(3);
+                    loop {
+                        let captured = fs::read_to_string(&capture).unwrap_or_default();
+                        if captured == expected_capture {
+                            break;
+                        }
+                        assert!(
+                            Instant::now() < deadline,
+                            "XKB layout {layout:?} variant {variant:?} corrupted text; expected suffix {text:?}, captured suffix {:?}",
+                            captured.lines().next_back()
+                        );
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    exact += 1;
+                }
+                Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {
+                    assert_eq!(
+                        fs::read_to_string(&capture).unwrap_or_default(),
+                        expected_capture,
+                        "XKB layout {layout:?} variant {variant:?} sent input before refusing"
+                    );
+                    refused += 1;
+                }
+                other => panic!(
+                    "XKB layout {layout:?} variant {variant:?} produced an unclassified outcome: {other:?}"
+                ),
+            }
+            tested += 1;
+            if tested % 50 == 0 {
+                eprintln!("XKB matrix: tested {tested} combinations");
+            }
+        }
+    }
+    eprintln!(
+        "XKB matrix complete: {tested} loadable tested, {exact} exact, {refused} refused safely, {} registry entries unloadable",
+        unloadable.len()
+    );
+    for error in &unloadable {
+        eprintln!("XKB matrix registry exclusion: {error}");
+    }
+    assert!(exact > 0, "no installed XKB layout produced exact text");
+    assert_eq!(tested, exact + refused);
+
+    let _ = terminal.kill();
+    let _ = terminal.wait();
     let _ = openbox.kill();
     let _ = openbox.wait();
 }

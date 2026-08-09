@@ -46,9 +46,11 @@ profiles. Revision 5 defines an explicitly weaker Tier 0.5 X11 input profile;
 providers that do not implement it simply omit its grants and feature.
 
 The experimental revision-5 input path uses the provider's existing X11
-connection, XTEST, current target/focus evidence, the live keyboard map, and
-the volatile seat generation. It does not read raw input devices or claim
-physical-user priority. The older separately confined activity broker and
+connection, XTEST, current target/focus evidence, the live XKB map, and the
+volatile seat generation. Keyboard resolution follows the effective XKB group
+and key types and fails closed when a requested symbol is not directly
+reachable with bounded safe modifiers. It does not read raw input devices or
+claim physical-user priority. The older separately confined activity broker and
 private-device service remain optional research/hardening components, not
 dependencies of the ordinary input path or the display-neutral wire contract.
 

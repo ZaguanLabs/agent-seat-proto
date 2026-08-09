@@ -1,6 +1,7 @@
 //! Bounded per-session EWMH snapshots and convergent event diffs.
 
 mod input;
+mod keyboard;
 mod manager;
 
 use std::collections::{HashMap, HashSet, VecDeque};

@@ -271,11 +271,15 @@ covering the point causes `invalid_argument` without a click.
 `keyboard.type` requires actual X11 input focus to be the fresh target or one
 of its descendants. It never forces focus. Text is at most 1,024 UTF-8 bytes
 and 256 Unicode scalar actions. Newline and tab are the only accepted control
-characters. The provider resolves every character against the first two
-levels of the live X11 map's first keyboard group before sending any key, so an
-unavailable character is refused instead of guessed or written through a
-shell. Each accepted character is one complete key press/release action with
-a bounded Shift pair when required.
+characters. The provider resolves the complete request against the current
+effective XKB group, key types, levels, and available bounded momentary
+modifiers before sending any key. An unavailable character or incomplete XKB
+state is refused instead of guessed or written through a shell. Each accepted
+character is one complete key press/release action surrounded by only the
+momentary modifier pairs required for that XKB level. The provider re-reads the
+live XKB state and mapping under the action-local server grab before each
+character. It does not change layouts or groups, synthesize compose/IME
+sequences, or paste through another protocol.
 
 The input reply carries `completed`, `requested`, and `queued` or
 `interrupted`. `queued` means only that every reported action was queued and

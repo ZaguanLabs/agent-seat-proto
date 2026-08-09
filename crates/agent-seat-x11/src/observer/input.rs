@@ -5,7 +5,6 @@ use agent_seat_proto::{
     PointerMoveRequest,
 };
 use x11rb::CURRENT_TIME;
-use x11rb::connection::Connection as _;
 use x11rb::protocol::shape::{ConnectionExt as _, SK};
 use x11rb::protocol::xproto::{
     BUTTON_PRESS_EVENT, BUTTON_RELEASE_EVENT, ConnectionExt as _, KEY_PRESS_EVENT,
@@ -14,6 +13,7 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 
+use super::keyboard::{KeyStroke, resolve_character, resolve_text};
 use super::{Failure, Observer};
 use crate::seat::{SeatGate, SeatPermit};
 
@@ -21,16 +21,6 @@ const MAX_WINDOW_ANCESTORS: usize = 64;
 const MAX_HIT_TEST_CHILDREN: usize = 256;
 const MAX_HIT_TEST_RECTANGLES: usize = 256;
 const POINTER_ROOT_FOCUS: u32 = 1;
-const XK_TAB: u32 = 0xff09;
-const XK_RETURN: u32 = 0xff0d;
-const XK_SHIFT_L: u32 = 0xffe1;
-const XK_SHIFT_R: u32 = 0xffe2;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct KeyStroke {
-    keycode: u8,
-    shift: bool,
-}
 
 impl Observer {
     pub(crate) fn pointer_move(
@@ -78,14 +68,14 @@ impl Observer {
     ) -> Result<InputReply, Failure> {
         let requested = u16::try_from(request.text.chars().count())
             .map_err(|_| Failure::invalid("keyboard text exceeds the action bound"))?;
-        let (strokes, shift_keycode) = self.under_server_grab(|observer| {
+        self.under_server_grab(|observer| {
             observer.refresh()?;
             let target = observer.target(request.target)?;
             observer.require_focus_owned_by(target.xid)?;
-            observer.resolve_text(request.text.as_str())
+            resolve_text(&observer.connection, request.text.as_str()).map(|_| ())
         })?;
         let mut completed = 0_u16;
-        for stroke in strokes {
+        for character in request.text.chars() {
             let result = self.under_server_grab(|observer| {
                 observer.refresh()?;
                 let target = observer.target(request.target)?;
@@ -93,7 +83,8 @@ impl Observer {
                 if !seat.accepts(seat_permit) {
                     return Ok(false);
                 }
-                observer.type_key(stroke, shift_keycode)?;
+                let stroke = resolve_character(&observer.connection, character)?;
+                observer.type_key(&stroke)?;
                 Ok(true)
             });
             match result {
@@ -192,38 +183,38 @@ impl Observer {
         Ok(())
     }
 
-    fn type_key(&self, stroke: KeyStroke, shift_keycode: Option<u8>) -> Result<(), Failure> {
-        let shift =
-            if stroke.shift {
-                Some(shift_keycode.ok_or_else(|| {
-                    Failure::unavailable("current X11 keyboard map has no Shift key")
-                })?)
-            } else {
-                None
-            };
-        if let Some(shift) = shift {
-            self.fake_input(KEY_PRESS_EVENT, shift, 0, 0)?;
+    fn type_key(&self, stroke: &KeyStroke) -> Result<(), Failure> {
+        let mut pressed_modifiers = Vec::new();
+        for modifier in &stroke.modifiers {
+            if let Err(error) = self.fake_input(KEY_PRESS_EVENT, *modifier, 0, 0) {
+                self.release_keys(&pressed_modifiers);
+                return Err(error);
+            }
+            pressed_modifiers.push(*modifier);
         }
         if let Err(error) = self.fake_input(KEY_PRESS_EVENT, stroke.keycode, 0, 0) {
-            if let Some(shift) = shift {
-                self.best_effort_release(KEY_RELEASE_EVENT, shift);
-            }
+            self.release_keys(&pressed_modifiers);
             return Err(error);
         }
         if let Err(error) = self.fake_input(KEY_RELEASE_EVENT, stroke.keycode, 0, 0) {
             self.best_effort_release(KEY_RELEASE_EVENT, stroke.keycode);
-            if let Some(shift) = shift {
-                self.best_effort_release(KEY_RELEASE_EVENT, shift);
-            }
+            self.release_keys(&pressed_modifiers);
             return Err(error);
         }
-        if let Some(shift) = shift {
-            if let Err(error) = self.fake_input(KEY_RELEASE_EVENT, shift, 0, 0) {
-                self.best_effort_release(KEY_RELEASE_EVENT, shift);
+        while let Some(modifier) = pressed_modifiers.pop() {
+            if let Err(error) = self.fake_input(KEY_RELEASE_EVENT, modifier, 0, 0) {
+                self.best_effort_release(KEY_RELEASE_EVENT, modifier);
+                self.release_keys(&pressed_modifiers);
                 return Err(error);
             }
         }
         Ok(())
+    }
+
+    fn release_keys(&self, keycodes: &[u8]) {
+        for keycode in keycodes.iter().rev() {
+            self.best_effort_release(KEY_RELEASE_EVENT, *keycode);
+        }
     }
 
     fn fake_input(
@@ -259,50 +250,6 @@ impl Observer {
             cookie.ignore_error();
             let _ = self.connection.sync();
         }
-    }
-
-    fn resolve_text(&self, text: &str) -> Result<(Vec<KeyStroke>, Option<u8>), Failure> {
-        let setup = self.connection.setup();
-        let count = setup
-            .max_keycode
-            .checked_sub(setup.min_keycode)
-            .and_then(|difference| difference.checked_add(1))
-            .ok_or_else(|| Failure::unavailable("X11 keyboard range is invalid"))?;
-        let mapping = self
-            .connection
-            .get_keyboard_mapping(setup.min_keycode, count)
-            .map_err(|_| Failure::unavailable("cannot inspect the X11 keyboard map"))?
-            .reply()
-            .map_err(|_| Failure::unavailable("cannot inspect the X11 keyboard map"))?;
-        let columns = usize::from(mapping.keysyms_per_keycode);
-        if columns == 0 || mapping.keysyms.len() != usize::from(count) * columns {
-            return Err(Failure::unavailable("X11 keyboard map is incomplete"));
-        }
-        let strokes = text
-            .chars()
-            .map(|character| {
-                let keysym = keysym_for_character(character);
-                find_stroke(&mapping.keysyms, columns, setup.min_keycode, keysym).ok_or_else(|| {
-                    Failure::invalid(
-                        "text contains a character unavailable in the current X11 keyboard layout",
-                    )
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let shift_keycode = strokes
-            .iter()
-            .any(|stroke| stroke.shift)
-            .then(|| {
-                find_keycode(
-                    &mapping.keysyms,
-                    columns,
-                    setup.min_keycode,
-                    &[XK_SHIFT_L, XK_SHIFT_R],
-                )
-                .ok_or_else(|| Failure::unavailable("current X11 keyboard map has no Shift key"))
-            })
-            .transpose()?;
-        Ok((strokes, shift_keycode))
     }
 
     fn require_focus_owned_by(&self, target: u32) -> Result<(), Failure> {
@@ -447,60 +394,6 @@ fn checked_root_coordinate(origin: i16, offset: u32) -> Result<i16, Failure> {
         .ok_or_else(|| Failure::invalid("pointer destination exceeds X11 coordinate range"))
 }
 
-fn keysym_for_character(character: char) -> u32 {
-    match character {
-        '\t' => XK_TAB,
-        '\n' => XK_RETURN,
-        value if u32::from(value) <= 0xff => u32::from(value),
-        value => 0x0100_0000 | u32::from(value),
-    }
-}
-
-fn find_stroke(keysyms: &[u32], columns: usize, minimum: u8, wanted: u32) -> Option<KeyStroke> {
-    if columns == 0 {
-        return None;
-    }
-    keysyms
-        .chunks_exact(columns)
-        .enumerate()
-        .find_map(|(row, symbols)| {
-            symbols
-                .iter()
-                .take(2)
-                .enumerate()
-                .find_map(|(level, symbol)| {
-                    (*symbol == wanted).then(|| {
-                        u8::try_from(row)
-                            .ok()
-                            .and_then(|row| minimum.checked_add(row))
-                            .map(|keycode| KeyStroke {
-                                keycode,
-                                shift: level == 1,
-                            })
-                    })?
-                })
-        })
-}
-
-fn find_keycode(keysyms: &[u32], columns: usize, minimum: u8, wanted: &[u32]) -> Option<u8> {
-    if columns == 0 {
-        return None;
-    }
-    keysyms
-        .chunks_exact(columns)
-        .enumerate()
-        .find_map(|(row, symbols)| {
-            symbols
-                .iter()
-                .any(|symbol| wanted.contains(symbol))
-                .then(|| {
-                    u8::try_from(row)
-                        .ok()
-                        .and_then(|row| minimum.checked_add(row))
-                })?
-        })
-}
-
 fn rectangle_contains(rectangle: &x11rb::protocol::xproto::Rectangle, x: i16, y: i16) -> bool {
     let x = i32::from(x);
     let y = i32::from(y);
@@ -528,30 +421,5 @@ mod tests {
         assert!(rectangle_contains(&rectangle, 2, 9));
         assert!(!rectangle_contains(&rectangle, 3, 9));
         assert!(!rectangle_contains(&rectangle, 2, 10));
-    }
-
-    #[test]
-    fn first_group_keysyms_resolve_without_backend_keycodes_on_the_wire() {
-        let keysyms = [
-            u32::from('a'),
-            u32::from('A'),
-            u32::from('1'),
-            u32::from('!'),
-        ];
-        assert_eq!(
-            find_stroke(&keysyms, 2, 8, u32::from('a')),
-            Some(KeyStroke {
-                keycode: 8,
-                shift: false,
-            })
-        );
-        assert_eq!(
-            find_stroke(&keysyms, 2, 8, u32::from('!')),
-            Some(KeyStroke {
-                keycode: 9,
-                shift: true,
-            })
-        );
-        assert_eq!(find_stroke(&keysyms, 2, 8, u32::from('z')), None);
     }
 }
