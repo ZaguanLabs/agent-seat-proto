@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "agent-seat-x11"
-version = "0.1.18"
+version = "0.1.19"
 dependencies = [
  "agent-seat-activity-broker",
  "agent-seat-proto",

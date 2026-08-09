@@ -203,12 +203,14 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- Patch-bumped `agent-seat-x11` to 0.1.18 while updating `toml` to 1.1,
+- Patch-bumped `agent-seat-x11` to 0.1.19 while updating `toml` to 1.1,
   `toml_edit` to 0.25, and `signal-hook` to 0.4. All three retain the declared
   Rust 1.85 minimum, and the coordinated TOML update removes the older
   duplicate parser stack. Cargo Dependabot updates are now grouped so related
   dependency changes can be reviewed and tested together. CI and release jobs
-  install the D-Bus development files already required by the workspace.
+  install the D-Bus development files already required by the workspace. The
+  static provider-unit test retains exact production-path assertions but uses
+  Cargo's test binary for syntax verification on a clean build host.
 - Corrected the provider guide's current source version and expanded the
   compatibility matrix to separate installed runtime evidence, unconstrained
   external-harness status, and pre-RFC publication readiness.

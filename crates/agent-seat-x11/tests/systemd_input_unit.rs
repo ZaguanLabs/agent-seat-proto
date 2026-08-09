@@ -50,7 +50,11 @@ fn input_unit_is_explicit_bounded_and_accepted_by_systemd() {
     let _ = fs::remove_dir_all(&directory);
     fs::create_dir(&directory).expect("unit fixture directory");
     let unit = directory.join("agent-seat-x11-input.service");
-    fs::write(&unit, UNIT_SOURCE).expect("unit fixture");
+    let fixture_source = UNIT_SOURCE.replace(
+        "/usr/bin/agent-seat-x11",
+        env!("CARGO_BIN_EXE_agent-seat-x11"),
+    );
+    fs::write(&unit, fixture_source).expect("unit fixture");
     let output = Command::new("systemd-analyze")
         .args(["verify", "--man=no"])
         .arg(&unit)
