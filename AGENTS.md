@@ -41,6 +41,38 @@ Integration work uses isolated Xvfb, Xephyr, or Xnest displays and released
 Openbox without touching the person's desktop. Tests observe public process,
 filesystem, socket, and X11 behavior; logs do not make a test pass.
 
+## Documentation layout
+
+`docs/README.md` is the documentation index and must stay current whenever a
+document is added, moved, renamed, or removed. Classify a document by its
+primary audience and purpose:
+
+- Keep `docs/` itself mostly for user and operator guides. These explain setup,
+  configuration, normal operation, compatibility, and troubleshooting without
+  requiring implementation knowledge.
+- Put internal architecture, roadmap, UI design, and feature-decision material
+  in `docs/design/`.
+- Put wire contracts, information models, registries, protocol profiles,
+  conformance formats, and RFC preparation in `docs/protocol/`. Keep
+  machine-readable protocol artifacts beside the document that governs them.
+- Put trust models, threat analysis, privileged deployment contracts, and
+  security stop decisions in `docs/security/`.
+- Put completed evidence records, compatibility milestone records, hostile-test
+  requirements, and full-system participation contracts in
+  `docs/verification/`.
+
+Prefer one clear home over duplicate user and technical documents. User guides
+may link to technical detail but must state the supported behavior first. Keep
+experimental, candidate, verified, and released claims visibly distinct.
+
+Use relative Markdown links for repository documents. A documentation move is
+not complete until all inbound links, command examples, provenance references,
+release notes, and directory indexes are updated and checked. Verification
+records must name the exact subject and environment, distinguish observation
+from inference, and preserve limitations; logs alone are never evidence.
+Historical release notes must retain paths that are accurate for their tagged
+source archive; do not rewrite them to match a later tree layout.
+
 ## Versioning and releases
 
 Crate versions and wire revisions are distinct. Patch-bump each crate changed

@@ -219,7 +219,7 @@ implementation.
 The full-system image/reset manifest, greeter input barrier, virtual-device
 controller, stable lock/replacement fixture IDs, and required evidence ordering
 are defined in the
-[`T5 participant contract`](t5-participation-contract.md). A container or
+[`T5 participant contract`](../verification/t5-participation-contract.md). A container or
 nested X server cannot submit those fixtures as full-system evidence.
 
 ## Decision ledger

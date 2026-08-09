@@ -476,9 +476,9 @@ Normative terminology:
 Repository contracts and evidence:
 
 - [Agent Seat wire revision 4](specification.md)
-- [Architecture](architecture.md)
-- [Security model](security-model.md)
-- [Optional-profile decisions](optional-profiles.md)
-- [T5 input reconsideration](t5-input-reconsideration.md)
-- [T5 broker deployment](t5-broker-deployment.md)
-- [T5 lock-state study](t5-lock-state-study.md)
+- [Architecture](../design/architecture.md)
+- [Security model](../security/security-model.md)
+- [Optional-profile decisions](../design/optional-profiles.md)
+- [T5 input reconsideration](../security/t5-input-reconsideration.md)
+- [T5 broker deployment](../security/t5-broker-deployment.md)
+- [T5 lock-state study](../security/t5-lock-state-study.md)

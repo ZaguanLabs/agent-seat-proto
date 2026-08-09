@@ -123,8 +123,8 @@ With the Python `jsonschema` command installed, validate a report using:
 
 ```sh
 jsonschema \
-  --instance docs/conformance-report-v1.example.json \
-  docs/conformance-report-v1.schema.json
+  --instance docs/protocol/conformance-report-v1.example.json \
+  docs/protocol/conformance-report-v1.schema.json
 ```
 
 Schema validation is necessary but not sufficient. A conformance reviewer also

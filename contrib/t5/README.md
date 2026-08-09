@@ -1,8 +1,8 @@
 # T5 participant probes
 
 `harness-authority-probe.rs` is dependency-free safe Rust for the external-
-harness fixtures in
-[`docs/t5-participation-contract.md`](../../docs/t5-participation-contract.md).
+harness fixtures in the
+[T5 participation contract](../../docs/verification/t5-participation-contract.md).
 It is a hostile probe source, not an installed Agent Seat component, setuid
 helper, sandbox, or conformance result.
 

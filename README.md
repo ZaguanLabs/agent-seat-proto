@@ -105,7 +105,7 @@ descriptors to the unprivileged broker. The unit's strict device filter names
 those same nodes read-only so systemd may perform the open; the dynamic broker
 still cannot open them through ordinary filesystem permissions or see host
 devices in its private `/dev`. See the permission model in
-[`docs/t5-broker-deployment.md`](docs/t5-broker-deployment.md).
+[`docs/security/t5-broker-deployment.md`](docs/security/t5-broker-deployment.md).
 
 The eligibility guard compares the complete live input-event class mapping to
 the reviewed manifest after subscribing to bounded kernel device-lifecycle
@@ -128,7 +128,7 @@ root-owned installed service bytes also pass for both production identity
 models while leaving the live services untouched. The physical replacement
 matrix and trusted lock-transition behavior remain open approval gates.
 Their external-harness, virtual-device, and isolated-lock evidence interface is
-the [T5 participant contract](docs/t5-participation-contract.md); it records
+the [T5 participant contract](docs/verification/t5-participation-contract.md); it records
 what a participating launcher or full-system runner must prove without
 claiming that a participant already exists.
 
@@ -230,20 +230,23 @@ subscriptions, supported EWMH management, and controlled XDG application
 discovery and launch. The gated pointer-move profile is present in source but
 is not part of the supported Tier 0 core.
 
-The portable pre-RFC semantics are in the
-[`information model`](docs/information-model.md). The normative implemented
-wire contract is [`docs/specification.md`](docs/specification.md),
-with a [machine-readable registry projection](docs/registry-v1.json) governed
-by the repository [registry policy](docs/registries.md). The companion contract
-is [`docs/mcp.md`](docs/mcp.md), and provider setup is
+The [documentation index](docs/README.md) separates user guides from technical
+reference material. Portable pre-RFC semantics are in the
+[`information model`](docs/protocol/information-model.md). The normative
+implemented wire contract is
+[`docs/protocol/specification.md`](docs/protocol/specification.md), with a
+[machine-readable registry projection](docs/protocol/registry-v1.json)
+governed by the repository [registry policy](docs/protocol/registries.md). The
+companion contract is [`docs/mcp.md`](docs/mcp.md), and provider setup is
 [`docs/provider.md`](docs/provider.md). Settings usage is
 [`docs/settings.md`](docs/settings.md). Optional-profile stop decisions are in
-[`docs/optional-profiles.md`](docs/optional-profiles.md). The
+[`docs/design/optional-profiles.md`](docs/design/optional-profiles.md). The
 implementation-independent standards direction is the repository's non-external
-[`R0 pre-RFC draft`](docs/r0-protocol-rfc.md), beginning with the standalone
-[`agent-seat.x11-ewmh-core.v1`](docs/profiles/x11-ewmh-core-v1.md) backend
-profile and portable
-[`agent-seat.conformance-report/1`](docs/conformance-report.md) evidence
+[`R0 pre-RFC draft`](docs/protocol/r0-protocol-rfc.md), beginning with the
+standalone
+[`agent-seat.x11-ewmh-core.v1`](docs/protocol/profiles/x11-ewmh-core-v1.md)
+backend profile and portable
+[`agent-seat.conformance-report/1`](docs/protocol/conformance-report.md) evidence
 format.
 
 ## Project policy

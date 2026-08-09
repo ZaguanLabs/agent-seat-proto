@@ -450,7 +450,7 @@ pass, runtime device completeness is unsupported.
 The exact participant-facing removal, addition, serial change, capability
 change, topology-clone, complete-set, notification-loss, and verification-to-
 start race fixtures are enumerated in
-[`t5-participation-contract.md`](t5-participation-contract.md). They require a
+[`t5-participation-contract.md`](../verification/t5-participation-contract.md). They require a
 hypervisor-controlled virtual device topology; the live-host hotplug fixture
 below proves only the narrower already recorded transition.
 

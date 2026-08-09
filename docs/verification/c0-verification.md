@@ -74,7 +74,7 @@ both directions. Similar names and concepts are not treated as compatibility.
 
 The first release advertises no capture, obscured capture, output capture,
 input injection, human activity, or accessibility feature. The T4--T6 evidence
-and stop decisions are in [`optional-profiles.md`](optional-profiles.md). Their
+and stop decisions are in [`optional-profiles.md`](../design/optional-profiles.md). Their
 absence is supported behavior, not an untested compatibility claim.
 
 ## Source-release result

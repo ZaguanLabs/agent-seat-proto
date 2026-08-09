@@ -3,7 +3,7 @@
 C0 verifies the complete revision-3 Tier 0 core beside bare Xvfb and released
 Openbox and forces both directions of the separate Nobox revision-2 boundary.
 Detailed release-candidate evidence is in
-[`c0-verification.md`](c0-verification.md).
+[`c0-verification.md`](verification/c0-verification.md).
 
 | Protocol crate | Companion | Provider | Backend/WM | Status |
 | --- | --- | --- | --- | --- |
@@ -23,7 +23,7 @@ ordinary provider I/O deadline and a provider restart while that authenticated
 session was idle. The call succeeds, while provider shutdown remains bounded.
 The external harness itself is not confined by that result.
 Stable candidate fixtures and the required isolated review bundle are defined
-in the [T5 participant contract](t5-participation-contract.md).
+in the [T5 participant contract](verification/t5-participation-contract.md).
 The current development command environment is explicitly nonqualifying: the
 reference hostile probe reached uinput, Xauthority, provider, broker, user-
 manager connection and unit submission, both filesystem and abstract X11, and

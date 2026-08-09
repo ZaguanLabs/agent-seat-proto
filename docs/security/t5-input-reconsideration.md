@@ -290,7 +290,7 @@ the contract is not implementable yet and T5 remains stopped.
 The participant-facing fixture IDs, harness escape checks, virtual-device
 replacement matrix, full-system image manifest, and cross-boundary lock
 ordering evidence are specified in
-[`t5-participation-contract.md`](t5-participation-contract.md). That contract
+[`t5-participation-contract.md`](../verification/t5-participation-contract.md). That contract
 makes evidence submissions comparable; it does not make an absent harness or
 VM result pass.
 

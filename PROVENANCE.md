@@ -100,7 +100,7 @@ not linked or distributed dependencies.
 
 ## Optional profile decision study
 
-The T4--T6 analysis in `docs/optional-profiles.md` is original work written for
+The T4--T6 analysis in `docs/design/optional-profiles.md` is original work written for
 this repository. It uses the public X11 core, Security, Composite, XTEST, and
 RECORD extension specifications and the public AT-SPI 2 API documentation
 linked from that document. No implementation source or fixture from Nobox or
@@ -121,7 +121,7 @@ was copied, translated, or adapted; no Agent Seat wire or runtime behavior was
 derived from it. Subsequent work continues to use this repository's approved
 contract, public standards, and independently observed process behavior.
 
-The T5 threat-model review in `docs/t5-input-reconsideration.md` is original
+The T5 threat-model review in `docs/security/t5-input-reconsideration.md` is original
 work derived from this repository's public roadmap and security model. Its
 technical inputs are the public XTEST specification already recorded above,
 the Linux kernel evdev and uinput documentation at
@@ -142,7 +142,7 @@ The candidate broker deployment contract is original design work from those
 requirements. Its standards-derived inputs are the Linux evdev documentation,
 udev and libinput device-property documentation, and the systemd service,
 resource-control, execution, and logind interfaces linked from
-`docs/t5-broker-deployment.md`. The local systemd 258 and udev database were
+`docs/security/t5-broker-deployment.md`. The local systemd 258 and udev database were
 inspected only as public process and filesystem behavior to check that the
 document does not assume unavailable fields. No broker code, service unit,
 schema, fixture, dependency, or third-party product prose was imported.
@@ -150,7 +150,7 @@ schema, fixture, dependency, or third-party product prose was imported.
 The lock-state integration study is original analysis of the public
 systemd-logind contract, the X11 Screen Saver Extension specification, and the
 upstream LightDM project and `dm-tool` documentation linked from
-`docs/t5-lock-state-study.md`. LightDM is treated only as a future black-box
+`docs/security/t5-lock-state-study.md`. LightDM is treated only as a future black-box
 compatibility candidate; no LightDM or Nobox implementation, schema, test,
 fixture, comments, or prose was copied or adapted. The study adds no code,
 service definition, schema, fixture, or dependency.
@@ -160,7 +160,7 @@ sources, and hostile tests are original implementation work from the approved
 repository threat contract. Standards-derived inputs are Linux evdev event and
 `SYN_DROPPED` semantics, XTEST fake-input semantics, Unix peer credentials,
 and systemd 253+ `OpenFile=`, socket activation, and execution/resource-control
-directives linked from `docs/t5-broker-deployment.md`. The new direct runtime
+directives linked from `docs/security/t5-broker-deployment.md`. The new direct runtime
 dependency is `evdev` 0.13.2 (Apache-2.0 OR MIT) from
 <https://github.com/emberian/evdev>. No Nobox code, schema, test, fixture,
 comments, service definition, or prose was consulted during implementation or
@@ -345,7 +345,7 @@ The optional provider user unit, startup absence check, user-manager launch
 delegation, and hostile two-namespace fixture are original work from this
 repository's approved process-authority inventory. They use public systemd
 user-service, transient-unit, execution, device, namespace, and resource-
-control behavior already cited in `docs/t5-broker-deployment.md`. The local
+control behavior already cited in `docs/security/t5-broker-deployment.md`. The local
 systemd-258 probe independently established that a confined process can submit
 a transient user unit which receives the user's ordinary device namespace. No
 Nobox or other project code, unit, schema, test, fixture, comment, or prose was

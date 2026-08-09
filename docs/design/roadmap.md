@@ -6,7 +6,7 @@ shipped in product release v0.1.0; S0 is complete on `main` in
 `agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. T5R now has an approved
 experimental pointer-move slice; deployment remains gated. E0 evidence is
 recorded in
-[`e0-verification.md`](e0-verification.md).
+[`e0-verification.md`](../verification/e0-verification.md).
 
 ## T0.5 — volatile provider seat gate
 
@@ -19,7 +19,7 @@ never persisted. Sessions are generation-bound, so disable revokes existing
 sessions and re-enable requires a new handshake. Pointer movement rechecks the
 same generation under its X11 server grab.
 
-This is the launcher-neutral [Tier 0.5 seat-gate contract](tier-0.5-seat-gate.md):
+This is the launcher-neutral [Tier 0.5 seat-gate contract](../tier-0.5-seat-gate.md):
 provider or X11 death denies everything and every new provider begins disabled.
 It is a useful operator consent/kill switch under the confined-companion
 profile, not same-UID isolation and not a solution to the remaining LightDM
@@ -31,7 +31,7 @@ volatile latch or enable automatically. LightDM is the first logout/relogin
 compatibility case, while other launchers remain independent participants in
 the same lifecycle contract.
 
-The [Tier 0.5 verification record](t0.5-verification.md) now contains an
+The [Tier 0.5 verification record](../verification/t0.5-verification.md) now contains an
 installed systemd-service deny/enable/deny round trip, including MCP refusal
 while disabled, a successful fresh session while enabled, generation advance
 on disable, and selection-bound discovery across equivalent `DISPLAY`
@@ -73,25 +73,25 @@ lock-transition ordering gate remain unverified.
 ## R0 — protocol RFC preparation
 
 Status: repository draft in progress, 2026-08-09. The
-[pre-RFC draft](r0-protocol-rfc.md) separates the portable core, backend
+[pre-RFC draft](../protocol/r0-protocol-rfc.md) separates the portable core, backend
 conformance profiles, and non-normative reference mapping. The portable core
-is now factored into a [serialization-neutral information model](information-model.md)
+is now factored into a [serialization-neutral information model](../protocol/information-model.md)
 and the existing concrete local Unix-stream/strict-JSON binding. Existing
 revisions remain the repository's normative wire contract. A hand-reviewed
-[machine-readable registry projection](registry-v1.json) and repository
-[custody policy](registries.md) now record current allocations without making
+[machine-readable registry projection](../protocol/registry-v1.json) and repository
+[custody policy](../protocol/registries.md) now record current allocations without making
 generated data or the projection itself runtime authority. No external
 standards status is currently claimed.
 
 The first complete implementation-independent backend profile is
-[`agent-seat.x11-ewmh-core.v1`](profiles/x11-ewmh-core-v1.md). It defines the
+[`agent-seat.x11-ewmh-core.v1`](../protocol/profiles/x11-ewmh-core-v1.md). It defines the
 supported revision/capability subset, authority inventory, convergent
 observation, management send boundary and outcomes, controlled launch,
 lifecycle and resource behavior, required public fixtures, and prohibited
 claims. It remains experimental pending genuinely independent evidence.
 
 The experimental
-[`agent-seat.conformance-report/1`](conformance-report.md) format now provides
+[`agent-seat.conformance-report/1`](../protocol/conformance-report.md) format now provides
 a closed JSON Schema for portable subject/binding/profile identity, released
 environment, stable fixture results, digested public evidence,
 negative-authority enforcement, limitations, and pass/fail/incomplete
@@ -227,7 +227,7 @@ Each profile keeps a typed unsupported result when its stop condition holds.
 
 Status: complete in v0.1.0, 2026-08-08. The exact matrix, forced
 revision-2 boundary probes, source gate, archive contract, and release evidence
-are recorded in [`c0-verification.md`](c0-verification.md). The annotated
+are recorded in [`c0-verification.md`](../verification/c0-verification.md). The annotated
 `v0.1.0` tag drives its verified ZaguanLabs GitHub source release.
 
 Test released companions and providers through public boundaries, publish the
@@ -248,7 +248,7 @@ saved/draft/active state rail described in
 [settings-design.md](settings-design.md); its display-independent commands
 retain validation and recovery when no graphical session is available. The
 source desktop entry and complete user workflow are documented in
-[settings.md](settings.md).
+[settings.md](../settings.md).
 
 Add a standalone `agent-seat-settings` application that makes the strict
 provider policy approachable without weakening it. The application should
@@ -351,7 +351,7 @@ open.
 
 Re-evaluate T5 using a separately trusted Linux input source rather than
 weakening the ordinary-X11 stop decision. The review in
-[`t5-input-reconsideration.md`](t5-input-reconsideration.md) rejects XTEST-only
+[`t5-input-reconsideration.md`](../security/t5-input-reconsideration.md) rejects XTEST-only
 activity inference, broad provider access to evdev, forced logind controller
 takeover, and unnecessary uinput injection. It records one candidate: a
 separately installed system broker that reduces raw physical-seat input to a
@@ -374,7 +374,7 @@ cleanup, and one-action race contracts. An untestable race stops T5 instead of
 weakening its tests or public promise.
 
 The candidate broker deployment contract in
-[`t5-broker-deployment.md`](t5-broker-deployment.md) now specifies explicit
+[`t5-broker-deployment.md`](../security/t5-broker-deployment.md) now specifies explicit
 administrator enrollment, exact service-manager-passed read-only evdev
 descriptors, an unprivileged confined broker, fail-closed lifecycle, minimal
 IPC, and upgrade/removal behavior. Its overall gate remains failed: generic
@@ -383,7 +383,7 @@ desktop-provided lock hint is insufficient. The approved experimental source
 work does not authorize installation or a supported deployment.
 
 The lock follow-up in
-[`t5-lock-state-study.md`](t5-lock-state-study.md) rejects in-session lock
+[`t5-lock-state-study.md`](../security/t5-lock-state-study.md) rejects in-session lock
 hints, saver state, windows, and same-user services. It records one candidate
 for isolated full-system testing: a supported display manager must move the
 seat to a distinct greeter or lock-screen session and make the enrolled user

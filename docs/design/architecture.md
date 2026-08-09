@@ -97,14 +97,14 @@ crate depends on Nobox.
 ## Standards direction
 
 The wire model is intended to remain implementation-independent. The initial
-[R0 pre-RFC draft](r0-protocol-rfc.md) separates its normative identities,
+[R0 pre-RFC draft](../protocol/r0-protocol-rfc.md) separates its normative identities,
 grants, scope, freshness, outcomes, interruption, and assurance vocabulary from
 backend conformance profiles and non-normative reference deployments.
 
 The portable contract is factored further: the
-[serialization-neutral information model](information-model.md) defines
+[serialization-neutral information model](../protocol/information-model.md) defines
 session, authority, identity, freshness, operation, and outcome semantics,
-while [`specification.md`](specification.md) remains the concrete local
+while [`specification.md`](../protocol/specification.md) remains the concrete local
 Unix-stream/strict-JSON revision-4 binding.
 
 An integrated window manager or compositor can satisfy a conformance profile
