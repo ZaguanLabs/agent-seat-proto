@@ -70,6 +70,12 @@ All notable changes to this project are documented here.
   socket. The test exposed and fixed a startup failure caused by `TasksMax=1`:
   the bounded value is now 2 so systemd can construct the namespace before the
   one-task process begins.
+- Added an explicit production-identity variant of the hostile confinement
+  gate. It uses only transient collected system-manager units, exercises the
+  real dynamic broker and locked static guard identities, preserves their exact
+  inherited channels, and denies X11, input-node, home, process, host-socket,
+  network-socket, and direct-execution authority. Ordinary tests ignore it and
+  its explicit run requires passwordless sudo.
 - Added an explicit live rootless guard gate. Under the hardened transient
   profile it consumes a freshly rendered complete input-class manifest through
   fd 3, opens the real kernel uevent subscription, reaches the single
@@ -135,7 +141,7 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- Patch-bumped `agent-seat-activity-broker` to 0.1.14 for exact bundle
+- Patch-bumped `agent-seat-activity-broker` to 0.1.15 for exact bundle
   verification, the documented unprivileged pre-installation workflow,
   fail-closed runtime input-device lifecycle monitoring, and initial input
   class-set reconciliation. Manifest ownership is bound to the already
@@ -153,7 +159,8 @@ All notable changes to this project are documented here.
   against real logind, sysfs, and kernel lifecycle evidence. Version 0.1.14
   reaches `Ready` under the installed production identities and confines both
   processes with zero capabilities, no supplementary groups, seccomp, and
-  private device views.
+  private device views. Version 0.1.15 adds the explicit system-manager hostile
+  test under the production identity models.
 - Rewired the broker's inherited sockets without raw-descriptor conversion:
   PID 1 connects eligibility to standard input, places the socket-activated
   provider listener on standard output, passes the exact enrolled-device record

@@ -23,7 +23,7 @@ unsafe_code = "forbid"
 all = "deny"
 
 [workspace.dependencies]
-agent-seat-activity-broker = { path = "crates/agent-seat-activity-broker", version = "0.1.14", default-features = false }
+agent-seat-activity-broker = { path = "crates/agent-seat-activity-broker", version = "0.1.15", default-features = false }
 dbus = "0.9.10"
 evdev = "0.13.2"
 rustix = { version = "1", features = ["fs", "net", "process"] }

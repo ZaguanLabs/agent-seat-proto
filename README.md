@@ -25,8 +25,9 @@ separate optional profiles and are not core-release promises.
 
 Revision 4 contains one experimental `pointer.move` operation. It remains
 unavailable without an explicitly configured broker, exact inherited devices,
-and a separately trusted session/lock eligibility source. The repository does
-not yet ship enrollment or claim a supported generic-Openbox deployment.
+and a separately trusted session/lock eligibility source. The repository ships
+an explicit review, install, arm, stop, and purge workflow, but does not claim a
+supported generic-Openbox deployment.
 
 Administrators can review the current `seat0` device candidate without reading
 input events or changing the system:
@@ -114,8 +115,12 @@ fixture tests, and both service profiles pass an explicit rootless hostile
 sandbox probe on systemd 258. The hardened guard profile also passes a live handshake
 with the current complete sysfs manifest, kernel uevent subscription, and real
 logind session. Root-owned installed startup now reaches broker `Ready` with
-the intended identities and bounds. Complete production confinement, actual
-hotplug, and trusted lock-transition behavior remain open approval gates.
+the intended identities and bounds. A same-host inspection confirms the
+production identities, zero capabilities, no supplementary groups,
+`NoNewPrivileges`, seccomp, and private device views. A repeatable hostile test
+also passes under the system manager with the production identity models. An
+exact installed-unit fixture, actual hotplug, and trusted lock-transition
+behavior remain open approval gates.
 
 The private identity record binds each relevant event device to its canonical
 sysfs path, udev physical path, classes, selected hardware IDs, complete kernel

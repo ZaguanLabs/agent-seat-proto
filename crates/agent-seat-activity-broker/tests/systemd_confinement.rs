@@ -14,9 +14,9 @@ struct Fixture(PathBuf);
 struct FileFixture(PathBuf);
 
 impl Fixture {
-    fn new() -> Self {
+    fn new(label: &str) -> Self {
         let path = PathBuf::from(format!(
-            "/run/user/{}/agent-seat-confinement-{}",
+            "/run/user/{}/agent-seat-confinement-{}-{label}",
             geteuid().as_raw(),
             std::process::id()
         ));
@@ -44,11 +44,31 @@ impl Drop for FileFixture {
 #[test]
 #[ignore = "requires an active systemd user manager; run explicitly for the deployment gate"]
 fn runtime_profiles_deny_unowned_authority_but_preserve_exact_inherited_access() {
-    let fixture = Fixture::new();
+    run_confinement_probe(Manager::User);
+}
+
+#[test]
+#[ignore = "requires explicit passwordless sudo and systemd; runs transient units only"]
+fn production_identities_deny_unowned_authority_under_the_system_manager() {
+    run_confinement_probe(Manager::System);
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Manager {
+    User,
+    System,
+}
+
+fn run_confinement_probe(manager: Manager) {
+    let label = match manager {
+        Manager::User => "user",
+        Manager::System => "system",
+    };
+    let fixture = Fixture::new(label);
     let probe_source = fixture.0.join("probe");
     let probe = PathBuf::from(format!(
-        "/tmp/agent-seat-confinement-probe-{}",
-        std::process::id()
+        "/tmp/agent-seat-confinement-probe-{}-{label}",
+        std::process::id(),
     ));
     let probe_cleanup = FileFixture(probe.clone());
     let inherited = fixture.0.join("inherited");
@@ -61,7 +81,7 @@ fn runtime_profiles_deny_unowned_authority_but_preserve_exact_inherited_access()
         .expect("crate is in the workspace crates directory");
     let home_secret = workspace
         .join("target")
-        .join(format!("confinement-secret-{}", std::process::id()));
+        .join(format!("confinement-secret-{}-{label}", std::process::id()));
     let home_secret_cleanup = FileFixture(home_secret.clone());
 
     fs::write(&inherited, "inherited-evidence\n").expect("write inherited fixture");
@@ -82,11 +102,45 @@ fn runtime_profiles_deny_unowned_authority_but_preserve_exact_inherited_access()
         String::from_utf8_lossy(&compile.stderr)
     );
     fs::copy(&probe_source, &probe).expect("stage probe at its executable path");
-    fs::set_permissions(&probe, fs::Permissions::from_mode(0o700)).expect("make probe executable");
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o755)).expect("make probe executable");
 
+    // The transient D-Bus property uses an empty family list for the unit-file
+    // spelling `none`.
     for (profile, families) in [("broker", ""), ("guard", "AF_UNIX AF_NETLINK")] {
-        let mut command = Command::new("systemd-run");
-        command.args(["--user", "--wait", "--collect", "--pipe"]);
+        let mut command = match manager {
+            Manager::User => Command::new("systemd-run"),
+            Manager::System => {
+                let mut command = Command::new("/usr/bin/sudo");
+                command.args(["-n", "/usr/bin/systemd-run"]);
+                command
+            }
+        };
+        if manager == Manager::User {
+            command.arg("--user");
+        }
+        command.args(["--wait", "--collect", "--pipe"]);
+        if manager == Manager::System {
+            command.arg("--property=DevicePolicy=strict");
+            command.arg(if profile == "broker" {
+                "--property=DynamicUser=yes"
+            } else {
+                "--property=User=agent-seat-guard"
+            });
+            for property in [
+                "RemoveIPC=yes",
+                "PrivateTmp=yes",
+                "ProtectClock=yes",
+                "ProtectControlGroups=yes",
+                "ProtectHostname=yes",
+                "ProtectKernelLogs=yes",
+                "ProtectKernelModules=yes",
+                "ProtectKernelTunables=yes",
+                "MemoryMax=32M",
+                "CPUQuota=10%",
+            ] {
+                command.arg("--property").arg(property);
+            }
+        }
         for property in [
             "PrivateDevices=yes".to_owned(),
             "PrivateNetwork=yes".to_owned(),
@@ -120,7 +174,10 @@ fn runtime_profiles_deny_unowned_authority_but_preserve_exact_inherited_access()
             format!("OpenFile={}:evidence:read-only", path(&inherited)),
             "UnsetEnvironment=DISPLAY XAUTHORITY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS SSH_AUTH_SOCK".to_owned(),
             "TasksMax=2".to_owned(),
-            "LimitNOFILE=64".to_owned(),
+            format!(
+                "LimitNOFILE={}",
+                if profile == "broker" { 64 } else { 32 }
+            ),
             "LimitCORE=0".to_owned(),
         ] {
             command.arg("--property").arg(property);
@@ -149,7 +206,7 @@ fn runtime_profiles_deny_unowned_authority_but_preserve_exact_inherited_access()
             .arg(&probe)
             .arg(profile)
             .output()
-            .expect("systemd-run is required for the explicit confinement gate");
+            .expect("systemd-run and, for the system-manager gate, sudo are required");
         assert!(
             output.status.success(),
             "{profile} confinement probe failed with {}: stdout={} stderr={}",

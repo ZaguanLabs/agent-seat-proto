@@ -119,7 +119,9 @@ not enable startup. `stop` names only those four UID-bound units. `purge
 --confirm-purge` stops them, refuses unexpected enrollment content, removes
 only the seven exact root-owned files and now-empty UID directory, then reloads
 the manager. These transactions have passed isolated filesystem fault and
-rollback tests; they have not yet been exercised against an installed host.
+rollback tests. The new-only install and freshly verified arm paths have also
+run against the current systemd-258 host and reached broker `Ready`; that host
+was not purged merely to turn a destructive cleanup path into test evidence.
 
 ## Permission model
 
@@ -345,8 +347,13 @@ is an evdev device with exactly the recorded capability and property bitmaps,
 checks initial key/button state, drains its initial queue, and enters a bounded
 quiet interval. The guard separately validates the complete current input-class
 mapping. Descriptor identity and placement now pass under the real manager.
-Complete installed confinement-negative tests and hostile device lifecycle
-tests remain. Until they pass, the service source is not a supported deployment.
+A same-host production-process inspection confirms the intended identities,
+one task each, zero capabilities, no supplementary groups,
+`NoNewPrivileges`, seccomp, private device views, and the exact inherited
+descriptors. A repeatable hostile test also passes under the real system manager
+with the production dynamic broker and static guard identity models. An exact
+installed-unit hostile fixture and hostile device lifecycle tests remain.
+Until they pass, the service source is not a supported deployment.
 The broker has `DevicePolicy=strict` with one read-only allow entry per enrolled
 node so systemd can prepare the corresponding `OpenFile=` descriptor. The
 dynamic UID has no matching DAC permission and its private `/dev` contains no
@@ -528,7 +535,27 @@ new network-socket, desktop-environment, and direct-exec attempts fail. For the
 guard it additionally proves that only the explicitly re-exposed system-bus
 socket remains reachable. This is useful evidence for the directives and found
 a real `TasksMax=1` startup defect, but it does not exercise the production
-identities or system manager. The installed negative test remains open.
+identities or system manager. A second explicitly privileged variant now runs
+the same hostile executable as transient system units with the production
+dynamic broker and static guard identities. It preserves only the exact
+inherited read-only descriptor and guard system-bus channel while denying the
+same unowned authority. It changes no persistent unit, enrollment, or running
+provider. The exact installed-unit hostile fixture remains open.
+
+Run the two probes explicitly; ordinary workspace tests ignore both:
+
+```sh
+cargo test -p agent-seat-activity-broker --test systemd_confinement \
+  runtime_profiles_deny_unowned_authority_but_preserve_exact_inherited_access \
+  -- --ignored
+cargo test -p agent-seat-activity-broker --test systemd_confinement \
+  production_identities_deny_unowned_authority_under_the_system_manager \
+  -- --ignored
+```
+
+The second command invokes fixed `/usr/bin/sudo -n /usr/bin/systemd-run`
+internally and therefore requires an explicit passwordless administrator
+authorization. It creates only bounded transient collected units.
 An additional explicit live guard probe passes under the same hardened
 rootless profile against the current sysfs mapping, kernel uevent group, and
 logind session. Every individual owner, seat, foreground, active, local, type,
@@ -568,8 +595,9 @@ package's udev rules and never leaves group membership or device ACLs.
   tests remain.
 - **Retained privilege and confinement:** candidate. Rootless hostile probes
   pass both profiles and preserve only their intended inherited/system-bus
-  channels. Installed production-identity negative tests on the compatibility
-  matrix remain.
+  channels. The production authority inventory and production-identity
+  system-manager hostile probes pass. An exact installed-unit hostile fixture
+  on the compatibility matrix remains.
 - **IPC minimization:** experimental implementation pass. Fixed status and
   eligibility frames expose no event, device, coordinate, or timestamp data.
 - **Session activity and VT lifecycle:** candidate, needs deterministic logind

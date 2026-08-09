@@ -201,6 +201,13 @@ filesystem, process, socket, environment, inherited-descriptor, and transient
 user-manager behavior. It adds no product dependency and does not use another
 project's fixture, service, test language, or implementation.
 
+The production-identity confinement variant is original work reusing that
+repository-owned hostile executable under transient collected system-manager
+units. It exercises the public systemd execution, dynamic-user, static-user,
+descriptor-passing, namespace, device, syscall, and resource-control behavior
+already recorded for the deployment contract. It adds no dependency,
+persistent unit, enrollment format, runtime authority, or third-party fixture.
+
 The live rootless guard gate is original integration work over the repository's
 own renderer, guard, unit contract, and fixed wire frame. It observes only the
 current public sysfs, kernel uevent, systemd user-manager, Unix peer-credential,
