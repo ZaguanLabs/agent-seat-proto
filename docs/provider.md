@@ -392,6 +392,14 @@ true, the provider independently checks that both `/dev/input` and
 `/dev/uinput` are absent before connecting to X11. Missing isolation is a
 startup error; there is no warning-only fallback.
 
+This unit binds the provider at the fixed private pathname
+`$XDG_RUNTIME_DIR/agent-seat/x11-input.sock`. That makes the separately
+confined companion registration deterministic without giving the companion
+X11 discovery. After the provider is active, run
+`agent-seat-mcp --print-private-mcp-config` and register the emitted JSON with
+the MCP host; see the
+[private companion profile](mcp.md#private-companion-profile-for-optional-input).
+
 Admitted applications do not inherit this namespace. The provider delegates
 their already parsed absolute executable and bounded arguments directly to a
 uniquely named transient user service, with no shell. A live hostile gate

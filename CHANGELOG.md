@@ -6,6 +6,18 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added `agent-seat-mcp` 0.1.3 and `agent-seat-x11` 0.1.16 private companion
+  deployment. The provider user unit uses one fixed mode-0600 socket. The
+  emitted MCP registration has systemd preconnect only that socket with
+  `OpenFile=`, pass one strictly validated named descriptor, and start the
+  translator with private network, device, runtime, temporary, home, process,
+  environment, execution, syscall, and resource boundaries. An emitted-profile
+  hostile test and a delayed live installed `seat_status` call pass. The input
+  profile gives one authenticated and granted session an interruptible idle
+  slot while keeping initial handshakes, partial frames, and other sessions
+  deadline-bound. Live deployment also replaced the broker-style permanent
+  one-attempt provider start limit with a bounded three-attempt/30-second limit
+  so a later explicit restart does not require clearing historical failures.
 - Added `agent-seat-x11` 0.1.15 provider-side input confinement. An explicit
   `input.provider_private_devices` switch fails startup unless `/dev/input` and
   `/dev/uinput` are absent under the new non-enableable systemd user unit.

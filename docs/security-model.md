@@ -51,6 +51,25 @@ user services so their ordinary device permissions do not require widening the
 provider's authority. Failure to create either boundary is input-unavailable,
 not a degraded mode.
 
+The matching companion profile does not enter that provider's X11 namespace.
+The user manager connects the fixed private provider socket first, passes the
+one connected descriptor by an exact name, and then starts the companion with
+private network and device namespaces plus an empty `/run`, private `/tmp`,
+hidden home/process data, cleared desktop environment, no capabilities, no
+arbitrary executable, and fixed resource bounds. This removes both filesystem
+and abstract X11 sockets while preserving only Agent Seat provider IPC. The
+external harness receives MCP stdio, never the inherited provider descriptor
+or broker channel.
+
+The connected descriptor carries normal Unix peer credentials, not proof of
+which systemd properties surrounded the process after the connection was
+opened. The provider therefore makes no such claim. It applies its configured
+UID grant and, only in the private-device input profile, lets one authenticated
+and granted session wait idle between complete frames. All initial handshakes,
+partial frames, and additional sessions remain deadline-bound; shutdown
+interrupts the idle wait. The emitted unit and hostile test, rather than peer
+PID inference, establish companion confinement.
+
 ## Trusted
 
 - the session owner who controls provider configuration and grants;
@@ -93,6 +112,9 @@ not a degraded mode.
 - An input-profile provider must not see evdev or uinput paths even when its
   login UID normally can; an admitted application must not inherit the
   provider's private device namespace.
+- An input-profile companion must receive exactly one already-connected,
+  named provider descriptor; it must not retain X11 discovery, broker, raw
+  input, network, home, or arbitrary execution authority.
 
 Same-user X11 clients may inspect or spoof desktop state and bypass the
 provider entirely. Stronger isolation requires a different OS user/session or

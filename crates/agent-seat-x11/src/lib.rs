@@ -133,6 +133,7 @@ fn serve(
     let launcher = Arc::new(launch::LaunchSupervisor::new(
         config.provider_private_devices(),
     )?);
+    let persistent_session = Arc::new(AtomicBool::new(false));
     let mut next_session = 1_u64;
     let mut ownership_lost = false;
 
@@ -155,10 +156,19 @@ fn serve(
                     .ok_or_else(|| "session identity space is exhausted".to_owned())?;
                 let session_config = Arc::clone(&config);
                 let session_launcher = Arc::clone(&launcher);
+                let session_persistent = Arc::clone(&persistent_session);
+                let session_stopping = Arc::clone(&stopping);
                 let handle = thread::Builder::new()
                     .name(format!("agent-seat-{session_number}"))
                     .spawn(move || {
-                        session::run(stream, session_config, session_launcher, session_number)
+                        session::run(
+                            stream,
+                            session_config,
+                            session_launcher,
+                            session_persistent,
+                            session_stopping,
+                            session_number,
+                        )
                     })
                     .map_err(|error| format!("cannot start bounded session worker: {error}"))?;
                 sessions.push(handle);

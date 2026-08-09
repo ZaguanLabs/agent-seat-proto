@@ -12,7 +12,9 @@ fn input_unit_is_explicit_bounded_and_accepted_by_systemd() {
     assert!(!has_line(UNIT_SOURCE, "PrivateNetwork=yes"));
     for required in [
         "Type=exec",
-        "ExecStart=/usr/bin/agent-seat-x11",
+        "ExecStart=/usr/bin/agent-seat-x11 --socket %t/agent-seat/x11-input.sock",
+        "StartLimitIntervalSec=30s",
+        "StartLimitBurst=3",
         "PrivateDevices=yes",
         "DevicePolicy=strict",
         "RestrictAddressFamilies=AF_UNIX",

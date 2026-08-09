@@ -3,6 +3,7 @@
 use std::num::NonZeroU64;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use agent_seat_proto::{
@@ -12,6 +13,7 @@ use agent_seat_proto::{
     ProviderInfo, ReadFrame, Reply, Request, Response, Retry, Sequence, ServerMessage, SessionId,
     Welcome, read_frame, write_frame,
 };
+use rustix::event::{PollFd, PollFlags, Timespec, poll};
 use rustix::net::sockopt::socket_peercred;
 
 use crate::config::{ClientScope, Config};
@@ -22,6 +24,8 @@ pub(crate) fn run(
     mut stream: UnixStream,
     config: Arc<Config>,
     launcher: Arc<LaunchSupervisor>,
+    persistent_session: Arc<AtomicBool>,
+    stopping: Arc<AtomicBool>,
     session_number: NonZeroU64,
 ) -> Result<(), String> {
     stream
@@ -31,7 +35,6 @@ pub(crate) fn run(
     let credentials = socket_peercred(&stream)
         .map_err(|error| format!("cannot authenticate local peer credentials: {error}"))?;
     let uid = credentials.uid.as_raw();
-
     let hello = match read_frame(&mut stream, MAX_REQUEST_FRAME_BYTES)
         .map_err(|error| format!("cannot read session hello: {error}"))?
     {
@@ -55,6 +58,8 @@ pub(crate) fn run(
             "verified peer UID has no configured grant",
         );
     };
+    let persistent_session =
+        PersistentSessionGuard::claim(config.provider_private_devices(), persistent_session);
     let granted = BoundedList::new(granted)
         .map_err(|error| format!("configured grant exceeded wire bounds: {error}"))?;
     let session = SessionId::new(session_number);
@@ -96,6 +101,24 @@ pub(crate) fn run(
     let mut observer = None;
     let mut catalog = SessionCatalog::new();
     for _ in 0..config.max_requests() {
+        if persistent_session.is_active() {
+            let wait = Timespec {
+                tv_sec: 0,
+                tv_nsec: 100_000_000,
+            };
+            while !stopping.load(Ordering::Relaxed) {
+                let mut polls = [PollFd::new(&stream, PollFlags::IN)];
+                let count = poll(&mut polls, Some(&wait)).map_err(|error| {
+                    format!("cannot wait for private companion request: {error}")
+                })?;
+                if count != 0 {
+                    break;
+                }
+            }
+            if stopping.load(Ordering::Relaxed) {
+                return Ok(());
+            }
+        }
         let message = match read_frame(&mut stream, MAX_REQUEST_FRAME_BYTES)
             .map_err(|error| format!("cannot read session request: {error}"))?
         {
@@ -135,6 +158,34 @@ pub(crate) fn run(
         ErrorCode::SessionClosed,
         "session request bound reached",
     )
+}
+
+struct PersistentSessionGuard(Option<Arc<AtomicBool>>);
+
+impl PersistentSessionGuard {
+    fn claim(enabled: bool, slot: Arc<AtomicBool>) -> Self {
+        if enabled
+            && slot
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        {
+            Self(Some(slot))
+        } else {
+            Self(None)
+        }
+    }
+
+    const fn is_active(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
+impl Drop for PersistentSessionGuard {
+    fn drop(&mut self) {
+        if let Some(slot) = &self.0 {
+            slot.store(false, Ordering::Release);
+        }
+    }
 }
 
 pub(crate) fn reject_capacity(mut stream: UnixStream) {
@@ -404,6 +455,21 @@ mod tests {
     use agent_seat_proto::{Empty, RequestId};
 
     use super::*;
+
+    #[test]
+    fn only_one_authenticated_session_may_wait_idle() {
+        let slot = Arc::new(AtomicBool::new(false));
+        let first = PersistentSessionGuard::claim(true, Arc::clone(&slot));
+        assert!(first.is_active());
+        let second = PersistentSessionGuard::claim(true, Arc::clone(&slot));
+        assert!(!second.is_active());
+        let ordinary = PersistentSessionGuard::claim(false, Arc::clone(&slot));
+        assert!(!ordinary.is_active());
+
+        drop(first);
+        let replacement = PersistentSessionGuard::claim(true, slot);
+        assert!(replacement.is_active());
+    }
 
     #[test]
     fn calls_are_rechecked_against_the_grant() {

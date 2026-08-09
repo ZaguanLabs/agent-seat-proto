@@ -332,6 +332,17 @@ consulted, copied, translated, or adapted. The change adds no dependency,
 evdev descriptor, raw activity field, input operation, root requirement, or
 external protocol claim.
 
+The private companion registration and hostile fixture are original work over
+the same public systemd contracts. systemd's documented `OpenFile=` behavior
+connects a filesystem `AF_UNIX` socket in the service manager and passes the
+owned descriptor using the `sd_listen_fds(3)` activation environment. The
+companion adopts it through the already locked `sd-listen-fds` 0.2.0 safe API,
+which is now a direct dependency of `agent-seat-mcp`; no new package was added
+to `Cargo.lock`. Local systemd-258 tests used only transient collected user
+units, dummy private sockets, public process/filesystem evidence, and the live
+Agent Seat protocol. No Nobox or other product implementation, launcher, unit,
+schema, test, fixture, comment, or prose was consulted or adapted.
+
 ## First-run configuration workflow
 
 The generated configuration template, creation behavior, CLI guidance,

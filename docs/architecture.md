@@ -16,6 +16,14 @@ may discover and connect to a provider lazily, but it owns no grant, consent,
 scope, or desktop policy. Initialization and tool listing do not require a
 desktop connection. The provider distrusts and revalidates every call.
 
+For the optional input reference deployment, a generated systemd command has
+the user manager preconnect one exact provider socket and pass it by name to a
+transient companion worker. Private network, device, temporary, runtime, home,
+process, execution, and resource controls then remove ambient desktop and
+broker authority without changing the MCP or Agent Seat protocols. The
+ordinary cross-platform companion remains the default; this Linux/systemd
+launcher profile is non-normative deployment plumbing.
+
 ## `agent-seat-x11`
 
 This executable is a standalone Tier 0 provider beside an unmodified EWMH

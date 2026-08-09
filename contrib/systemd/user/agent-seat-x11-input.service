@@ -4,12 +4,12 @@
 Description=Agent Seat X11 provider with private input devices
 Documentation=https://github.com/ZaguanLabs/agent-seat-proto
 ConditionFileIsExecutable=/usr/bin/agent-seat-x11
-StartLimitIntervalSec=infinity
-StartLimitBurst=1
+StartLimitIntervalSec=30s
+StartLimitBurst=3
 
 [Service]
 Type=exec
-ExecStart=/usr/bin/agent-seat-x11
+ExecStart=/usr/bin/agent-seat-x11 --socket %t/agent-seat/x11-input.sock
 
 # The provider gets X11 and user-manager IPC, but no host input devices.
 # Admitted applications are launched as separate transient user units and do

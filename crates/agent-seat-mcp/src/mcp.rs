@@ -18,12 +18,12 @@ use crate::seat::Seat;
 const MCP_VERSION: &str = "2025-11-25";
 const MAX_MCP_LINE_BYTES: usize = 1024 * 1024;
 
-pub(crate) fn serve(socket: Option<PathBuf>) -> Result<(), String> {
+pub(crate) fn serve(socket: Option<PathBuf>, seat: Option<Seat>) -> Result<(), String> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut input = BufReader::new(stdin.lock());
     let mut output = BufWriter::new(stdout.lock());
-    let mut server = Server::new(socket);
+    let mut server = Server::new(socket, seat);
     let mut line = String::new();
 
     loop {
@@ -75,10 +75,10 @@ struct Server {
 }
 
 impl Server {
-    fn new(socket: Option<PathBuf>) -> Self {
+    fn new(socket: Option<PathBuf>, seat: Option<Seat>) -> Self {
         Self {
             socket,
-            seat: None,
+            seat,
             negotiated: false,
             initialized: false,
         }

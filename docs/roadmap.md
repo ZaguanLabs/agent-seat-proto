@@ -281,8 +281,12 @@ provider now also has a non-enableable private-device user unit and an enforced
 configuration switch. A live rootless hostile gate proves that the provider
 loses `/dev/input` and `/dev/uinput` even when its UID can open uinput, while a
 controlled launch delegated by that confined provider retains the UID's normal
-device namespace. The physical replacement matrix and LightDM lock-transition
-contract are not yet proven. Companion/harness confinement, click, and keyboard
+device namespace. The emitted companion profile now also uses a single
+service-manager-connected provider descriptor inside private network, device,
+filesystem, process, and execution boundaries. Its hostile test passes for a
+UID that can otherwise open uinput, and an installed worker reached live
+`seat_status`. The physical replacement matrix and LightDM lock-transition
+contract are not yet proven. The external harness boundary, click, and keyboard
 input remain gated and unsupported.
 
 Re-evaluate T5 using a separately trusted Linux input source rather than

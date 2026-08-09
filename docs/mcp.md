@@ -8,7 +8,8 @@ contracts.
 
 ## Static lifecycle
 
-`initialize`, `notifications/initialized`, `ping`, and `tools/list` do not
+In the ordinary lazy-discovery mode, `initialize`, `notifications/initialized`,
+`ping`, and `tools/list` do not
 inspect `DISPLAY`, resolve a socket, or connect to a provider. The server
 advertises only the static tools capability and returns the requested protocol
 version when it is `2025-11-25`; otherwise it returns the one revision it
@@ -69,3 +70,61 @@ Register it with an MCP host using the equivalent of:
 
 Pass `DISPLAY` when the host sanitizes its environment, or provide `--socket`
 or `AGENT_SEAT_SOCKET`. `--print-mcp-config` prints the minimal registration.
+
+## Private companion profile for optional input
+
+The optional input deployment uses a stronger registration instead of giving
+the ordinary companion the desktop user's ambient device and X11 access. With
+the private-device provider user service running, print the exact registration:
+
+```sh
+agent-seat-mcp --print-private-mcp-config
+```
+
+The command emits JSON ready for the MCP host. By default it names the fixed
+`$XDG_RUNTIME_DIR/agent-seat/x11-input.sock` created by
+`agent-seat-x11-input.service`; `--socket ABSOLUTE_PATH` can select a deliberate
+custom deployment. The emitted command uses installed `/usr/bin` paths and
+requires a systemd user manager with `OpenFile=` support (systemd 253 or newer).
+
+The user manager connects that one pathname before service isolation and gives
+the worker exactly one descriptor named `agent-seat-provider`. The worker
+strictly verifies `LISTEN_PID`, `LISTEN_FDS`, `LISTEN_FDNAMES`, descriptor count,
+and name before opening the Agent Seat session. It never discovers X11 or
+opens another Unix socket. Because the descriptor is already connected,
+`PrivateNetwork=yes` can isolate filesystem and abstract X11 sockets without
+breaking provider IPC.
+
+The transient worker also has a private device view, no IP families, an empty
+read-only `/run`, a private `/tmp`, inaccessible home and other-process views,
+no capabilities, `NoNewPrivileges=yes`, a system-call filter, no arbitrary
+executable path, cleared desktop/socket/path environment variables, and fixed
+task, descriptor, memory, CPU, and core-dump bounds. The MCP host retains only
+the stdio side of `systemd-run --pipe`; neither the provider descriptor nor
+broker IPC crosses the MCP boundary.
+
+This mode connects and completes the Agent Seat opening handshake while the
+worker starts, before MCP initialization, so a missing provider fails the MCP
+process immediately. In the input profile, the provider permits exactly one
+successfully authenticated and granted session to wait idle between complete
+frames. Initial `Hello` and partial-frame reads retain the configured I/O
+deadline, additional sessions retain the ordinary deadline, and provider
+shutdown interrupts the idle wait. This is an availability rule based on the
+provider's existing UID grant; it is not evidence that systemd confined the
+peer. The emitted unit and hostile gate establish that separate client-side
+boundary. The ordinary mode remains lazy and desktop-free through
+initialization and tool listing.
+
+Run the emitted-profile hostile gate explicitly:
+
+```sh
+cargo test -p agent-seat-mcp --test systemd_private_companion \
+  emitted_private_profile_exposes_only_the_provider_channel \
+  -- --ignored
+```
+
+The gate begins with a UID that can open host uinput, then proves the worker
+cannot see input nodes, X11, IP networking, a broker-like socket, home or parent
+process data, sensitive environment, or an unapproved executable. It also
+proves systemd connected only the named provider fixture. All units are
+transient and collected; no desktop or policy is changed.

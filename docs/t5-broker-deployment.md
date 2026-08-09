@@ -69,6 +69,34 @@ user action. It requires neither root nor membership in the group owning event
 nodes. Root remains confined to the separately reviewed broker enrollment and
 lifecycle transactions.
 
+### MCP companion private profile
+
+The optional reference deployment does not run the translator with the
+desktop user's ambient X11 and device view. `agent-seat-mcp
+--print-private-mcp-config` emits a copyable MCP registration whose command is
+fixed `/usr/bin/systemd-run`. The user manager uses `OpenFile=` to connect the
+provider's fixed mode-0600 socket before namespace construction and passes that
+connection as exactly one descriptor named `agent-seat-provider`.
+
+The worker validates the activation PID, descriptor count, complete name, and
+owned descriptor set before completing the Agent Seat handshake. It runs with
+private network/device/tmp views, an empty read-only `/run`, hidden home and
+other-process data, no desktop or socket-discovery environment, no capabilities
+or arbitrary executable, seccomp, and fixed task, descriptor, memory, CPU, and
+core-dump bounds. The already-connected descriptor remains usable after
+`PrivateNetwork=yes`; X11 filesystem and abstract sockets and every other host
+Unix socket do not. The harness owns only the MCP stdio pipes created by
+`systemd-run --pipe`.
+
+An inherited connected socket does not convey the transient unit's confinement
+properties in its peer credentials. The provider does not infer them. After a
+valid `Hello` and UID grant, the input profile assigns one session an idle slot
+so MCP hosts may pause between calls without consuming the ordinary frame I/O
+deadline. Initial handshakes and partial frames are still deadline-bound,
+additional sessions receive no idle exception, and the provider checks its
+shutdown flag at 100-millisecond intervals while waiting. Unit inspection and
+the hostile gate below provide the negative-authority evidence.
+
 ### Administrator enrollment tool
 
 A separately packaged, short-lived tool exposes read-only inspection and inert
@@ -636,6 +664,21 @@ proves that process sees the ordinary host paths and the same baseline access.
 Both services are transient and collected; no policy, installed unit, desktop,
 or input event is changed.
 
+The emitted companion profile also has a rootless hostile gate:
+
+```sh
+cargo test -p agent-seat-mcp --test systemd_private_companion \
+  emitted_private_profile_exposes_only_the_provider_channel \
+  -- --ignored
+```
+
+It requires a test UID that can open host uinput so device denial is meaningful.
+Starting from the exact emitted arguments, it substitutes only a bound hostile
+executable, proves the one named provider socket was connected, and denies
+uinput/evdev visibility, a broker-like socket, X11, IP networking, home and
+parent-process data, sensitive environment, and unapproved execution. The
+transient unit is collected and the host sockets and filesystem are unchanged.
+
 An additional explicit live guard probe passes under the same hardened
 rootless profile against the current sysfs mapping, kernel uevent group, and
 logind session. Every individual owner, seat, foreground, active, local, type,
@@ -680,8 +723,10 @@ package's udev rules and never leaves group membership or device ACLs.
   installed broker and guard service bytes also pass without touching the live
   services. The provider-private-device hostile gate also passes while
   preserving ordinary application device access through bounded launch
-  delegation. Companion and harness negative-authority evidence remains part
-  of the complete compatibility matrix.
+  delegation. The emitted companion-profile gate passes with only its named
+  provider descriptor; a live installed worker reached `seat_status` through
+  that descriptor under the same confinement. Harness/product boundary
+  evidence remains part of the complete compatibility matrix.
 - **IPC minimization:** experimental implementation pass. Fixed status and
   eligibility frames expose no event, device, coordinate, or timestamp data.
 - **Session activity and VT lifecycle:** candidate, needs deterministic logind

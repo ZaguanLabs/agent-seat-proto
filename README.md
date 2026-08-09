@@ -136,6 +136,10 @@ to separate transient user services so they retain the ordinary desktop-user
 device namespace instead of inheriting the provider sandbox. This needs no
 root or `input`-group membership for the provider; see the
 [private-device provider workflow](docs/provider.md#optional-private-device-input-service).
+`agent-seat-mcp --print-private-mcp-config` emits the matching MCP registration.
+It has systemd connect only that fixed provider socket before placing the
+companion worker in private network, device, and filesystem namespaces; the
+worker therefore retains provider IPC but cannot reach X11 or the broker.
 
 The private identity record binds each relevant event device to its canonical
 sysfs path, udev physical path, classes, selected hardware IDs, complete kernel

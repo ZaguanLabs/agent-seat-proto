@@ -46,9 +46,13 @@ impl std::error::Error for SeatError {}
 
 impl Seat {
     pub(crate) fn connect(path: &Path) -> Result<Self, SeatError> {
-        let mut stream = UnixStream::connect(path).map_err(|error| {
+        let stream = UnixStream::connect(path).map_err(|error| {
             unavailable(format!("cannot connect to {}: {error}", path.display()))
         })?;
+        Self::from_stream(stream)
+    }
+
+    pub(crate) fn from_stream(mut stream: UnixStream) -> Result<Self, SeatError> {
         stream
             .set_read_timeout(Some(IO_TIMEOUT))
             .and_then(|()| stream.set_write_timeout(Some(IO_TIMEOUT)))

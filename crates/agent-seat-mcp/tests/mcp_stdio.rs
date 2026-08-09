@@ -152,6 +152,79 @@ fn print_config_is_copyable_without_a_desktop() {
 }
 
 #[test]
+fn private_config_is_explicit_and_confines_the_companion() {
+    let socket = "/run/user/1000/agent-seat/x11-input.sock";
+    let output = run("", &["--socket", socket, "--print-private-mcp-config"]);
+    let config: Value = serde_json::from_slice(&output.stdout).expect("private config JSON");
+    let server = &config["mcpServers"]["agent-seat"];
+    assert_eq!(server["command"], "/usr/bin/systemd-run");
+    let arguments = server["args"].as_array().expect("systemd argument array");
+    for required in [
+        "--user",
+        "--pipe",
+        "--wait",
+        "--collect",
+        "--service-type=exec",
+        "--property=PrivateDevices=yes",
+        "--property=DevicePolicy=strict",
+        "--property=PrivateNetwork=yes",
+        "--property=RestrictAddressFamilies=AF_UNIX",
+        "--property=NoNewPrivileges=yes",
+        "--property=CapabilityBoundingSet=",
+        "--property=ProtectHome=yes",
+        "--property=PrivateTmp=yes",
+        "--property=ProtectProc=invisible",
+        "--property=TemporaryFileSystem=/run:ro",
+        "--property=NoExecPaths=/",
+        "--property=TasksMax=2",
+        "--property=LimitNOFILE=32",
+        "--property=LimitCORE=0",
+        "--property=MemoryMax=64M",
+        "--property=Restart=no",
+    ] {
+        assert!(arguments.contains(&json!(required)), "missing {required}");
+    }
+    assert!(arguments.contains(&json!(format!(
+        "--property=OpenFile={socket}:agent-seat-provider"
+    ))));
+    let separator = arguments
+        .iter()
+        .position(|argument| argument == "--")
+        .expect("systemd command separator");
+    assert_eq!(
+        &arguments[separator..],
+        ["--", "/usr/bin/agent-seat-mcp", "--provider-fd"]
+            .map(Value::from)
+            .as_slice()
+    );
+    assert!(arguments.iter().all(|argument| argument != "sh"));
+}
+
+#[test]
+fn private_config_rejects_a_relative_socket() {
+    let output = run(
+        "",
+        &["--socket", "relative.sock", "--print-private-mcp-config"],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid private-profile socket"));
+}
+
+#[test]
+fn inherited_provider_mode_fails_without_one_exact_named_descriptor() {
+    let output = run("", &["--provider-fd"]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("inherited provider descriptor environment is not exact")
+    );
+
+    let combined = run("", &["--socket", "/tmp/provider.sock", "--provider-fd"]);
+    assert!(!combined.status.success());
+    assert!(String::from_utf8_lossy(&combined.stderr).contains("cannot be combined"));
+}
+
+#[test]
 fn oversized_stdio_messages_fail_before_json_parsing() {
     let input = "x".repeat(1024 * 1024 + 1);
     let output = run(&input, &[]);
