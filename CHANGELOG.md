@@ -25,6 +25,12 @@ All notable changes to this project are documented here.
   environments, tested surfaces, digested public evidence, negative-authority
   enforcement, limitations, and pass/fail/incomplete conclusions without
   claiming certification.
+- Added a participant-facing T5 evidence contract with stable external-harness,
+  virtual-device replacement, and full-system lock fixture IDs. It specifies
+  production-launcher escape checks, an immutable VM manifest, a greeter input
+  barrier, one monotonic cross-boundary ordering, and the exact review bundle;
+  it explicitly leaves all three gates incomplete until real participants run
+  them.
 - Added `agent-seat-mcp` 0.1.3 and `agent-seat-x11` 0.1.16 private companion
   deployment. The provider user unit uses one fixed mode-0600 socket. The
   emitted MCP registration has systemd preconnect only that socket with

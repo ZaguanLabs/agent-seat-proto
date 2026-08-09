@@ -216,6 +216,12 @@ event can reach an authentication surface while the broker still owns evdev
 descriptors, this candidate fails. Tests are not loosened to accommodate the
 implementation.
 
+The full-system image/reset manifest, greeter input barrier, virtual-device
+controller, stable lock/replacement fixture IDs, and required evidence ordering
+are defined in the
+[`T5 participant contract`](t5-participation-contract.md). A container or
+nested X server cannot submit those fixtures as full-system evidence.
+
 ## Decision ledger
 
 - **Generic Openbox lock state:** fail. Openbox has no independent locker or

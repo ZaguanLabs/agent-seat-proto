@@ -447,6 +447,13 @@ close the inherited event descriptors. Physical add/remove/replacement cases
 and the isolated compatibility matrix remain. Until those remaining checks
 pass, runtime device completeness is unsupported.
 
+The exact participant-facing removal, addition, serial change, capability
+change, topology-clone, complete-set, notification-loss, and verification-to-
+start race fixtures are enumerated in
+[`t5-participation-contract.md`](t5-participation-contract.md). They require a
+hypervisor-controlled virtual device topology; the live-host hotplug fixture
+below proves only the narrower already recorded transition.
+
 The repository's explicit `t5_hotplug_fixture` creates one relative-capability
 uinput device for two seconds and emits no input event. It requires root access
 to `/dev/uinput`, changes the host input class, and intentionally makes an armed

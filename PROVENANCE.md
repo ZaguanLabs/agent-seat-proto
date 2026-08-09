@@ -328,6 +328,13 @@ example, implementation, or prose was copied from another conformance system.
 These documents add no runtime dependency, wire change, certification, or
 external standards claim.
 
+The T5 participant contract is original work decomposing this repository's
+already approved negative-authority, physical-replacement, and lock-transition
+gates into stable fixture identifiers and public evidence requirements. Its VM
+and harness interfaces are candidates, not copied launcher, hypervisor,
+display-manager, greeter, or authentication implementation material. No Nobox
+source, schema, test, fixture, comment, or prose was consulted or adapted.
+
 ## Provider private-device deployment
 
 The optional provider user unit, startup absence check, user-manager launch

@@ -22,6 +22,8 @@ The companion-profile evidence includes a delayed live `seat_status` after the
 ordinary provider I/O deadline and a provider restart while that authenticated
 session was idle. The call succeeds, while provider shutdown remains bounded.
 The external harness itself is not confined by that result.
+Stable candidate fixtures and the required isolated review bundle are defined
+in the [T5 participant contract](t5-participation-contract.md).
 
 ## Pre-RFC publication matrix
 

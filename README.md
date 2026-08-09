@@ -127,6 +127,10 @@ requires a fresh broker instance. Hostile probes derived from the exact
 root-owned installed service bytes also pass for both production identity
 models while leaving the live services untouched. The physical replacement
 matrix and trusted lock-transition behavior remain open approval gates.
+Their external-harness, virtual-device, and isolated-lock evidence interface is
+the [T5 participant contract](docs/t5-participation-contract.md); it records
+what a participating launcher or full-system runner must prove without
+claiming that a participant already exists.
 
 The optional provider side now has a separate, non-enableable systemd user
 unit at `contrib/systemd/user/agent-seat-x11-input.service`. With

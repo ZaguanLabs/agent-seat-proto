@@ -309,6 +309,14 @@ UID that can otherwise open uinput, and an installed worker reached live
 contract are not yet proven. The external harness boundary, click, and keyboard
 input remain gated and unsupported.
 
+The remaining evidence now has a participant-facing integration contract with
+stable harness, physical-replacement, and full-system lock fixture IDs. It
+defines the production-launcher escape checks, immutable VM manifest,
+hypervisor-controlled device topology, greeter input barrier, monotonic
+cross-boundary ordering, and conformance-report bundle required for review.
+No local VM or participating harness result exists yet, so the gates remain
+open.
+
 Re-evaluate T5 using a separately trusted Linux input source rather than
 weakening the ordinary-X11 stop decision. The review in
 [`t5-input-reconsideration.md`](t5-input-reconsideration.md) rejects XTEST-only
