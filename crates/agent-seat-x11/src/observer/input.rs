@@ -6,6 +6,7 @@ use std::time::Duration;
 use agent_seat_activity_broker::{BrokerConnection, BrokerState};
 use agent_seat_proto::{InputReply, InputTerminal, PointerMoveRequest};
 use x11rb::CURRENT_TIME;
+use x11rb::protocol::shape::{ConnectionExt as _, SK};
 use x11rb::protocol::xproto::{ConnectionExt as _, MOTION_NOTIFY_EVENT};
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
@@ -13,6 +14,8 @@ use x11rb::wrapper::ConnectionExt as _;
 use super::{Failure, Observer};
 
 const MAX_WINDOW_ANCESTORS: usize = 64;
+const MAX_HIT_TEST_CHILDREN: usize = 256;
+const MAX_HIT_TEST_RECTANGLES: usize = 256;
 
 impl Observer {
     pub(crate) fn pointer_move(
@@ -127,25 +130,117 @@ impl Observer {
     }
 
     fn require_point_owned_by(&self, target: u32, root_x: i16, root_y: i16) -> Result<(), Failure> {
-        let mut window = self.root;
-        for _ in 0..MAX_WINDOW_ANCESTORS {
-            if window == target {
-                return Ok(());
-            }
-            let child = self
+        let children = self
+            .connection
+            .query_tree(self.root)
+            .map_err(|_| Failure::unavailable("cannot hit-test pointer destination"))?
+            .reply()
+            .map_err(|_| Failure::unavailable("cannot hit-test pointer destination"))?
+            .children;
+        if children.len() > MAX_HIT_TEST_CHILDREN {
+            return Err(Failure::unavailable(
+                "pointer hit-test exceeds the window bound",
+            ));
+        }
+        let mut destination = None;
+        // QueryTree returns siblings from bottom to top; inspect the effective
+        // input shapes in reverse so the first match is the actual top level.
+        for child in children.into_iter().rev() {
+            let attributes = self
                 .connection
-                .translate_coordinates(self.root, window, root_x, root_y)
+                .get_window_attributes(child)
                 .map_err(|_| Failure::unavailable("cannot hit-test pointer destination"))?
                 .reply()
+                .map_err(|_| Failure::unavailable("cannot hit-test pointer destination"))?;
+            if attributes.map_state != x11rb::protocol::xproto::MapState::VIEWABLE {
+                continue;
+            }
+            let translated = self
+                .connection
+                .translate_coordinates(self.root, child, root_x, root_y)
                 .map_err(|_| Failure::unavailable("cannot hit-test pointer destination"))?
-                .child;
-            if child == x11rb::NONE {
+                .reply()
+                .map_err(|_| Failure::unavailable("cannot hit-test pointer destination"))?;
+            let input = self
+                .connection
+                .shape_get_rectangles(child, SK::INPUT)
+                .map_err(|_| Failure::unavailable("cannot inspect pointer input shape"))?
+                .reply()
+                .map_err(|_| Failure::unavailable("cannot inspect pointer input shape"))?;
+            if input.rectangles.len() > MAX_HIT_TEST_RECTANGLES {
+                return Err(Failure::unavailable(
+                    "pointer hit-test exceeds the shape bound",
+                ));
+            }
+            if input
+                .rectangles
+                .iter()
+                .any(|rectangle| rectangle_contains(rectangle, translated.dst_x, translated.dst_y))
+            {
+                destination = Some(child);
                 break;
             }
-            window = child;
+        }
+        if let Some(destination) = destination {
+            if self.is_target_or_reparenting_frame(destination, target)? {
+                return Ok(());
+            }
         }
         Err(Failure::invalid(
             "pointer destination is not visibly owned by the target",
         ))
+    }
+
+    fn is_target_or_reparenting_frame(&self, candidate: u32, target: u32) -> Result<bool, Failure> {
+        let mut window = target;
+        for _ in 0..MAX_WINDOW_ANCESTORS {
+            if window == candidate {
+                return Ok(true);
+            }
+            let parent = self
+                .connection
+                .query_tree(window)
+                .map_err(|_| Failure::unavailable("cannot inspect target ancestry"))?
+                .reply()
+                .map_err(|_| Failure::unavailable("cannot inspect target ancestry"))?
+                .parent;
+            if parent == x11rb::NONE || parent == self.root {
+                return Ok(parent == candidate);
+            }
+            window = parent;
+        }
+        Err(Failure::unavailable(
+            "target ancestry exceeds the window bound",
+        ))
+    }
+}
+
+fn rectangle_contains(rectangle: &x11rb::protocol::xproto::Rectangle, x: i16, y: i16) -> bool {
+    let x = i32::from(x);
+    let y = i32::from(y);
+    let left = i32::from(rectangle.x);
+    let top = i32::from(rectangle.y);
+    x >= left
+        && y >= top
+        && x < left + i32::from(rectangle.width)
+        && y < top + i32::from(rectangle.height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn input_rectangles_use_half_open_bounds() {
+        let rectangle = x11rb::protocol::xproto::Rectangle {
+            x: -2,
+            y: 3,
+            width: 5,
+            height: 7,
+        };
+        assert!(rectangle_contains(&rectangle, -2, 3));
+        assert!(rectangle_contains(&rectangle, 2, 9));
+        assert!(!rectangle_contains(&rectangle, 3, 9));
+        assert!(!rectangle_contains(&rectangle, 2, 10));
     }
 }

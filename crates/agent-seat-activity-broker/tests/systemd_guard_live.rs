@@ -166,8 +166,6 @@ fn guard_reaches_real_logind_and_netlink_under_the_hardened_profile() {
             &uid.to_string(),
             "--seat",
             "seat0",
-            "--input-set-fd",
-            "3",
             "--listen-stdin",
             "--peer-uid",
             &uid.to_string(),

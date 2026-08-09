@@ -87,11 +87,21 @@ sudo agent-seat-activity-enroll purge --uid "$(id -u)" --confirm-purge
 These commands exist to exercise the remaining security gates; they do not yet
 make generic Openbox input a supported deployment.
 
+The optional package must install `contrib/sysusers.d/agent-seat.conf` as
+`/usr/lib/sysusers.d/agent-seat.conf` and run `systemd-sysusers` before arming.
+This creates the locked `agent-seat-guard` system identity needed for stable
+system-bus authentication. It has no home, login shell, supplementary group,
+or input-device access. The evdev broker itself remains a `DynamicUser=`;
+the provider pins UID 0 because PID 1 owns the socket-activated listener.
+
 Inspection and session eligibility monitoring do not require root or group
 membership. Physical event nodes commonly remain `root:input` mode 0660. The
 normal design does not add the desktop user or broker account to `input`:
 systemd opens only the reviewed nodes and passes those exact read-only
-descriptors to the unprivileged broker. See the permission model in
+descriptors to the unprivileged broker. The unit's strict device filter names
+those same nodes read-only so systemd may perform the open; the dynamic broker
+still cannot open them through ordinary filesystem permissions or see host
+devices in its private `/dev`. See the permission model in
 [`docs/t5-broker-deployment.md`](docs/t5-broker-deployment.md).
 
 The eligibility guard compares the complete live input-event class mapping to
@@ -99,13 +109,12 @@ the reviewed manifest after subscribing to bounded kernel device-lifecycle
 notifications, then stops on any later input-subsystem change without reading
 input events. Manifest ownership must match the authenticated service-manager
 peer; the production profile fixes that peer and the installed manifest to
-root. The current guard handshake has run only as an ordinary-user local test.
-The new root-only file and lifecycle transactions have passed isolated fixture
-tests, and both service profiles pass an explicit rootless hostile sandbox
-probe on systemd 258. The hardened guard profile also passes a live handshake
+root. The new root-only file and lifecycle transactions have passed isolated
+fixture tests, and both service profiles pass an explicit rootless hostile
+sandbox probe on systemd 258. The hardened guard profile also passes a live handshake
 with the current complete sysfs manifest, kernel uevent subscription, and real
-logind session. They have not run under their installed `DynamicUser`
-identities. Root-owned installed startup, production confinement, actual
+logind session. Root-owned installed startup now reaches broker `Ready` with
+the intended identities and bounds. Complete production confinement, actual
 hotplug, and trusted lock-transition behavior remain open approval gates.
 
 The private identity record binds each relevant event device to its canonical

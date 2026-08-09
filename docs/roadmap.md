@@ -260,10 +260,11 @@ probes now deny unintended authority for both runtime profiles while preserving
 their exact inherited channels; they also caught and fixed an over-tight task
 bound that prevented namespace setup. The hardened rootless guard also passes
 a live current-manifest, kernel-uevent, and logind handshake, while every
-session/system eligibility predicate has a direct negative case. Real installed
-`DynamicUser` startup, hotplug transitions, production confinement, and the
-LightDM lock-transition contract are not yet proven. Click and keyboard input
-remain gated and unsupported.
+session/system eligibility predicate has a direct negative case. Installed
+production-identity startup now reaches broker `Ready` with bounded authority
+and a live locked-seat pointer refusal. Hotplug transitions, complete
+production confinement, and the LightDM lock-transition contract are not yet
+proven. Click and keyboard input remain gated and unsupported.
 
 Re-evaluate T5 using a separately trusted Linux input source rather than
 weakening the ordinary-X11 stop decision. The review in

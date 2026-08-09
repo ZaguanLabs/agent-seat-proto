@@ -4,11 +4,12 @@ version = 4
 
 [[package]]
 name = "agent-seat-activity-broker"
-version = "0.1.10"
+version = "0.1.14"
 dependencies = [
  "dbus",
  "evdev",
  "rustix",
+ "sd-listen-fds",
 ]
 
 [[package]]
@@ -41,7 +42,7 @@ dependencies = [
 
 [[package]]
 name = "agent-seat-x11"
-version = "0.1.13"
+version = "0.1.14"
 dependencies = [
  "agent-seat-activity-broker",
  "agent-seat-proto",
@@ -663,6 +664,12 @@ dependencies = [
  "linux-raw-sys",
  "windows-sys",
 ]
+
+[[package]]
+name = "sd-listen-fds"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bb51d45a99c1bafff550fd40ce1d2152917dc9908fb3090c283e3f058d39b3f"
 
 [[package]]
 name = "semver"

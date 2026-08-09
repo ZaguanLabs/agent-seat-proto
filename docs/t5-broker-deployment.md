@@ -135,8 +135,12 @@ keyboard and pointer events, including events unrelated to Agent Seat.
 The dynamic broker identity also has no `input` supplementary group. The system
 manager performs the one administrative operation that ordinary Unix
 permissions forbid: it opens each reviewed event node read-only and passes only
-those exact descriptors with `OpenFile=`. The broker cannot open the same node
-again or discover additional nodes through that authority.
+those exact descriptors with `OpenFile=`. Because systemd applies the service's
+device cgroup while preparing those descriptors, the rendered unit also names
+each reviewed node in an exact read-only `DeviceAllow=` entry. This permits the
+manager-side open; it does not bypass DAC for the dynamic UID. The broker cannot
+open the same node again, and `PrivateDevices=yes` removes the host nodes from
+its namespace.
 
 For isolated developer experiments, an administrator could place a dedicated,
 non-login broker account in `input` or make `input` its primary group. That is
@@ -193,24 +197,29 @@ as an explicitly ordinary-user local test. It now also passes that handshake
 under the hardened transient profile: the service consumed the freshly
 rendered manifest at fd 3, opened the real kernel uevent subscription, reached
 the one re-exposed system-bus socket, and evaluated the real local X11 session.
-The root-owned installed profile has passed parser, rendering, unit-syntax, and
-rootless negative-authority tests but has not yet run as an installed
-`DynamicUser` service. No installed add/remove/change transition has been
-exercised. This does not make generic Openbox supported: `LockedHint=false`
-remains insufficient by itself, and the LightDM transition ordering still
-needs the hostile lock/unlock tests below.
+The root-owned installed profile has now reached broker `Ready` with the
+dynamic broker and locked static guard identities, exact named descriptors,
+zero capabilities, seccomp, private device views, and no supplementary groups.
+No installed add/remove/change transition has been exercised. A same-host live
+check also found XScreenSaver reporting the seat locked while logind still
+reported `LockedHint=no`; the provider's topmost-input-window proof correctly
+refused the pointer action. This does not make generic Openbox supported: the
+trusted lock transition and hostile lock/unlock tests below remain open.
 
 ### System service manager
 
 PID 1 is the existing trusted OS component that opens each enrolled event node
 read-only with `OpenFile=`. It passes the exact installed relevant-device
-record at fd 3 and the event descriptors starting at fd 4. It separately
-passes the exact installed input-class manifest read-only to the guard. For the
-broker, PID 1 connects the guard endpoint to standard input with
+record and event descriptors with bounded enrollment-derived names. It
+separately passes the exact installed input-class manifest read-only to the
+guard. For the broker, PID 1 connects the guard endpoint to standard input with
 `StandardInput=file:` and places the socket-activated provider listener on
-standard output with `StandardOutput=socket`. The broker safely duplicates
-those standard descriptors and never reconstructs a connected socket from an
-arbitrary raw descriptor. Passed descriptors do not grant either process
+standard output with `StandardOutput=socket`. Each process validates systemd's
+PID/count/name activation environment and safely takes ownership of the named
+descriptors without reopening `/proc/self/fd/*` or accepting numeric descriptor
+arguments. The broker safely duplicates only its connected standard streams
+and never reconstructs a connected socket from an arbitrary raw descriptor.
+Passed descriptors do not grant either process
 permission to open another device or socket.
 
 `OpenFile=` was added in systemd 253. The profile must refuse older managers;
@@ -248,8 +257,12 @@ selection discovery does not expand.
 
 The broker is a separate optional package, not a dependency of the Tier 0 core
 packages. Installation creates disabled unit templates, root-owned
-configuration directories, and documentation. Runtime identities are
-allocated by `DynamicUser=yes`; installation creates no account. It applies no
+configuration directories, a locked `agent-seat-guard` system identity, and
+documentation. The evdev broker identity is allocated by `DynamicUser=yes`;
+the provider pins UID 0 because PID 1 owns its socket-activated listener. The
+guard needs a stable identity because system-bus policy does not reliably
+authenticate dynamic users. The static guard has no home, login shell,
+supplementary group, or owned state. Installation applies no
 enable preset, udev permission rule, input-group membership, provider grant, or
 Settings change.
 
@@ -327,16 +340,17 @@ The current preflight renders and byte-verifies the bounded device identity
 and capability record, including changed same-path serial or capability
 evidence, and resamples relevant evidence before returning. Installation and
 arming freshly bind that evidence to exact installed bytes. The broker reads
-the installed record through fd 3 and verifies that each inherited descriptor
+the named installed record descriptor and verifies that each inherited descriptor
 is an evdev device with exactly the recorded capability and property bitmaps,
 checks initial key/button state, drains its initial queue, and enters a bounded
 quiet interval. The guard separately validates the complete current input-class
-mapping. The remaining installed gates are descriptor identity/placement under
-the real manager, confinement-negative tests, and hostile device lifecycle
-tests. Until they pass, the service source is not a supported deployment. The
-broker has `DevicePolicy=strict` with no `DeviceAllow=` entry,
-so it cannot open an event node itself even if discretionary file permissions
-would otherwise allow it. The inherited descriptors are its complete device
+mapping. Descriptor identity and placement now pass under the real manager.
+Complete installed confinement-negative tests and hostile device lifecycle
+tests remain. Until they pass, the service source is not a supported deployment.
+The broker has `DevicePolicy=strict` with one read-only allow entry per enrolled
+node so systemd can prepare the corresponding `OpenFile=` descriptor. The
+dynamic UID has no matching DAC permission and its private `/dev` contains no
+host event node, so the inherited descriptors remain its complete device
 authority.
 
 ### Hotplug and replacement
@@ -457,10 +471,12 @@ names, session activity timing, or successful status queries.
 The service definition must name and test each mechanism rather than rely on a
 hardening score. The candidate minimum is:
 
-- `DynamicUser=yes`, with no persistent account, supplementary groups,
-  capabilities, setuid transition, or writable home;
+- `DynamicUser=yes` for the evdev broker, and a locked dedicated static identity
+  for the D-Bus eligibility guard; neither has supplementary groups,
+  capabilities, a setuid transition, or a writable home;
 - exact read-only `OpenFile=` descriptors supplied by PID 1;
-- `DevicePolicy=strict` and no device allow-list;
+- `DevicePolicy=strict` and an exact read-only device allow-list equal to the
+  inherited enrolled nodes, needed only for manager-side `OpenFile=` setup;
 - for the activity broker, all network families disabled and only
   the preconnected standard-input eligibility stream, standard-output
   socket-activated provider listener, and exact event descriptors available;
@@ -511,8 +527,8 @@ survives while home, unrelated runtime, other-process, input-node, host-socket,
 new network-socket, desktop-environment, and direct-exec attempts fail. For the
 guard it additionally proves that only the explicitly re-exposed system-bus
 socket remains reachable. This is useful evidence for the directives and found
-a real `TasksMax=1` startup defect, but it does not exercise `DynamicUser=yes`
-or the production system manager. The installed negative test remains open.
+a real `TasksMax=1` startup defect, but it does not exercise the production
+identities or system manager. The installed negative test remains open.
 An additional explicit live guard probe passes under the same hardened
 rootless profile against the current sysfs mapping, kernel uevent group, and
 logind session. Every individual owner, seat, foreground, active, local, type,
@@ -528,9 +544,11 @@ but never automatically rearms. Unknown or migrated policy requires a new
 administrator review. Runtime instance IDs, sockets, descriptors, and generated
 unit fragments are never preserved across upgrade.
 
-Ordinary package removal stops and disables the units and removes runtime
-state. There is no persistent broker or guard account to remove. Root-owned
-enrollment remains inert for review. An explicit purge may remove it after
+Ordinary package removal stops and disables the units, removes runtime state,
+and removes the packaged sysusers definition. The locked guard account may be
+retained by the operating system's ordinary system-account policy; it owns no
+Agent Seat state and belongs to no supplementary group. Root-owned enrollment
+remains inert for review. An explicit purge may remove it after
 showing the exact path. Removal never edits provider policy or another
 package's udev rules and never leaves group membership or device ACLs.
 
@@ -550,8 +568,8 @@ package's udev rules and never leaves group membership or device ACLs.
   tests remain.
 - **Retained privilege and confinement:** candidate. Rootless hostile probes
   pass both profiles and preserve only their intended inherited/system-bus
-  channels. Installed `DynamicUser` negative tests on the compatibility matrix
-  remain.
+  channels. Installed production-identity negative tests on the compatibility
+  matrix remain.
 - **IPC minimization:** experimental implementation pass. Fixed status and
   eligibility frames expose no event, device, coordinate, or timestamp data.
 - **Session activity and VT lifecycle:** candidate, needs deterministic logind
@@ -583,5 +601,9 @@ package's udev rules and never leaves group membership or device ACLs.
   <https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html>
 - systemd process and filesystem confinement:
   <https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html>
+- systemd system-account declarations:
+  <https://www.freedesktop.org/software/systemd/man/latest/sysusers.d.html>
+- systemd upstream discussion of D-Bus policy and dynamic identities:
+  <https://github.com/systemd/systemd/issues/9503>
 - systemd-logind session objects, lock hints, and device control:
   <https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.login1.html>

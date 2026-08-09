@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-version = "0.1.13"
+version = "0.1.14"
 publish = false
 
 [dependencies]
@@ -16,7 +16,7 @@ serde.workspace = true
 signal-hook.workspace = true
 toml.workspace = true
 toml_edit.workspace = true
-x11rb = { workspace = true, features = ["xtest"] }
+x11rb = { workspace = true, features = ["shape", "xtest"] }
 
 [lints]
 workspace = true

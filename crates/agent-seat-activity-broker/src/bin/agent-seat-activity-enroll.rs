@@ -77,6 +77,7 @@ const DEV_INPUT: &str = "/dev/input";
 const SUPPORTED_SEAT: &str = "seat0";
 const BROKER_EXEC: &str = "/usr/bin/agent-seat-activity-broker";
 const GUARD_EXEC: &str = "/usr/bin/agent-seat-eligibility-guard";
+const GUARD_USER: &str = "agent-seat-guard";
 const SYSTEMD_UNIT_DIRECTORY: &str = "/etc/systemd/system";
 const ENROLLMENT_BASE_DIRECTORY: &str = "/etc/agent-seat/activity";
 const MAX_UDEV_OUTPUT_BYTES: usize = 16 * 1024;
@@ -84,6 +85,9 @@ const MAX_SYSFS_PATH_BYTES: usize = 4 * 1024;
 const MAX_SYSFS_CAPABILITY_BYTES: usize = 4 * 1024;
 const MAX_BUNDLE_FILE_BYTES: u64 = 64 * 1024;
 const MAX_UDEV_QUERY_DURATION: Duration = Duration::from_secs(2);
+// Longer than the broker's 250 ms initial quiet interval. A second active
+// check catches setup failures that occur just after systemd reports start.
+const ARM_STABILITY_INTERVAL: Duration = Duration::from_millis(750);
 const PROPERTY_NAMES: &str = "ID_BUS,ID_INPUT,ID_INPUT_KEY,ID_INPUT_KEYBOARD,ID_INPUT_MOUSE,ID_INPUT_TOUCHPAD,ID_INPUT_TOUCHSCREEN,ID_INPUT_TABLET,ID_MODEL_ID,ID_PATH,ID_REVISION,ID_SEAT,ID_SERIAL_SHORT,ID_VENDOR_ID";
 const BROKER_SERVICE_SOURCE: &str =
     include_str!("../../../../contrib/systemd/agent-seat-activity-broker.service.in");
@@ -920,12 +924,6 @@ fn build_bundle(
     );
     let provider_uid = options.uid.to_string();
 
-    let event_fd_args = devices
-        .iter()
-        .enumerate()
-        .map(|(index, _)| format!("--event-fd {}", index + 4))
-        .collect::<Vec<_>>()
-        .join(" ");
     let event_open_files = devices
         .iter()
         .enumerate()
@@ -937,6 +935,11 @@ fn build_bundle(
         })
         .collect::<Vec<_>>()
         .join("\n");
+    let event_device_allow = devices
+        .iter()
+        .map(|device| format!("DeviceAllow={} r", device.device_node.display()))
+        .collect::<Vec<_>>()
+        .join("\n");
 
     let broker_service = BROKER_SERVICE_SOURCE
         .replace("@SOCKET_UNIT@", &broker_socket_name)
@@ -945,14 +948,15 @@ fn build_bundle(
         .replace("@PROVIDER_UID@", &provider_uid)
         .replace("@ELIGIBILITY_PATH@", &eligibility_socket_path)
         .replace("@DEVICE_SET_PATH@", &installed_device_set_path)
-        .replace("@EVENT_FD_ARGS@", &event_fd_args)
-        .replace("@EVENT_OPEN_FILES@", &event_open_files);
+        .replace("@EVENT_OPEN_FILES@", &event_open_files)
+        .replace("@EVENT_DEVICE_ALLOW@", &event_device_allow);
     let broker_socket = BROKER_SOCKET_SOURCE
         .replace("@BROKER_SOCKET@", &broker_socket_path)
         .replace("@PROVIDER_UID@", &provider_uid);
     let guard_service = GUARD_SERVICE_SOURCE
         .replace("@ELIGIBILITY_SOCKET_UNIT@", &guard_socket_name)
         .replace("@GUARD_EXEC@", GUARD_EXEC)
+        .replace("@GUARD_USER@", GUARD_USER)
         .replace("@SESSION_ID@", &options.session)
         .replace("@PROVIDER_UID@", &provider_uid)
         .replace("@INPUT_SET_PATH@", &installed_input_set_path);
@@ -972,11 +976,12 @@ fn build_bundle(
             "@BROKER_EXEC@",
             "@PROVIDER_UID@",
             "@ELIGIBILITY_PATH@",
-            "@EVENT_FD_ARGS@",
             "@EVENT_OPEN_FILES@",
+            "@EVENT_DEVICE_ALLOW@",
             "@DEVICE_SET_PATH@",
             "@BROKER_SOCKET@",
             "@GUARD_EXEC@",
+            "@GUARD_USER@",
             "@SESSION_ID@",
             "@INPUT_SET_PATH@",
             "@ELIGIBILITY_SOCKET@",
@@ -1344,14 +1349,12 @@ fn arm(options: ArmOptions) -> Result<(), String> {
         let _ = stop_unit_names(&units);
         return Err(format!("cannot arm reviewed activity broker: {error}"));
     }
-    if let Err(error) = run_systemctl(&[
-        "is-active",
-        "--quiet",
-        &units.broker_service,
-        &units.broker_socket,
-        &units.guard_service,
-        &units.guard_socket,
-    ]) {
+    if let Err(error) = require_units_active(&units) {
+        let _ = stop_unit_names(&units);
+        return Err(format!("armed units did not become active: {error}"));
+    }
+    thread::sleep(ARM_STABILITY_INTERVAL);
+    if let Err(error) = require_units_active(&units) {
         let _ = stop_unit_names(&units);
         return Err(format!("armed units did not remain active: {error}"));
     }
@@ -1425,6 +1428,19 @@ fn stop_unit_names(units: &UnitNames) -> Result<(), String> {
         &units.guard_service,
         &units.guard_socket,
     ])
+}
+
+fn require_units_active(units: &UnitNames) -> Result<(), String> {
+    for unit in [
+        &units.broker_service,
+        &units.broker_socket,
+        &units.guard_service,
+        &units.guard_socket,
+    ] {
+        run_systemctl(&["is-active", "--quiet", unit])
+            .map_err(|error| format!("{unit} is not active: {error}"))?;
+    }
+    Ok(())
 }
 
 fn run_systemctl(arguments: &[&str]) -> Result<(), String> {
@@ -2158,7 +2174,7 @@ mod tests {
         }
         let service = fs::read_to_string(output.join(expected[0])).expect("rendered service");
         assert!(service.contains("OpenFile=/dev/input/event2:event0:read-only"));
-        assert!(service.contains("--uid 1000 --device-set-fd 3 --event-fd 4"));
+        assert!(service.contains("ExecStart=/usr/bin/agent-seat-activity-broker --uid 1000"));
         assert!(service.contains(
             "OpenFile=/etc/agent-seat/activity/1000/enrolled-device-set.v1:enrolled-device-set:read-only"
         ));
@@ -2166,7 +2182,7 @@ mod tests {
         assert!(service.contains("StandardOutput=socket"));
         let guard_service =
             fs::read_to_string(output.join(expected[2])).expect("rendered guard service");
-        assert!(guard_service.contains("--input-set-fd 3"));
+        assert!(!guard_service.contains("--input-set-fd"));
         assert!(guard_service.contains(
             "OpenFile=/etc/agent-seat/activity/1000/initial-input-set.v1:initial-input-set:read-only"
         ));

@@ -11,12 +11,16 @@ use std::time::Duration;
 use rustix::net::sockopt::socket_peercred;
 
 mod device_set;
+#[cfg(any(feature = "eligibility-guard", feature = "runtime"))]
+mod inherited_files;
 mod initial_input_set;
 
 pub use device_set::{
     CapabilityKind, DeviceCapabilities, DeviceIdentity, DeviceSetError, EnrolledDevice,
     IdentityStrength, MAX_DEVICE_SET_BYTES, decode_device_set, encode_device_set,
 };
+#[cfg(any(feature = "eligibility-guard", feature = "runtime"))]
+pub use inherited_files::{InheritedFile, InheritedFileError, receive_inherited_files};
 pub use initial_input_set::{
     InputClassMapping, InputSetError, MAX_INPUT_CLASS_MAPPINGS, MAX_INPUT_SET_BYTES,
     decode_input_set, encode_input_set,

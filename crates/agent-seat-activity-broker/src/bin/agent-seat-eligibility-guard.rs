@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use agent_seat_activity_broker::{
     EligibilityState, InputClassMapping, MAX_INPUT_CLASS_MAPPINGS, MAX_INPUT_SET_BYTES,
-    decode_input_set, write_eligibility,
+    decode_input_set, receive_inherited_files, write_eligibility,
 };
 use dbus::Path as DbusPath;
 use dbus::blocking::Connection;
@@ -31,14 +31,13 @@ const HELP: &str = r#"agent-seat-eligibility-guard - reduce logind state to one 
 
 USAGE:
   agent-seat-eligibility-guard --session ID --uid UID --seat seat0 \
-      --input-set-fd FD (--socket PATH | --listen-stdin) [--peer-uid UID]
+      (--socket PATH | --listen-stdin) [--peer-uid UID]
   agent-seat-eligibility-guard --help
 
 OPTIONS:
   --session ID   Exact enrolled logind session ID
   --uid UID      Exact enrolled session-owner UID
   --seat seat0   Exact enrolled physical seat
-  --input-set-fd Read-only peer-owned initial input-class manifest descriptor
   --socket PATH  New absolute private AF_UNIX socket for the broker connection
   --listen-stdin Use one service-manager-owned AF_UNIX listener on stdin
   --peer-uid UID Expected connecting service-manager UID; defaults to 0
@@ -81,7 +80,13 @@ fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> {
         println!("{HELP}");
         return Ok(());
     };
-    let expected_input_set = read_initial_input_set(arguments.input_set_fd, arguments.peer_uid)?;
+    let mut inherited = receive_inherited_files(1, 1)
+        .map_err(|error| format!("cannot receive inherited descriptors: {error}"))?;
+    if inherited[0].name() != "initial-input-set" {
+        return Err("inherited descriptor must be named initial-input-set".to_owned());
+    }
+    let expected_input_set =
+        read_initial_input_set(inherited.remove(0).into_descriptor(), arguments.peer_uid)?;
     let uevents = UeventMonitor::open()?;
     let current_input_set = inspect_input_class(Path::new(SYSFS_INPUT))?;
     let input_set_matches = current_input_set == expected_input_set;
@@ -142,7 +147,6 @@ struct Arguments {
     session: String,
     uid: u32,
     seat: String,
-    input_set_fd: u32,
     endpoint: Endpoint,
     peer_uid: u32,
 }
@@ -154,7 +158,6 @@ impl Arguments {
         let mut session = None;
         let mut uid = None;
         let mut seat = None;
-        let mut input_set_fd = None;
         let mut socket = None;
         let mut listen_stdin = false;
         let mut peer_uid = None;
@@ -167,7 +170,6 @@ impl Arguments {
                     if session.is_none()
                         && uid.is_none()
                         && seat.is_none()
-                        && input_set_fd.is_none()
                         && socket.is_none()
                         && !listen_stdin
                         && peer_uid.is_none()
@@ -184,9 +186,6 @@ impl Arguments {
                 "--seat" if seat.is_none() => {
                     seat = Some(value(&mut arguments, "--seat")?);
                 }
-                "--input-set-fd" if input_set_fd.is_none() => {
-                    input_set_fd = Some(number(&mut arguments, "--input-set-fd")?);
-                }
                 "--socket" if socket.is_none() => {
                     socket = Some(PathBuf::from(value(&mut arguments, "--socket")?));
                 }
@@ -194,8 +193,7 @@ impl Arguments {
                 "--peer-uid" if peer_uid.is_none() => {
                     peer_uid = Some(number(&mut arguments, "--peer-uid")?);
                 }
-                "--session" | "--uid" | "--seat" | "--input-set-fd" | "--socket"
-                | "--listen-stdin" | "--peer-uid" => {
+                "--session" | "--uid" | "--seat" | "--socket" | "--listen-stdin" | "--peer-uid" => {
                     return Err(format!("{argument} may be specified only once"));
                 }
                 _ => return Err(format!("unknown argument: {argument}")),
@@ -231,27 +229,24 @@ impl Arguments {
                 return Err("--socket or --listen-stdin is required".to_owned());
             }
         };
-        let input_set_fd = input_set_fd.ok_or_else(|| "--input-set-fd is required".to_owned())?;
-        if input_set_fd < 3 {
-            return Err("--input-set-fd must not overlap standard streams".to_owned());
-        }
         Ok(Some(Self {
             session,
             uid: uid.ok_or_else(|| "--uid is required".to_owned())?,
             seat,
-            input_set_fd,
             endpoint,
             peer_uid: peer_uid.unwrap_or(0),
         }))
     }
 }
 
-fn read_initial_input_set(fd: u32, owner_uid: u32) -> Result<Vec<InputClassMapping>, String> {
-    let mut file = File::open(format!("/proc/self/fd/{fd}"))
-        .map_err(|error| format!("cannot duplicate initial input-set descriptor {fd}: {error}"))?;
+fn read_initial_input_set(
+    descriptor: OwnedFd,
+    owner_uid: u32,
+) -> Result<Vec<InputClassMapping>, String> {
+    let mut file = File::from(descriptor);
     let before = file
         .metadata()
-        .map_err(|error| format!("cannot inspect initial input-set descriptor {fd}: {error}"))?;
+        .map_err(|error| format!("cannot inspect initial input-set descriptor: {error}"))?;
     if !before.file_type().is_file()
         || before.nlink() != 1
         || before.uid() != owner_uid
@@ -709,7 +704,6 @@ fn dbus_error(error: impl std::fmt::Display) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::os::fd::AsRawFd as _;
     use std::os::unix::fs::symlink;
     use std::os::unix::net::UnixStream;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -735,8 +729,6 @@ mod tests {
             "1000",
             "--seat",
             "seat0",
-            "--input-set-fd",
-            "3",
             "--socket",
             "/run/guard.sock",
         ])
@@ -744,7 +736,6 @@ mod tests {
         .expect("serve arguments");
         assert_eq!(parsed.session, "68");
         assert_eq!(parsed.uid, 1000);
-        assert_eq!(parsed.input_set_fd, 3);
         assert_eq!(parsed.peer_uid, 0);
         assert_eq!(
             parsed.endpoint,
@@ -763,8 +754,6 @@ mod tests {
             "1000",
             "--seat",
             "seat0",
-            "--input-set-fd",
-            "3",
             "--listen-stdin",
         ])
         .expect("inherited guard arguments")
@@ -779,8 +768,6 @@ mod tests {
                 "1000",
                 "--seat",
                 "seat0",
-                "--input-set-fd",
-                "3",
                 "--socket",
                 "/run/x",
                 "--listen-stdin",
@@ -797,8 +784,6 @@ mod tests {
                 "1000",
                 "--seat",
                 "seat1",
-                "--input-set-fd",
-                "3",
                 "--socket",
                 "/run/x",
             ])
@@ -813,8 +798,6 @@ mod tests {
                 "1000",
                 "--seat",
                 "seat0",
-                "--input-set-fd",
-                "3",
                 "--socket",
                 "relative",
             ])
@@ -956,7 +939,7 @@ mod tests {
         let file = File::open(&path).expect("open input-set fixture");
         assert_eq!(
             read_initial_input_set(
-                file.as_raw_fd().try_into().expect("bounded descriptor"),
+                file.try_clone().expect("clone fixture").into(),
                 geteuid().as_raw()
             ),
             Ok(vec![mapping])
@@ -965,7 +948,7 @@ mod tests {
             .expect("weaken input-set fixture");
         assert!(
             read_initial_input_set(
-                file.as_raw_fd().try_into().expect("bounded descriptor"),
+                file.try_clone().expect("clone fixture").into(),
                 geteuid().as_raw()
             )
             .is_err()
@@ -974,7 +957,7 @@ mod tests {
             .expect("restore input-set fixture");
         assert!(
             read_initial_input_set(
-                file.as_raw_fd().try_into().expect("bounded descriptor"),
+                file.try_clone().expect("clone fixture").into(),
                 geteuid().as_raw().saturating_add(1)
             )
             .is_err()

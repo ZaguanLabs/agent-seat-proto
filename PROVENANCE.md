@@ -166,6 +166,13 @@ dependency is `evdev` 0.13.2 (Apache-2.0 OR MIT) from
 comments, service definition, or prose was consulted during implementation or
 adapted.
 
+The later pointer destination fix is original work from live Openbox process
+behavior and the public X Shape and QueryTree contracts. It uses the existing
+`x11rb` dependency's Shape feature to bound effective input-region inspection,
+then binds Openbox's reparenting frame to the already scoped client. The lower
+and covering override-window fixtures were written specifically for this
+repository; no external hit-test implementation or fixture was consulted.
+
 The read-only enrollment inspection command is original work based on the
 public Linux sysfs device view and the documented `udevadm info` query surface.
 It requests only the input-class and seat properties listed in the deployment
@@ -199,6 +206,35 @@ own renderer, guard, unit contract, and fixed wire frame. It observes only the
 current public sysfs, kernel uevent, systemd user-manager, Unix peer-credential,
 and logind interfaces. It does not change the session, read an event node, or
 use another project's test or implementation.
+
+The exact device-cgroup allow rendering was derived from the repository's first
+installed systemd-258 arm attempt and the public `OpenFile=`, `DevicePolicy=`,
+`DeviceAllow=`, and `PrivateDevices=` contracts. The observed manager setup
+failed closed at `status=202/FDS` until the reviewed nodes were admitted
+read-only by the service device filter. No third-party service definition,
+installer, test, or implementation was used.
+
+Safe ownership of systemd-passed descriptors uses `sd-listen-fds` 0.2.0
+(Apache-2.0 OR MIT) from <https://github.com/kpcyrd/sd-listen-fds>. Its public
+API returns owned descriptors without requiring unsafe code in Agent Seat. The
+repository's local transient systemd-258 probes independently established the
+name-list behavior when a socket-activated descriptor has already been moved
+onto a standard stream; the implementation then validates the complete raw
+name list and exact remaining order. No third-party broker implementation,
+service definition, schema, or test was used.
+
+The fixed eligibility-guard identity and sysusers declaration follow a failed
+installed systemd-258 handshake, a successful same-host stable-user control,
+the public `sysusers.d` contract, and systemd upstream's documented warning
+against dynamic identities for D-Bus services:
+<https://github.com/systemd/systemd/issues/9503>. The identity has no input
+group, device descriptor, home, shell, capability, or owned runtime state. No
+third-party unit, account declaration, broker code, or test was adapted.
+
+The broker instance identifier now uses Rustix's safe `getrandom(2)` wrapper
+after the installed private-device profile correctly denied `/dev/urandom`.
+This uses an existing dependency and the already-allowed syscall; it grants no
+device or filesystem authority.
 
 The exact bundle verifier is original work over that renderer and the fresh
 inspection result. Its direct-file, ownership, mode, link-count, size,
@@ -234,8 +270,10 @@ against the public systemd `StandardInput=file:`, `StandardOutput=socket`,
 socket-activation, and `OpenFile=` contracts. Local transient user-manager
 services were used only to observe documented descriptor placement and Unix
 socket connection behavior. The broker duplicates inherited standard streams
-through safe Rustix APIs; no external broker implementation or raw-descriptor
-conversion pattern was copied or adapted.
+through safe Rustix APIs. Named `OpenFile=` descriptors are adopted through the
+separately recorded safe dependency and never reopened through procfs; no
+external broker implementation or raw-descriptor conversion pattern was copied
+or adapted.
 
 The reviewed relevant-device identity record is original work over selected
 properties from the already bounded `udevadm info` query. Its distinction

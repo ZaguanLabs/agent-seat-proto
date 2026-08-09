@@ -5,18 +5,19 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-version = "0.1.10"
+version = "0.1.14"
 publish = false
 
 [features]
 default = ["eligibility-guard", "runtime"]
-eligibility-guard = ["dep:dbus", "rustix/fs", "rustix/net"]
-runtime = ["dep:evdev", "rustix/event", "rustix/fs", "rustix/net", "rustix/process"]
+eligibility-guard = ["dep:dbus", "dep:sd-listen-fds", "rustix/fs", "rustix/net"]
+runtime = ["dep:evdev", "dep:sd-listen-fds", "rustix/event", "rustix/fs", "rustix/net", "rustix/process", "rustix/rand"]
 
 [dependencies]
 dbus = { workspace = true, optional = true }
 evdev = { workspace = true, optional = true }
 rustix.workspace = true
+sd-listen-fds = { workspace = true, optional = true }
 
 [[bin]]
 name = "agent-seat-activity-broker"

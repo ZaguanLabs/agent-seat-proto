@@ -28,8 +28,8 @@ use agent_seat_x11::{ActivePolicyStatus, active_policy_status, read_policy, repl
 use rustix::process::{Pid, Signal, geteuid, kill_process};
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{
-    AtomEnum, ClientMessageEvent, ConnectionExt as _, CreateWindowAux, EventMask, PropMode,
-    WindowClass,
+    AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux,
+    EventMask, PropMode, StackMode, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -518,6 +518,74 @@ struct TestClient {
     wm_name: u32,
     wm_protocols: u32,
     wm_delete: u32,
+}
+
+struct OverrideWindow {
+    connection: RustConnection,
+    window: u32,
+}
+
+impl OverrideWindow {
+    fn create(display: &str, x: i16, y: i16, width: u16, height: u16) -> Self {
+        let (connection, screen) = x11rb::connect(Some(display)).expect("overlay X11 connection");
+        let screen = &connection.setup().roots[screen];
+        let window = connection.generate_id().expect("overlay window ID");
+        connection
+            .create_window(
+                COPY_DEPTH_FROM_PARENT,
+                window,
+                screen.root,
+                x,
+                y,
+                width,
+                height,
+                0,
+                WindowClass::INPUT_OUTPUT,
+                screen.root_visual,
+                &CreateWindowAux::new().override_redirect(1),
+            )
+            .expect("overlay create request")
+            .check()
+            .expect("overlay create");
+        connection
+            .map_window(window)
+            .expect("overlay map request")
+            .check()
+            .expect("overlay map");
+        connection.sync().expect("overlay map sync");
+        Self { connection, window }
+    }
+
+    fn lower(&self) {
+        self.connection
+            .configure_window(
+                self.window,
+                &ConfigureWindowAux::new().stack_mode(StackMode::BELOW),
+            )
+            .expect("lower overlay request")
+            .check()
+            .expect("lower overlay");
+        self.connection.sync().expect("lower overlay sync");
+    }
+
+    fn raise(&self) {
+        self.connection
+            .configure_window(
+                self.window,
+                &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
+            )
+            .expect("raise overlay request")
+            .check()
+            .expect("raise overlay");
+        self.connection.sync().expect("raise overlay sync");
+    }
+}
+
+impl Drop for OverrideWindow {
+    fn drop(&mut self) {
+        let _ = self.connection.destroy_window(self.window);
+        let _ = self.connection.flush();
+    }
 }
 
 impl TestClient {
@@ -1430,6 +1498,8 @@ fn pointer_move_is_broker_gated_target_relative_and_observed_on_x11() {
     ));
 
     let client = TestClient::create(&xvfb.display, "pointer-target");
+    let lower_cover = OverrideWindow::create(&xvfb.display, 0, 0, 1_024, 768);
+    lower_cover.lower();
     let mut next_id = 1;
     let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
         snapshot.clients.iter().any(|candidate| {
@@ -1474,6 +1544,68 @@ fn pointer_move_is_broker_gated_target_relative_and_observed_on_x11() {
     );
 
     broker.join().expect("broker fixture");
+    client.destroy();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn pointer_move_is_refused_when_an_override_redirect_window_covers_the_target() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("pointer-cover");
+    let broker_socket = directory.0.join("activity.sock");
+    let ready = BrokerStatus {
+        instance: 47,
+        epoch: 9,
+        state: BrokerState::Ready,
+        reason: StopReason::None,
+    };
+    let broker = serve_broker(&broker_socket, vec![ready]);
+    let config = write_pointer_config(&directory.0, &broker_socket);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("covered pointer peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::InputPointer,
+            ],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "covered-pointer-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "covered-pointer-target")
+        })
+    });
+    let observed_target = client_named(&observed, "covered-pointer-target");
+    let cover = OverrideWindow::create(&xvfb.display, 0, 0, 1_024, 768);
+    cover.raise();
+
+    match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::PointerMove(PointerMoveRequest {
+            target: target(&observed_target),
+            x: 25,
+            y: 30,
+        }),
+    ) {
+        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
+        other => panic!("covered pointer outcome: {other:?}"),
+    }
+
+    broker.join().expect("covered broker fixture");
     client.destroy();
     let _ = openbox.kill();
     let _ = openbox.wait();

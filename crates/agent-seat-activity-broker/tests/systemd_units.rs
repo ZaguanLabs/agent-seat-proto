@@ -43,11 +43,10 @@ impl Drop for Fixture {
 fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
     let fixture = Fixture::new();
     let eligibility = fixture.0.join("eligibility.sock");
-    let event = fixture.0.join("event0");
+    let event = PathBuf::from("/dev/null");
     let input_set = fixture.0.join("initial-input-set.v1");
     let device_set = fixture.0.join("enrolled-device-set.v1");
     fs::write(&eligibility, []).expect("eligibility fixture");
-    fs::write(&event, []).expect("event fixture");
     fs::write(&input_set, []).expect("input-set fixture");
     fs::write(&device_set, []).expect("device-set fixture");
 
@@ -71,10 +70,13 @@ fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
         .replace("@PROVIDER_UID@", &provider_uid.to_string())
         .replace("@ELIGIBILITY_PATH@", path(&eligibility))
         .replace("@DEVICE_SET_PATH@", path(&device_set))
-        .replace("@EVENT_FD_ARGS@", "--event-fd 4")
         .replace(
             "@EVENT_OPEN_FILES@",
             &format!("OpenFile={}:event0:read-only", path(&event)),
+        )
+        .replace(
+            "@EVENT_DEVICE_ALLOW@",
+            &format!("DeviceAllow={} r", path(&event)),
         );
     let socket = SOCKET_SOURCE
         .replace("@BROKER_SOCKET@", path(&fixture.0.join("broker.sock")))
@@ -85,6 +87,7 @@ fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
             "@GUARD_EXEC@",
             env!("CARGO_BIN_EXE_agent-seat-eligibility-guard"),
         )
+        .replace("@GUARD_USER@", &provider_uid.to_string())
         .replace("@SESSION_ID@", "test-session")
         .replace("@INPUT_SET_PATH@", path(&input_set))
         .replace("@PROVIDER_UID@", &provider_uid.to_string());
@@ -96,14 +99,15 @@ fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
         "@BROKER_EXEC@",
         "@PROVIDER_UID@",
         "@ELIGIBILITY_PATH@",
-        "@EVENT_FD_ARGS@",
         "@EVENT_OPEN_FILES@",
+        "@EVENT_DEVICE_ALLOW@",
         "@DEVICE_SET_PATH@",
         "@BROKER_SOCKET@",
         "@ELIGIBILITY_SOCKET_UNIT@",
         "@ELIGIBILITY_SERVICE_UNIT@",
         "@ELIGIBILITY_SOCKET@",
         "@GUARD_EXEC@",
+        "@GUARD_USER@",
         "@SESSION_ID@",
         "@INPUT_SET_PATH@",
     ] {
@@ -159,7 +163,14 @@ fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
         &service,
         &format!("StandardInput=file:{}", path(&eligibility))
     ));
-    assert!(service.contains("--device-set-fd 3 --event-fd 4"));
+    assert!(has_line(
+        &service,
+        &format!(
+            "ExecStart={} --uid {}",
+            env!("CARGO_BIN_EXE_agent-seat-activity-broker"),
+            provider_uid
+        )
+    ));
     assert!(has_line(
         &service,
         &format!(
@@ -167,7 +178,13 @@ fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
             path(&device_set)
         )
     ));
-    assert!(!service.contains("DeviceAllow="));
+    assert_eq!(
+        service
+            .lines()
+            .filter(|line| line.starts_with("DeviceAllow="))
+            .collect::<Vec<_>>(),
+        [format!("DeviceAllow={} r", path(&event))]
+    );
     assert!(!service.contains("ExecStartPre="));
     assert!(has_line(&socket, "SocketMode=0600"));
     assert!(has_line(&socket, "DirectoryMode=0711"));
@@ -175,7 +192,7 @@ fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
     assert!(has_line(&socket, "Backlog=1"));
     assert!(has_line(&service, &format!("Requires={guard_socket_name}")));
     for required in [
-        "DynamicUser=yes",
+        &format!("User={provider_uid}"),
         "StandardInput=socket",
         "DevicePolicy=strict",
         "PrivateDevices=yes",
@@ -200,6 +217,7 @@ fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
             "missing eligibility guard gate {required}"
         );
     }
+    assert!(!has_line(&guard_service, "DynamicUser=yes"));
     assert_eq!(
         guard_service
             .lines()
@@ -236,6 +254,11 @@ fn rendered_units_are_inert_bounded_and_accepted_by_systemd() {
     assert!(
         output.status.success(),
         "systemd rejected broker units: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "systemd emitted unit diagnostics: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

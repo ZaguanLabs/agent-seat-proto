@@ -70,6 +70,33 @@ All notable changes to this project are documented here.
   re-exposed system-bus socket, authenticates its peer, and evaluates the
   current local X11 session. The eleven session/system predicates are also
   reduced to a bounded value object and tested one failure at a time.
+- Installed-unit review found that systemd accepted but ignored a misplaced
+  `CollectMode=` service directive. Version 0.1.11 moves it to `[Unit]` and
+  strengthens the unit gate to reject any systemd diagnostic, not only a
+  nonzero verification exit.
+- The first production arm then proved that `DevicePolicy=strict` also applies
+  while systemd opens `OpenFile=` descriptors for the service. Version 0.1.12
+  renders one exact read-only `DeviceAllow=` per reviewed event node so the
+  manager can open it. The broker still lacks input-group membership,
+  host devices remain hidden by `PrivateDevices=`, and direct runtime opens
+  therefore remain denied.
+- The next installed arm exposed a second fail-closed integration error:
+  reopening `/proc/self/fd/*` repeated DAC checks under the dynamic identity.
+  Version 0.1.13 safely adopts systemd's named owned descriptors directly,
+  validates the complete bounded name/order set, removes numeric descriptor
+  arguments, and applies close-on-exec without reopening privileged files.
+  Arming now samples unit activity both immediately and after a bounded 750 ms
+  stabilization interval.
+- The installed 0.1.13 attempt exposed two more production-profile facts.
+  Multi-unit `systemctl is-active` succeeds when any named unit is active, so
+  version 0.1.14 checks each service and socket independently. Also, the system
+  bus refused a dynamic guard identity even though an ordinary stable identity
+  passed the same hardened profile. Only the no-input guard now uses a locked,
+  group-free `agent-seat-guard` user declared through `sysusers.d`; the evdev
+  broker remains dynamic. The provider pins UID 0 because PID 1 owns the
+  socket-activated listener used for its `SO_PEERCRED` check. The installed
+  sandbox also made `/dev/urandom` unavailable as intended; instance IDs now
+  use the already-allowed `getrandom(2)` syscall instead of opening a device.
 
 - Completed `agent-seat-settings` 0.1.1 with native GTK 4 controls for explicit
   activation, every capability and dependency, observation scope and titles,
@@ -82,6 +109,13 @@ All notable changes to this project are documented here.
   provider holds a private locked marker containing its exact startup policy;
   Settings can report matching, restart-required, multiple, unavailable, and
   unreported states without X11 or a provider-socket connection.
+- `agent-seat-x11` 0.1.14 now hit-tests the topmost mapped root child using
+  bounded X Shape input regions, then proves that child is the scoped client's
+  own Openbox reparenting frame. Deterministic tests distinguish a harmless
+  lower full-screen override window from a covering top override. The live
+  profile correctly refused input while XScreenSaver reported the seat locked,
+  exposing `LockedHint=no` as incomplete evidence rather than weakening the
+  coverage check.
 - Added `agent-seat-settings` 0.1.0 with a display-independent policy session
   model, exact check and print commands, recoverable `.previous` exchange,
   strict CLI parsing, default-policy creation for the GTK entry path, and an
@@ -95,7 +129,7 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- Patch-bumped `agent-seat-activity-broker` to 0.1.10 for exact bundle
+- Patch-bumped `agent-seat-activity-broker` to 0.1.14 for exact bundle
   verification, the documented unprivileged pre-installation workflow,
   fail-closed runtime input-device lifecycle monitoring, and initial input
   class-set reconciliation. Manifest ownership is bound to the already
@@ -110,8 +144,10 @@ All notable changes to this project are documented here.
   device record to the runtime for descriptor-to-enrollment capability checks.
   Version 0.1.9 adds executable and `/run` isolation plus the hostile rootless
   systemd confinement proof. Version 0.1.10 adds live hardened guard startup
-  against real logind, sysfs, and kernel lifecycle evidence; installed
-  `DynamicUser` testing remains gated.
+  against real logind, sysfs, and kernel lifecycle evidence. Version 0.1.14
+  reaches `Ready` under the installed production identities and confines both
+  processes with zero capabilities, no supplementary groups, seccomp, and
+  private device views.
 - Rewired the broker's inherited sockets without raw-descriptor conversion:
   PID 1 connects eligibility to standard input, places the socket-activated
   provider listener on standard output, passes the exact enrolled-device record

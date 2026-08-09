@@ -3,7 +3,7 @@
 use std::env;
 use std::fs::File;
 use std::io::{ErrorKind, Read as _, Write as _};
-use std::os::fd::AsFd as _;
+use std::os::fd::{AsFd as _, OwnedFd};
 use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::process::ExitCode;
@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use agent_seat_activity_broker::{
     BrokerState, BrokerStatus, CapabilityKind, ELIGIBILITY_FRAME_BYTES, EligibilityState,
     MAX_DEVICE_SET_BYTES, MAX_EVENT_DESCRIPTORS, StopReason, decode_device_set, read_eligibility,
-    read_status_request,
+    read_status_request, receive_inherited_files,
 };
 use evdev::raw_stream::RawDevice;
 use evdev::{EventSummary, InputEvent, SynchronizationCode};
@@ -44,15 +44,26 @@ fn run() -> Result<(), String> {
         return Err("broker and enrolled provider must use distinct UIDs".to_owned());
     }
     let listener = open_inherited_listener()?;
-
-    let enrolled_devices = read_enrolled_device_set(arguments.device_set_fd, 0)?;
-    if enrolled_devices.len() != arguments.event_fds.len() {
+    let mut inherited = receive_inherited_files(MAX_EVENT_DESCRIPTORS + 1, 1)
+        .map_err(|error| format!("cannot receive inherited descriptors: {error}"))?;
+    if inherited.first().map(|file| file.name()) != Some("enrolled-device-set") {
+        return Err("first inherited descriptor must be named enrolled-device-set".to_owned());
+    }
+    let enrolled_devices = read_enrolled_device_set(inherited.remove(0).into_descriptor(), 0)?;
+    if enrolled_devices.len() != inherited.len() {
         return Err("inherited event descriptor count does not match enrollment".to_owned());
     }
-    let mut devices = arguments
-        .event_fds
-        .iter()
-        .map(|fd| open_inherited_device(*fd))
+    let mut devices = inherited
+        .into_iter()
+        .enumerate()
+        .map(|(index, file)| {
+            if file.name() != format!("event{index}") {
+                return Err(format!(
+                    "inherited event descriptor {index} has the wrong name"
+                ));
+            }
+            open_inherited_device(file.into_descriptor(), index)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     if devices.is_empty() {
         return Err("at least one inherited event descriptor is required".to_owned());
@@ -382,17 +393,17 @@ fn initial_device_update(
     Ok(activity.then_some((BrokerState::Stopped, StopReason::Activity)))
 }
 
-fn open_inherited_device(fd: u32) -> Result<RawDevice, String> {
-    let file = open_inherited_file(fd, "event")?;
-    RawDevice::from_fd(file.into())
-        .map_err(|error| format!("descriptor {fd} is not an evdev device: {error}"))
+fn open_inherited_device(descriptor: OwnedFd, index: usize) -> Result<RawDevice, String> {
+    let descriptor = confine_inherited_file(descriptor, "event")?;
+    RawDevice::from_fd(descriptor)
+        .map_err(|error| format!("event descriptor {index} is not an evdev device: {error}"))
 }
 
 fn read_enrolled_device_set(
-    fd: u32,
+    descriptor: OwnedFd,
     owner_uid: u32,
 ) -> Result<Vec<agent_seat_activity_broker::EnrolledDevice>, String> {
-    let file = open_inherited_file(fd, "device-set")?;
+    let file = File::from(confine_inherited_file(descriptor, "device-set")?);
     let metadata = file
         .metadata()
         .map_err(|error| format!("cannot inspect enrolled device set: {error}"))?;
@@ -483,26 +494,26 @@ fn matches_device_capabilities(
     )
 }
 
-fn open_inherited_file(fd: u32, kind: &str) -> Result<File, String> {
-    if fd < 3 {
-        return Err(format!(
-            "inherited {kind} descriptor must not overlap standard streams"
-        ));
-    }
-    let file = File::open(format!("/proc/self/fd/{fd}"))
-        .map_err(|error| format!("cannot duplicate inherited {kind} descriptor {fd}: {error}"))?;
-    let flags = fcntl_getfl(&file)
-        .map_err(|error| format!("cannot inspect {kind} descriptor {fd} flags: {error}"))?;
-    fcntl_setfl(&file, flags | OFlags::NONBLOCK)
-        .map_err(|error| format!("cannot make {kind} descriptor {fd} nonblocking: {error}"))?;
-    Ok(file)
+fn confine_inherited_file(descriptor: OwnedFd, kind: &str) -> Result<OwnedFd, String> {
+    let flags = fcntl_getfl(&descriptor)
+        .map_err(|error| format!("cannot inspect {kind} descriptor flags: {error}"))?;
+    fcntl_setfl(&descriptor, flags | OFlags::NONBLOCK)
+        .map_err(|error| format!("cannot make {kind} descriptor nonblocking: {error}"))?;
+    Ok(descriptor)
 }
 
 fn random_instance() -> Result<u64, String> {
     let mut bytes = [0_u8; 8];
-    File::open("/dev/urandom")
-        .and_then(|mut source| source.read_exact(&mut bytes))
-        .map_err(|error| format!("cannot create broker instance identifier: {error}"))?;
+    let mut offset = 0;
+    while offset < bytes.len() {
+        let count =
+            rustix::rand::getrandom(&mut bytes[offset..], rustix::rand::GetRandomFlags::empty())
+                .map_err(|error| format!("cannot create broker instance identifier: {error}"))?;
+        if count == 0 {
+            return Err("random source returned no instance bytes".to_owned());
+        }
+        offset += count;
+    }
     let instance = u64::from_ne_bytes(bytes);
     if instance == 0 {
         return Err("random broker instance identifier was zero".to_owned());
@@ -512,16 +523,12 @@ fn random_instance() -> Result<u64, String> {
 
 struct Arguments {
     uid: u32,
-    device_set_fd: u32,
-    event_fds: Vec<u32>,
 }
 
 impl Arguments {
     fn parse(arguments: impl Iterator<Item = std::ffi::OsString>) -> Result<Self, String> {
         let mut arguments = arguments;
         let mut uid = None;
-        let mut device_set_fd = None;
-        let mut event_fds = Vec::new();
         while let Some(argument) = arguments.next() {
             let argument = argument
                 .to_str()
@@ -533,22 +540,10 @@ impl Arguments {
                     }
                     uid = Some(parse_u32(arguments.next(), "--uid")?);
                 }
-                "--event-fd" => {
-                    if event_fds.len() >= MAX_EVENT_DESCRIPTORS {
-                        return Err("too many --event-fd arguments".to_owned());
-                    }
-                    event_fds.push(parse_u32(arguments.next(), "--event-fd")?);
-                }
-                "--device-set-fd" => {
-                    if device_set_fd.is_some() {
-                        return Err("--device-set-fd may be specified once".to_owned());
-                    }
-                    device_set_fd = Some(parse_u32(arguments.next(), "--device-set-fd")?);
-                }
                 "--help" => {
                     println!(
-                        "Usage: agent-seat-activity-broker --uid UID --device-set-fd FD \
-                         --event-fd FD [--event-fd FD ...]\n\
+                        "Usage: agent-seat-activity-broker --uid UID\n\
+                         Adopts the exact named descriptors addressed by systemd. \
                          Reads eligibility from preconnected standard input and provider requests \
                          from an authenticated AF_UNIX listener on standard output."
                     );
@@ -557,21 +552,8 @@ impl Arguments {
                 _ => return Err(format!("unknown argument {argument:?}")),
             }
         }
-        let mut unique = event_fds.clone();
-        unique.sort_unstable();
-        unique.dedup();
-        if unique.len() != event_fds.len() {
-            return Err("event descriptors must be unique".to_owned());
-        }
-        let device_set_fd =
-            device_set_fd.ok_or_else(|| "--device-set-fd is required".to_owned())?;
-        if device_set_fd < 3 || event_fds.contains(&device_set_fd) {
-            return Err("device-set descriptor must be nonstandard and distinct".to_owned());
-        }
         Ok(Self {
             uid: uid.ok_or_else(|| "--uid is required".to_owned())?,
-            device_set_fd,
-            event_fds,
         })
     }
 }
@@ -600,23 +582,10 @@ mod tests {
     }
 
     #[test]
-    fn arguments_require_unique_bounded_event_descriptors() {
-        let parsed = arguments(&[
-            "--uid",
-            "1000",
-            "--device-set-fd",
-            "3",
-            "--event-fd",
-            "4",
-            "--event-fd",
-            "5",
-        ])
-        .expect("valid broker arguments");
+    fn arguments_accept_only_one_enrolled_uid() {
+        let parsed = arguments(&["--uid", "1000"]).expect("valid broker arguments");
         assert_eq!(parsed.uid, 1000);
-        assert_eq!(parsed.device_set_fd, 3);
-        assert_eq!(parsed.event_fds, [4, 5]);
-
-        assert!(arguments(&["--uid", "1000", "--device-set-fd", "3", "--event-fd", "3",]).is_err());
+        assert!(arguments(&["--uid", "1000", "--event-fd", "3"]).is_err());
     }
 
     #[test]

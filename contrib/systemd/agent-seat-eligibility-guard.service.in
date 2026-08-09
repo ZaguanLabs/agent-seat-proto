@@ -7,14 +7,15 @@ Requires=@ELIGIBILITY_SOCKET_UNIT@
 After=@ELIGIBILITY_SOCKET_UNIT@ dbus.socket systemd-logind.service
 StartLimitIntervalSec=infinity
 StartLimitBurst=1
+CollectMode=inactive-or-failed
 
 [Service]
 Type=exec
-DynamicUser=yes
+User=@GUARD_USER@
 StandardInput=socket
 StandardOutput=journal
 StandardError=journal
-ExecStart=@GUARD_EXEC@ --session @SESSION_ID@ --uid @PROVIDER_UID@ --seat seat0 --input-set-fd 3 --listen-stdin --peer-uid 0
+ExecStart=@GUARD_EXEC@ --session @SESSION_ID@ --uid @PROVIDER_UID@ --seat seat0 --listen-stdin --peer-uid 0
 OpenFile=@INPUT_SET_PATH@:initial-input-set:read-only
 
 DevicePolicy=strict
@@ -61,5 +62,4 @@ LimitCORE=0
 MemoryMax=32M
 CPUQuota=10%
 KillMode=mixed
-CollectMode=inactive-or-failed
 Restart=no

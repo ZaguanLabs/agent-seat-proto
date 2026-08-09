@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus an experimental T5 pointer slice.
-`agent-seat-x11` 0.1.13 owns lifecycle, policy, local
+`agent-seat-x11` 0.1.14 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -184,7 +184,8 @@ allow_user_entries = false
 # Input remains unavailable without an administrator-enrolled broker and a
 # separately trusted eligibility producer.
 [input]
-# broker_socket = "/run/agent-seat-activity/enrolled.sock"
+# broker_socket = "/run/agent-seat/1000/activity.sock"
+# PID 1 owns the socket-activated listener in the system deployment.
 # broker_peer_uid = 0
 ```
 
@@ -210,7 +211,7 @@ omitted grant denies every peer.
 | `launch.deny` | empty | at most 256 unique canonical desktop IDs |
 | `launch.allow_user_entries` | `false` | boolean |
 | `input.broker_socket` | absent | bounded absolute pathname, paired with peer UID |
-| `input.broker_peer_uid` | absent | numeric UID observed through `SO_PEERCRED` |
+| `input.broker_peer_uid` | absent | numeric socket-listener UID observed through `SO_PEERCRED` |
 
 `deny` exposes and launches nothing. `allow_listed` admits only IDs in
 `allow`, after applying `deny`. `allow_installed` admits each valid discovered
