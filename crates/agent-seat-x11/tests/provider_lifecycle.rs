@@ -1,7 +1,7 @@
 //! Process-boundary T0 lifecycle, policy, ownership, and isolation tests.
 
 use std::fs::{self, DirBuilder};
-use std::io::{BufRead as _, Read as _};
+use std::io::{BufRead as _, Read as _, Write as _};
 use std::num::NonZeroU64;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::os::unix::fs::PermissionsExt as _;
@@ -9,7 +9,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -1977,6 +1977,140 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
     let _ = openbox.wait();
 }
 
+#[test]
+fn keyboard_text_reports_the_exact_partial_count_when_the_seat_is_disabled() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("keyboard-interruption");
+    let config = write_input_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("interrupted keyboard peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::InputKeyboard,
+            ],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "interrupted-keyboard-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "interrupted-keyboard-target")
+        })
+    });
+    let observed_target = client_named(&observed, "interrupted-keyboard-target");
+    client
+        .connection
+        .set_input_focus(InputFocus::PARENT, client.window, CURRENT_TIME)
+        .expect("interrupted client focus request")
+        .check()
+        .expect("interrupted client focus");
+    client
+        .connection
+        .sync()
+        .expect("interrupted client focus sync");
+
+    let control_path = only_control_socket(&directory.0);
+    let mut control = UnixStream::connect(control_path).expect("preconnect seat control");
+    control
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .expect("control read timeout");
+    control
+        .set_write_timeout(Some(Duration::from_secs(1)))
+        .expect("control write timeout");
+    control
+        .write_all(b"ASG1")
+        .expect("send partial seat-control request");
+    // The provider polls this private listener every 10 ms. Leaving the final
+    // command byte pending makes its control thread wait at the exact gate
+    // transition rather than racing process startup against the text call.
+    thread::sleep(Duration::from_millis(50));
+
+    let (completed_tx, completed_rx) = mpsc::channel();
+    let TestClient { connection, .. } = client;
+    let stopper = thread::spawn(move || {
+        let first = loop {
+            if let x11rb::protocol::Event::KeyPress(event) = connection
+                .wait_for_event()
+                .expect("wait for first interrupted key")
+            {
+                break event.detail;
+            }
+        };
+        control
+            .write_all(&[2])
+            .expect("complete disable control request");
+        control
+            .shutdown(std::net::Shutdown::Write)
+            .expect("finish disable control request");
+        let mut response = [0_u8; 13];
+        control
+            .read_exact(&mut response)
+            .expect("read disable control response");
+        assert_eq!(&response[..4], b"ASG1");
+        assert_eq!(response[4], 0);
+
+        let completed = completed_rx.recv().expect("receive completed action count");
+        let observed = wait_for_input_events_from(
+            &connection,
+            usize::from(completed) * 2,
+            0,
+            InputEvents {
+                key_presses: vec![first],
+                ..InputEvents::default()
+            },
+        );
+        assert_eq!(sorted(observed.key_presses), sorted(observed.key_releases));
+    });
+
+    let reply = match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::KeyboardType(KeyboardTypeRequest {
+            target: target(&observed_target),
+            text: BoundedText::new("A".repeat(256)).expect("interrupted keyboard text"),
+        }),
+    ) {
+        Outcome::Ok(Reply::Input(reply)) => reply,
+        other => panic!("interrupted keyboard outcome: {other:?}"),
+    };
+    assert_eq!(reply.requested, 256);
+    assert!(reply.completed > 0 && reply.completed < reply.requested);
+    assert_eq!(reply.terminal, InputTerminal::Interrupted);
+    completed_tx
+        .send(reply.completed)
+        .expect("send completed action count");
+    stopper.join().expect("interruption observer");
+
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+fn only_control_socket(runtime: &Path) -> PathBuf {
+    let directory = runtime.join("agent-seat");
+    let sockets = fs::read_dir(&directory)
+        .expect("read provider control directory")
+        .map(|entry| entry.expect("control directory entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("control-") && name.ends_with(".sock"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(sockets.len(), 1, "one provider control socket");
+    sockets.into_iter().next().expect("control socket")
+}
+
 #[derive(Default)]
 struct InputEvents {
     key_presses: Vec<u8>,
@@ -1990,8 +2124,21 @@ fn wait_for_input_events(
     key_presses: usize,
     button_presses: usize,
 ) -> InputEvents {
+    wait_for_input_events_from(
+        connection,
+        key_presses,
+        button_presses,
+        InputEvents::default(),
+    )
+}
+
+fn wait_for_input_events_from(
+    connection: &RustConnection,
+    key_presses: usize,
+    button_presses: usize,
+    mut observed: InputEvents,
+) -> InputEvents {
     let deadline = Instant::now() + Duration::from_secs(2);
-    let mut observed = InputEvents::default();
     loop {
         while let Some(event) = connection.poll_for_event().expect("poll input event") {
             match event {

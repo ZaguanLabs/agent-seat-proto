@@ -217,12 +217,14 @@ The repository's revision-5 provider lifecycle tests exercise admission,
 generation revocation, target-relative movement, all three logical clicks with
 complete button pairs, covering-window refusal, actual-focus refusal,
 lower/shifted/Return/Tab key pairs through the live map, and unmapped-scalar
-no-send behavior. Protocol, MCP, Settings, and configuration tests exercise
-separate grants and public bounds. The local
+no-send behavior. A pre-opened private control-channel fixture disables the
+seat after the first observed key event and verifies the exact partial scalar
+count against complete Shift/key pairs; it passed 20 consecutive local runs.
+Protocol, MCP, Settings, and configuration tests exercise separate grants and
+public bounds. The local
 [verification record](../../verification/t0.5-input-verification.md) names the
 exact environment and limitations.
 
-That evidence does not yet pass this complete profile: deterministic
-between-action interruption and the negative raw-device authority fixture
-still need one complete public-boundary report. Independent evidence is also
-required before the profile can become provisional.
+That evidence does not yet pass this complete profile: the negative raw-device
+authority fixture still needs one complete public-boundary report. Independent
+evidence is also required before the profile can become provisional.
