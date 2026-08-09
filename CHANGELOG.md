@@ -189,6 +189,9 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- Corrected the provider guide's current source version and expanded the
+  compatibility matrix to separate installed runtime evidence, unconstrained
+  external-harness status, and pre-RFC publication readiness.
 - Patch-bumped `agent-seat-activity-broker` to 0.1.17 for exact bundle
   verification, the documented unprivileged pre-installation workflow,
   fail-closed runtime input-device lifecycle monitoring, and initial input
