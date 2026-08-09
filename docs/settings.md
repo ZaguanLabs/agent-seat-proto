@@ -126,8 +126,8 @@ inspects or changes the volatile runtime seat.
 
 Agent Seat Tier 0 can observe scoped EWMH state, request supported EWMH window
 management, and launch admitted desktop entries. The separately granted Tier
-0.5 profile can also move or click inside a freshly observed visible target and
-type bounded text when that target already owns keyboard focus. These actions
-require the current volatile seat to be enabled and do not claim physical-user
-priority or application acceptance. Agent Seat still cannot capture the screen
-or use an accessibility tree.
+0.5 profile can also move or click inside a freshly observed visible target,
+type bounded text, or send one finite key command when that target already owns
+keyboard focus. These actions require the current volatile seat to be enabled
+and do not claim physical-user priority or application acceptance. Agent Seat
+still cannot capture an output or use an accessibility tree.

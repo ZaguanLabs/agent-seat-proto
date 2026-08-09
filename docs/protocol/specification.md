@@ -1,13 +1,13 @@
-# Agent Seat local JSON binding, wire revision 6
+# Agent Seat local JSON binding, wire revision 7
 
 Status: experimental obscured-capture and Tier 0.5 input profiles over the
-released E1 core contract. Revision 6 is intentionally incompatible with Agent
-Seat revisions 3, 4, and 5 and Nobox revision 2.
+released E1 core contract. Revision 7 is intentionally incompatible with Agent
+Seat revisions 3, 4, 5, and 6 and Nobox revision 2.
 
 This document is the concrete pathname-Unix-stream and strict-JSON binding for
 the portable semantics in the pre-RFC
 [`information model`](information-model.md). Its JSON field names, framing,
-socket discovery, and byte limits belong to revision 6, not to the abstract
+socket discovery, and byte limits belong to revision 7, not to the abstract
 model. This binding remains the repository's normative implemented wire
 contract if the pre-RFC documents differ.
 
@@ -52,6 +52,12 @@ pixels were visible to the person. The larger response-frame bound exists only
 to carry one bounded image. Strict revision-5 peers cannot interpret that
 result, so revision 6 allocates a new exact language.
 
+Revision 7 adds `keyboard.key`: one finite, portable key with at most four
+typed momentary modifiers. It does not expose backend keycodes, held keys, or
+sequences. Strict revision-6 peers cannot interpret the call, so revision 7
+allocates a new exact language while retaining every revision-6 operation and
+bound.
+
 An advertisement and opening message name one exact revision. There is no
 range negotiation. A mismatched pair closes with `incompatible_revision` and
 does not guess from JSON fields.
@@ -81,7 +87,7 @@ exactly that many UTF-8 JSON bytes:
 - The JSON value is one complete object. Trailing bytes, duplicate known
   fields, unknown fields, unknown enum values, and wrong JSON types are
   malformed.
-- Serde's finite JSON recursion limit applies; revision 6 defines no recursive
+- Serde's finite JSON recursion limit applies; revision 7 defines no recursive
   message value.
 
 Lengths constrain encoded bytes, not Unicode scalar counts. Bounded lists stop
@@ -98,10 +104,10 @@ The first client message is `hello`. A provider answers with exactly one
   "type": "hello",
   "body": {
     "protocol": "agent-seat",
-    "revision": 6,
+    "revision": 7,
     "peer": {
       "name": "agent-seat-mcp",
-      "version": "0.1.5",
+      "version": "0.1.7",
       "purpose": "translate MCP desktop tools"
     },
     "requested": ["observe_structure", "observe_titles"]
@@ -118,9 +124,9 @@ unique, canonical list of at most 32 atoms.
   "type": "welcome",
   "body": {
     "protocol": "agent-seat",
-    "revision": 6,
+    "revision": 7,
     "session": 1,
-    "provider": {"name": "agent-seat-x11", "version": "0.1.26"},
+    "provider": {"name": "agent-seat-x11", "version": "0.1.27"},
     "backend": "x11_ewmh",
     "assurance": "tier0",
     "features": ["ewmh_observation"],
@@ -163,7 +169,7 @@ Canonical capability order is:
 13. `capture_obscured`
 
 Core features are `ewmh_observation`, `ewmh_management`, and
-`desktop_launch`. Revision 6 implements the optional `obscured_capture` feature
+`desktop_launch`. Revision 7 implements the optional `obscured_capture` feature
 only when its separate capability is granted. Other reserved optional feature
 names are `client_visible_capture`, `output_capture`, `input_injection`,
 `human_activity`, and `accessibility`; the Tier 0.5 input profile may advertise
@@ -225,6 +231,7 @@ The core call names and arguments are:
 | `pointer.move` | `input_pointer` | fresh client and client-relative unsigned `x`, `y` |
 | `pointer.click` | `input_pointer` | fresh client, client-relative unsigned `x`, `y`, and primary/middle/secondary button |
 | `keyboard.type` | `input_keyboard` | fresh client and bounded nonempty `text` |
+| `keyboard.key` | `input_keyboard` | fresh client, typed `key`, and optional canonical `modifiers` |
 | `capture.obscured` | `capture_obscured` | fresh client |
 
 Client IDs are nonzero provider-session handles. They are not XIDs. A
@@ -291,6 +298,23 @@ momentary modifier pairs required for that XKB level. The provider re-reads the
 live XKB state and mapping under the action-local server grab before each
 character. It does not change layouts or groups, synthesize compose/IME
 sequences, or paste through another protocol.
+
+`keyboard.key` has the same fresh-target, focus, XKB-state, server-grab, seat,
+and qualified-result requirements. One call is exactly one complete main-key
+press/release pair, optionally surrounded by complete modifier pairs. The
+portable keys are `backspace`, `delete`, `enter`, `escape`, `tab`, `space`,
+`insert`, `home`, `end`, `page_up`, `page_down`, `arrow_left`, `arrow_right`,
+`arrow_up`, `arrow_down`, lowercase `a` through `z`, digits `0` through `9`,
+and `f1` through `f12`. The optional modifier list contains at most four unique
+values in canonical `control`, `alt`, `shift`, `super` order. `alt` excludes
+AltGr/ISO Level 3. Page Up and Page Down map to the historical X11 `Prior` and
+`Next` keysyms; the wire does not expose those backend names as aliases.
+
+The provider resolves the main symbol and every requested modifier from the
+live XKB map before sending anything. Missing symbols, missing or ambiguous
+modifier evidence, active depressed/latched modifiers, stale focus, and stale
+targets fail closed. It never accepts numeric keycodes, forces focus, leaves a
+key held, or executes multiple key actions from one call.
 
 The input reply carries `completed`, `requested`, and `queued` or
 `interrupted`. `queued` means only that every reported action was queued and

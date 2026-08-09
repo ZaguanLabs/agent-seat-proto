@@ -1,11 +1,11 @@
 # X11 obscured-client capture profile v1
 
-Status: experimental implementation in Agent Seat wire revision 6.
+Status: experimental implementation in Agent Seat wire revisions 6 and 7.
 
 This optional profile exposes one target-owned image without exposing the root
 window or an output. It is deliberately separate from the
 [X11/EWMH core profile](x11-ewmh-core-v1.md) and the
-[Tier 0.5 input profile](x11-tier0.5-input-v1.md).
+[Tier 0.5 input profile](x11-tier0.5-input-v2.md).
 
 ## Session contract
 

@@ -91,7 +91,7 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
             .as_array()
             .expect("tool array")
             .len(),
-        16
+        17
     );
     let tool_names = responses[1]["result"]["tools"]
         .as_array()
@@ -101,6 +101,7 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
         .collect::<Vec<_>>();
     assert!(tool_names.contains(&"pointer_click"));
     assert!(tool_names.contains(&"keyboard_type"));
+    assert!(tool_names.contains(&"keyboard_key"));
     assert!(tool_names.contains(&"capture_obscured"));
     assert!(responses[1]["result"]["resultType"].is_null());
     assert!(responses[1]["result"]["ttlMs"].is_null());
@@ -153,7 +154,7 @@ fn modern_discovery_and_tool_listing_are_stateless_cacheable_and_desktop_free() 
     assert_eq!(listing["ttlMs"], 3_600_000);
     assert_eq!(listing["cacheScope"], "public");
     let tools = listing["tools"].as_array().expect("modern tool array");
-    assert_eq!(tools.len(), 17);
+    assert_eq!(tools.len(), 18);
     let status = tools
         .iter()
         .find(|tool| tool["name"] == "seat_status")

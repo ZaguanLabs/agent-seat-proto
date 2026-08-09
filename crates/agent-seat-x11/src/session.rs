@@ -50,7 +50,7 @@ pub(crate) fn run(
         return close(
             &mut stream,
             ErrorCode::IncompatibleRevision,
-            "exact Agent Seat revision 6 is required",
+            "exact Agent Seat revision 7 is required",
         );
     }
     let Some(seat_permit) = seat.permit() else {
@@ -278,6 +278,7 @@ fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
                 | Call::PointerMove(_)
                 | Call::PointerClick(_)
                 | Call::KeyboardType(_)
+                | Call::KeyboardKey(_)
                 | Call::CaptureObscured(_)
         ) || granted.contains(&agent_seat_proto::Capability::ObserveStructure))
         && (!matches!(call, Call::ApplicationLaunch(_))
@@ -364,6 +365,12 @@ fn provider_call(
         Call::KeyboardType(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| {
                 observer.keyboard_type(arguments, context.seat, context.seat_permit)
+            })
+            .map(Reply::Input)
+            .map_err(CallFailure::Observation),
+        Call::KeyboardKey(arguments) => observer_for(observer, context.granted, context.config)
+            .and_then(|observer| {
+                observer.keyboard_key(arguments, context.seat, context.seat_permit)
             })
             .map(Reply::Input)
             .map_err(CallFailure::Observation),

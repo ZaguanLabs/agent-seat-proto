@@ -6,7 +6,7 @@ is owned from its first commit by
 [`ZaguanLabs`](https://github.com/ZaguanLabs).
 
 E1 and the T0--T3 Tier 0 core are complete. Current source implements strict
-Agent Seat wire revision 6, a dual-era MCP `2026-07-28` and `2025-11-25`
+Agent Seat wire revision 7, a dual-era MCP `2026-07-28` and `2025-11-25`
 companion, and a standalone provider with bounded EWMH observation,
 freshness-checked management, and policy-controlled desktop-entry launch. The
 five deliverables are:
@@ -138,8 +138,9 @@ publicly cacheable for one hour. The first provider-backed tool call resolves
 The standalone provider answers
 authenticated `seat_status`, bounded desktop snapshots, filtered event
 subscriptions, supported EWMH management, and controlled XDG application
-discovery and launch. Separately granted `pointer_move`, `pointer_click`, and
-`keyboard_type` tools are available only while the volatile Tier 0.5 seat is
+discovery and launch. Separately granted `pointer_move`, `pointer_click`,
+`keyboard_type`, and `keyboard_key` tools are available only while the volatile
+Tier 0.5 seat is
 enabled; they are not part of the supported Tier 0 core.
 
 The [documentation index](docs/README.md) separates user guides from technical
@@ -158,7 +159,7 @@ implementation-independent standards direction is the repository's non-external
 standalone
 [`agent-seat.x11-ewmh-core.v1`](docs/protocol/profiles/x11-ewmh-core-v1.md)
 backend profile, the optional
-[`agent-seat.x11-tier0.5-input.v1`](docs/protocol/profiles/x11-tier0.5-input-v1.md)
+[`agent-seat.x11-tier0.5-input.v2`](docs/protocol/profiles/x11-tier0.5-input-v2.md)
 profile, and portable
 [`agent-seat.conformance-report/1`](docs/protocol/conformance-report.md) evidence
 format.

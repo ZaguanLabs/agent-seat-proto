@@ -485,3 +485,20 @@ session, and X11 lifecycle mechanisms and adds no dependency. LightDM remains
 an external future black-box lifecycle candidate under the public interfaces
 already recorded above. No Nobox or other product source, schema, fixture,
 test, comment, service definition, or prose was consulted or adapted.
+
+## Revision 7 bounded key commands
+
+The revision-7 `keyboard.key` wire operation, MCP projection, XKB realization,
+profile v2, and tests are original work from the maintainer's stated
+requirement to prefer conventional application shortcuts and Page Up/Page Down
+over fragile pointer coordinates. Nobox was treated only as the already
+recorded black-box prior-art requirement; no Nobox source, schema, test,
+fixture, comment, or prose was consulted, copied, translated, or adapted.
+
+Portable X11 keysym values and the historical `Prior`/`Next` names are
+standards-derived facts from the X.Org `keysymdef.h` publication at
+<https://gitlab.freedesktop.org/xorg/proto/xorgproto/-/blob/master/include/X11/keysymdef.h>.
+Live layout, group, type, modifier-map, and XTEST behavior use the public XKB
+Library and XTEST specifications already cited above. The change uses only the
+existing safe `x11rb` XKB/XTEST bindings and adds no dependency, privileged
+process, raw device access, or machine authority.

@@ -1,7 +1,7 @@
 # Tier 0.5 volatile seat gate
 
 Status: experimental provider profile, 2026-08-09. This is a working local
-operator gate and the runtime prerequisite for the revision-5 X11 input
+operator gate and the runtime prerequisite for the revision-7 X11 input
 surface, not a new wire assurance value or a physical-user priority claim.
 
 ## Purpose
@@ -56,7 +56,9 @@ Every pointer or keyboard action additionally rechecks this generation after
 fresh target validation while the X server is grabbed. It checks again after
 synchronization before reporting `queued`. A concurrent disable can therefore
 turn the result into `interrupted`; a text request checks between its bounded
-character actions and may report a partial count.
+character actions and may report a partial count. A `keyboard.key` request is
+one independently reportable action with balanced main-key and modifier
+press/release pairs.
 
 The gate does not replace target validation and is not evidence of an unlocked
 session or physical-user inactivity. Ordinary X11 cannot reliably distinguish
@@ -105,7 +107,7 @@ similar startup conventions do not prove identical lifetime behavior.
 
 ## Settings integration
 
-`agent-seat-settings` 0.1.7 shows the selected provider's volatile status in a
+`agent-seat-settings` 0.1.8 shows the selected provider's volatile status in a
 fourth `RUNTIME SEAT` state-rail node and in a dedicated Overview panel. The
 panel provides manual Refresh, **Enable for this instance**, and immediate
 **Disable now** controls. Enable requires a confirmation that names the current

@@ -18,12 +18,12 @@ use agent_seat_proto::{
     ApplicationId, ApplicationLaunchRequest, ApplicationListRequest, BoundedList, BoundedText,
     Call, Capability, ClientDescriptor, ClientGeometryRequest, ClientMessage, ClientState,
     ClientStateRequest, ClientWorkspaceRequest, DesktopSnapshot, Empty, ErrorCode, Event,
-    EventBatch, EventKind, Hello, InputTerminal, KeyboardTypeRequest, MAX_REQUEST_FRAME_BYTES,
-    MAX_RESPONSE_FRAME_BYTES, ManagementReply, Observation as ManagementObservation, Outcome,
-    PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo, PointerButton, PointerClickRequest,
-    PointerMoveRequest, PollRequest, ReadFrame, Rect, Reply, Request, RequestId, Sequence,
-    ServerMessage, StateAction, SubscribeRequest, TargetRequest, WorkspaceRequest, read_frame,
-    write_frame,
+    EventBatch, EventKind, Hello, InputTerminal, KeyboardKey, KeyboardKeyRequest, KeyboardModifier,
+    KeyboardTypeRequest, MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES, ManagementReply,
+    Observation as ManagementObservation, Outcome, PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo,
+    PointerButton, PointerClickRequest, PointerMoveRequest, PollRequest, ReadFrame, Rect, Reply,
+    Request, RequestId, Sequence, ServerMessage, StateAction, SubscribeRequest, TargetRequest,
+    WorkspaceRequest, read_frame, write_frame,
 };
 use agent_seat_x11::{
     ActivePolicyStatus, RuntimeSeatCommand, active_policy_status, control_runtime_seat,
@@ -2298,6 +2298,46 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
     let events = wait_for_input_events(&client.connection, 5, 0);
     assert_eq!(sorted(events.key_presses), sorted(events.key_releases));
 
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::KeyboardKey(KeyboardKeyRequest {
+                target: target(&observed_target),
+                key: KeyboardKey::L,
+                modifiers: BoundedList::new(vec![KeyboardModifier::Control])
+                    .expect("control shortcut"),
+            }),
+        ),
+        Outcome::Ok(Reply::Input(reply))
+            if reply.completed == 1
+                && reply.requested == 1
+                && reply.terminal == InputTerminal::Queued
+    ));
+    let shortcut = wait_for_input_events(&client.connection, 2, 0);
+    assert_eq!(sorted(shortcut.key_presses), sorted(shortcut.key_releases));
+
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::KeyboardKey(KeyboardKeyRequest {
+                target: target(&observed_target),
+                key: KeyboardKey::PageDown,
+                modifiers: BoundedList::default(),
+            }),
+        ),
+        Outcome::Ok(Reply::Input(reply))
+            if reply.completed == 1
+                && reply.requested == 1
+                && reply.terminal == InputTerminal::Queued
+    ));
+    let page_down = wait_for_input_events(&client.connection, 1, 0);
+    assert_eq!(
+        sorted(page_down.key_presses),
+        sorted(page_down.key_releases)
+    );
+
     match wire_call(
         &mut stream,
         &mut next_id,
@@ -2308,6 +2348,27 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
     ) {
         Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
         other => panic!("unmapped keyboard outcome: {other:?}"),
+    }
+    assert_no_input_events(&client.connection);
+
+    client
+        .connection
+        .set_input_focus(InputFocus::PARENT, client.root, CURRENT_TIME)
+        .expect("root focus request")
+        .check()
+        .expect("root focus");
+    client.connection.sync().expect("root focus sync");
+    match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::KeyboardKey(KeyboardKeyRequest {
+            target: target(&observed_target),
+            key: KeyboardKey::PageUp,
+            modifiers: BoundedList::default(),
+        }),
+    ) {
+        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
+        other => panic!("unfocused keyboard-key outcome: {other:?}"),
     }
     assert_no_input_events(&client.connection);
 

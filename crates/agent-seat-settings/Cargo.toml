@@ -5,12 +5,12 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-version = "0.1.7"
+version = "0.1.8"
 publish = false
 
 [dependencies]
-agent-seat-proto = { path = "../agent-seat-proto", version = "0.1.4" }
-agent-seat-x11 = { path = "../agent-seat-x11", version = "0.1.26" }
+agent-seat-proto = { path = "../agent-seat-proto", version = "0.1.5" }
+agent-seat-x11 = { path = "../agent-seat-x11", version = "0.1.27" }
 gtk.workspace = true
 
 [dev-dependencies]

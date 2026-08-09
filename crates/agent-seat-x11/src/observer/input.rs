@@ -1,8 +1,8 @@
 //! Provider-local, target-aware XTEST input behind the volatile seat gate.
 
 use agent_seat_proto::{
-    InputReply, InputTerminal, KeyboardTypeRequest, PointerButton, PointerClickRequest,
-    PointerMoveRequest,
+    InputReply, InputTerminal, KeyboardKeyRequest, KeyboardTypeRequest, PointerButton,
+    PointerClickRequest, PointerMoveRequest,
 };
 use x11rb::CURRENT_TIME;
 use x11rb::protocol::shape::{ConnectionExt as _, SK};
@@ -13,7 +13,7 @@ use x11rb::protocol::xproto::{
 use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 
-use super::keyboard::{KeyStroke, resolve_character, resolve_text};
+use super::keyboard::{KeyStroke, resolve_character, resolve_key, resolve_text};
 use super::{Failure, Observer};
 use crate::seat::{SeatGate, SeatPermit};
 
@@ -111,6 +111,30 @@ impl Observer {
                 InputTerminal::Interrupted
             },
         })
+    }
+
+    pub(crate) fn keyboard_key(
+        &mut self,
+        request: KeyboardKeyRequest,
+        seat: &SeatGate,
+        seat_permit: SeatPermit,
+    ) -> Result<InputReply, Failure> {
+        let sent = self.under_server_grab(|observer| {
+            observer.refresh()?;
+            let target = observer.target(request.target)?;
+            observer.require_focus_owned_by(target.xid)?;
+            let stroke = resolve_key(
+                &observer.connection,
+                request.key,
+                request.modifiers.as_slice(),
+            )?;
+            if !seat.accepts(seat_permit) {
+                return Ok(false);
+            }
+            observer.type_key(&stroke)?;
+            Ok(true)
+        })?;
+        Ok(action_reply(sent, seat.accepts(seat_permit)))
     }
 
     fn pointer_destination(

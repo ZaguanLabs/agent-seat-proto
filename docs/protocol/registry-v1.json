@@ -22,6 +22,10 @@
       {
         "id": 6,
         "status": "experimental"
+      },
+      {
+        "id": 7,
+        "status": "experimental"
       }
     ]
   },
@@ -40,7 +44,7 @@
       "schema": "conformance-report-v1.schema.json"
     }
   ],
-  "revision_6": {
+  "revision_7": {
     "client_messages": [
       "hello",
       "request",
@@ -151,6 +155,10 @@
         "capability": "input_keyboard"
       },
       {
+        "name": "keyboard.key",
+        "capability": "input_keyboard"
+      },
+      {
         "name": "capture.obscured",
         "capability": "capture_obscured"
       }
@@ -227,6 +235,80 @@
       "queued",
       "interrupted"
     ],
+    "keyboard_keys": [
+      "backspace",
+      "delete",
+      "enter",
+      "escape",
+      "tab",
+      "space",
+      "insert",
+      "home",
+      "end",
+      "page_up",
+      "page_down",
+      "arrow_left",
+      "arrow_right",
+      "arrow_up",
+      "arrow_down",
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
+      "g",
+      "h",
+      "i",
+      "j",
+      "k",
+      "l",
+      "m",
+      "n",
+      "o",
+      "p",
+      "q",
+      "r",
+      "s",
+      "t",
+      "u",
+      "v",
+      "w",
+      "x",
+      "y",
+      "z",
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "f1",
+      "f2",
+      "f3",
+      "f4",
+      "f5",
+      "f6",
+      "f7",
+      "f8",
+      "f9",
+      "f10",
+      "f11",
+      "f12"
+    ],
+    "keyboard_modifiers": {
+      "canonical_order": true,
+      "atoms": [
+        "control",
+        "alt",
+        "shift",
+        "super"
+      ]
+    },
     "error_codes": [
       "unavailable",
       "incompatible_revision",
@@ -256,7 +338,8 @@
       "specification": "profiles/x11-ewmh-core-v1.md",
       "wire_revisions": [
         5,
-        6
+        6,
+        7
       ],
       "backend": "x11_ewmh",
       "assurance": "tier0"
@@ -273,11 +356,22 @@
       "assurance": "tier0"
     },
     {
+      "identifier": "agent-seat.x11-tier0.5-input.v2",
+      "status": "experimental",
+      "specification": "profiles/x11-tier0.5-input-v2.md",
+      "wire_revisions": [
+        7
+      ],
+      "backend": "x11_ewmh",
+      "assurance": "tier0"
+    },
+    {
       "identifier": "agent-seat.x11-obscured-capture.v1",
       "status": "experimental",
       "specification": "profiles/x11-obscured-capture-v1.md",
       "wire_revisions": [
-        6
+        6,
+        7
       ],
       "backend": "x11_ewmh",
       "assurance": "tier0"

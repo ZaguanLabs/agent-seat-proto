@@ -1,5 +1,6 @@
 //! XKB-aware resolution from Unicode scalars to physical key actions.
 
+use agent_seat_proto::{KeyboardKey, KeyboardModifier};
 use x11rb::protocol::xkb::{
     ConnectionExt as _, GetMapReply, GetStateReply, ID, KeyModMap, KeySymMap, KeyType, MapPart,
     VMod,
@@ -11,11 +12,30 @@ use super::Failure;
 
 const XK_TAB: u32 = 0xff09;
 const XK_RETURN: u32 = 0xff0d;
+const XK_BACKSPACE: u32 = 0xff08;
+const XK_ESCAPE: u32 = 0xff1b;
+const XK_DELETE: u32 = 0xffff;
+const XK_HOME: u32 = 0xff50;
+const XK_LEFT: u32 = 0xff51;
+const XK_UP: u32 = 0xff52;
+const XK_RIGHT: u32 = 0xff53;
+const XK_DOWN: u32 = 0xff54;
+const XK_PRIOR: u32 = 0xff55;
+const XK_NEXT: u32 = 0xff56;
+const XK_END: u32 = 0xff57;
+const XK_INSERT: u32 = 0xff63;
+const XK_F1: u32 = 0xffbe;
 const XK_SHIFT_L: u32 = 0xffe1;
 const XK_SHIFT_R: u32 = 0xffe2;
+const XK_CONTROL_L: u32 = 0xffe3;
+const XK_CONTROL_R: u32 = 0xffe4;
 const XK_CAPS_LOCK: u32 = 0xffe5;
 const XK_SHIFT_LOCK: u32 = 0xffe6;
 const XK_NUM_LOCK: u32 = 0xff7f;
+const XK_ALT_L: u32 = 0xffe9;
+const XK_ALT_R: u32 = 0xffea;
+const XK_SUPER_L: u32 = 0xffeb;
+const XK_SUPER_R: u32 = 0xffec;
 const XK_ISO_LEVEL3_SHIFT: u32 = 0xfe03;
 const XK_ISO_LEVEL5_SHIFT: u32 = 0xfe11;
 const MAX_MOMENTARY_MODIFIERS: usize = 8;
@@ -118,6 +138,14 @@ impl KeyboardMap {
     }
 
     fn resolve(&self, wanted: u32) -> Result<KeyStroke, Failure> {
+        self.resolve_with_modifiers(wanted, &[])
+    }
+
+    fn resolve_with_modifiers(
+        &self,
+        wanted: u32,
+        requested: &[KeyboardModifier],
+    ) -> Result<KeyStroke, Failure> {
         if u16::from(self.state.base_mods) != 0
             || u16::from(self.state.latched_mods) != 0
             || self.state.base_group != 0
@@ -128,7 +156,19 @@ impl KeyboardMap {
             ));
         }
         let group = usize::from(u8::from(self.state.group));
-        let current_modifiers = modifier_bits(self.state.mods)?;
+        let mut requested_bits = 0_u8;
+        let mut requested_keys = Vec::with_capacity(requested.len());
+        for modifier in requested {
+            let key = self.modifier_key(*modifier)?;
+            if requested_bits & key.modifiers != 0 {
+                return Err(Failure::invalid(
+                    "requested keyboard modifiers share an XKB modifier bit",
+                ));
+            }
+            requested_bits |= key.modifiers;
+            requested_keys.push(key.keycode);
+        }
+        let current_modifiers = modifier_bits(self.state.mods)? | requested_bits;
         let safe_locked_modifiers = self.safe_locked_modifiers()?;
         let modifier_keys = self.momentary_modifier_keys();
 
@@ -142,7 +182,9 @@ impl KeyboardMap {
                 let group = normalized_group(key.group_info, group)?;
                 let key_type = self.types.get(usize::from(*key.kt_index.get(group)?))?;
                 let type_modifiers = modifier_bits(key_type.mods_mask).ok()?;
-                if current_modifiers & !(type_modifiers | safe_locked_modifiers) != 0 {
+                if current_modifiers & !(type_modifiers | safe_locked_modifiers | requested_bits)
+                    != 0
+                {
                     return None;
                 }
                 let width = usize::from(key.width);
@@ -160,14 +202,49 @@ impl KeyboardMap {
                             current_modifiers,
                             &modifier_keys,
                         )
-                        .map(|modifiers| KeyStroke { keycode, modifiers })
+                        .map(|modifiers| {
+                            let mut all_modifiers = requested_keys.clone();
+                            for keycode in modifiers {
+                                if !all_modifiers.contains(&keycode) {
+                                    all_modifiers.push(keycode);
+                                }
+                            }
+                            KeyStroke {
+                                keycode,
+                                modifiers: all_modifiers,
+                            }
+                        })
                     })
                     .min_by_key(|stroke| stroke.modifiers.len())
             })
             .min_by_key(|stroke| stroke.modifiers.len())
             .ok_or_else(|| {
                 Failure::invalid(
-                    "text contains a character unavailable in the current XKB layout and group",
+                    "keyboard symbol is unavailable in the current XKB layout and group",
+                )
+            })
+    }
+
+    fn modifier_key(&self, modifier: KeyboardModifier) -> Result<ModifierKey, Failure> {
+        let symbols: &[u32] = match modifier {
+            KeyboardModifier::Control => &[XK_CONTROL_L, XK_CONTROL_R],
+            KeyboardModifier::Alt => &[XK_ALT_L, XK_ALT_R],
+            KeyboardModifier::Shift => &[XK_SHIFT_L, XK_SHIFT_R],
+            KeyboardModifier::Super => &[XK_SUPER_L, XK_SUPER_R],
+        };
+        self.modifier_map
+            .iter()
+            .find_map(|entry| {
+                let bits = modifier_bits(entry.mods).ok()?;
+                (bits.count_ones() == 1 && self.key_has_any_symbol(entry.keycode, symbols))
+                    .then_some(ModifierKey {
+                        keycode: entry.keycode,
+                        modifiers: bits,
+                    })
+            })
+            .ok_or_else(|| {
+                Failure::invalid(
+                    "keyboard modifier is unavailable in the current XKB layout and group",
                 )
             })
     }
@@ -283,6 +360,15 @@ pub(super) fn resolve_character(
     KeyboardMap::read(connection)?.resolve(keysym_for_character(character))
 }
 
+pub(super) fn resolve_key(
+    connection: &RustConnection,
+    key: KeyboardKey,
+    modifiers: &[KeyboardModifier],
+) -> Result<KeyStroke, Failure> {
+    let map = KeyboardMap::read(connection)?;
+    map.resolve_with_modifiers(keysym_for_key(key), modifiers)
+}
+
 fn modifier_bits(mask: ModMask) -> Result<u8, Failure> {
     u8::try_from(u16::from(mask))
         .map_err(|_| Failure::unavailable("XKB returned an invalid modifier mask"))
@@ -328,6 +414,74 @@ fn keysym_for_character(character: char) -> u32 {
     }
 }
 
+fn keysym_for_key(key: KeyboardKey) -> u32 {
+    match key {
+        KeyboardKey::Backspace => XK_BACKSPACE,
+        KeyboardKey::Delete => XK_DELETE,
+        KeyboardKey::Enter => XK_RETURN,
+        KeyboardKey::Escape => XK_ESCAPE,
+        KeyboardKey::Tab => XK_TAB,
+        KeyboardKey::Space => u32::from(b' '),
+        KeyboardKey::Insert => XK_INSERT,
+        KeyboardKey::Home => XK_HOME,
+        KeyboardKey::End => XK_END,
+        KeyboardKey::PageUp => XK_PRIOR,
+        KeyboardKey::PageDown => XK_NEXT,
+        KeyboardKey::ArrowLeft => XK_LEFT,
+        KeyboardKey::ArrowRight => XK_RIGHT,
+        KeyboardKey::ArrowUp => XK_UP,
+        KeyboardKey::ArrowDown => XK_DOWN,
+        KeyboardKey::A => u32::from(b'a'),
+        KeyboardKey::B => u32::from(b'b'),
+        KeyboardKey::C => u32::from(b'c'),
+        KeyboardKey::D => u32::from(b'd'),
+        KeyboardKey::E => u32::from(b'e'),
+        KeyboardKey::F => u32::from(b'f'),
+        KeyboardKey::G => u32::from(b'g'),
+        KeyboardKey::H => u32::from(b'h'),
+        KeyboardKey::I => u32::from(b'i'),
+        KeyboardKey::J => u32::from(b'j'),
+        KeyboardKey::K => u32::from(b'k'),
+        KeyboardKey::L => u32::from(b'l'),
+        KeyboardKey::M => u32::from(b'm'),
+        KeyboardKey::N => u32::from(b'n'),
+        KeyboardKey::O => u32::from(b'o'),
+        KeyboardKey::P => u32::from(b'p'),
+        KeyboardKey::Q => u32::from(b'q'),
+        KeyboardKey::R => u32::from(b'r'),
+        KeyboardKey::S => u32::from(b's'),
+        KeyboardKey::T => u32::from(b't'),
+        KeyboardKey::U => u32::from(b'u'),
+        KeyboardKey::V => u32::from(b'v'),
+        KeyboardKey::W => u32::from(b'w'),
+        KeyboardKey::X => u32::from(b'x'),
+        KeyboardKey::Y => u32::from(b'y'),
+        KeyboardKey::Z => u32::from(b'z'),
+        KeyboardKey::Digit0 => u32::from(b'0'),
+        KeyboardKey::Digit1 => u32::from(b'1'),
+        KeyboardKey::Digit2 => u32::from(b'2'),
+        KeyboardKey::Digit3 => u32::from(b'3'),
+        KeyboardKey::Digit4 => u32::from(b'4'),
+        KeyboardKey::Digit5 => u32::from(b'5'),
+        KeyboardKey::Digit6 => u32::from(b'6'),
+        KeyboardKey::Digit7 => u32::from(b'7'),
+        KeyboardKey::Digit8 => u32::from(b'8'),
+        KeyboardKey::Digit9 => u32::from(b'9'),
+        KeyboardKey::F1 => XK_F1,
+        KeyboardKey::F2 => XK_F1 + 1,
+        KeyboardKey::F3 => XK_F1 + 2,
+        KeyboardKey::F4 => XK_F1 + 3,
+        KeyboardKey::F5 => XK_F1 + 4,
+        KeyboardKey::F6 => XK_F1 + 5,
+        KeyboardKey::F7 => XK_F1 + 6,
+        KeyboardKey::F8 => XK_F1 + 7,
+        KeyboardKey::F9 => XK_F1 + 8,
+        KeyboardKey::F10 => XK_F1 + 9,
+        KeyboardKey::F11 => XK_F1 + 10,
+        KeyboardKey::F12 => XK_F1 + 11,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,6 +510,28 @@ mod tests {
         }
     }
 
+    fn clear_state() -> GetStateReply {
+        GetStateReply {
+            device_id: 3,
+            sequence: 0,
+            length: 0,
+            mods: ModMask::default(),
+            base_mods: ModMask::default(),
+            latched_mods: ModMask::default(),
+            locked_mods: ModMask::default(),
+            group: Default::default(),
+            locked_group: Default::default(),
+            base_group: 0,
+            latched_group: 0,
+            compat_state: ModMask::default(),
+            grab_mods: ModMask::default(),
+            compat_grab_mods: ModMask::default(),
+            lookup_mods: ModMask::default(),
+            compat_lookup_mods: ModMask::default(),
+            ptr_btn_state: Default::default(),
+        }
+    }
+
     #[test]
     fn xkb_type_selects_shift_and_level_three_levels() {
         let shift = 1;
@@ -377,5 +553,47 @@ mod tests {
         assert_eq!(normalized_group(0x80 | 0x10 | 2, 3), Some(1));
         assert_eq!(normalized_group(0xc0 | 2, 3), None);
         assert_eq!(normalized_group(0, 0), None);
+    }
+
+    #[test]
+    fn requested_modifiers_participate_in_final_symbol_resolution() {
+        let control = 1 << 2;
+        let map = KeyboardMap {
+            minimum: 8,
+            types: vec![key_type(control, &[(control, 1)])],
+            symbols: vec![
+                KeySymMap {
+                    kt_index: [0; 4],
+                    group_info: 1,
+                    width: 1,
+                    syms: vec![XK_CONTROL_L],
+                },
+                KeySymMap {
+                    kt_index: [0; 4],
+                    group_info: 1,
+                    width: 2,
+                    syms: vec![u32::from(b'x'), u32::from(b'l')],
+                },
+            ],
+            modifier_map: vec![KeyModMap {
+                keycode: 8,
+                mods: mask(control),
+            }],
+            state: clear_state(),
+        };
+
+        assert!(map.resolve(u32::from(b'l')).is_err());
+        let stroke = match map.resolve_with_modifiers(u32::from(b'l'), &[KeyboardModifier::Control])
+        {
+            Ok(stroke) => stroke,
+            Err(_) => panic!("control did not select the requested symbol"),
+        };
+        assert_eq!(
+            stroke,
+            KeyStroke {
+                keycode: 9,
+                modifiers: vec![8],
+            }
+        );
     }
 }

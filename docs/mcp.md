@@ -1,9 +1,9 @@
 # Generic MCP companion
 
-`agent-seat-mcp` 0.1.6 implements both MCP `2026-07-28` and `2025-11-25` over
+`agent-seat-mcp` 0.1.7 implements both MCP `2026-07-28` and `2025-11-25` over
 newline-delimited JSON-RPC stdio. A modern host should use `server/discover`;
 an existing host can continue using the legacy `initialize` lifecycle without
-configuration or schema changes.
+registration changes or changes to any pre-existing tool schema.
 
 ## Modern MCP 2026-07-28
 
@@ -32,14 +32,15 @@ extensions, subscriptions, or multi-round-trip input.
 
 ## Legacy MCP 2025-11-25 compatibility
 
-The legacy path is deliberately unchanged. `initialize`,
-`notifications/initialized`, `ping`, and `tools/list` remain desktop-free. The
-server advertises only the static tools capability and returns `2025-11-25`
-when that revision is requested; for another requested revision it returns its
-legacy revision so the host can accept it or disconnect. Legacy clients keep
-the original 16 tools, closed schemas, implicit provider connection, and result
-shapes—no modern `resultType`, cache fields, context argument, or
-`seat_release` is inserted.
+The legacy lifecycle and every pre-existing tool remain backward compatible.
+`initialize`, `notifications/initialized`, `ping`, and `tools/list` remain
+desktop-free. The server advertises only the static tools capability and
+returns `2025-11-25` when that revision is requested; for another requested
+revision it returns its legacy revision so the host can accept it or disconnect. Legacy clients keep
+the original 16 tool names and schemas, implicit provider connection, and
+result shapes. Revision 7 adds `keyboard_key` as a seventeenth closed-schema
+tool; no modern `resultType`, cache fields, context argument, or `seat_release`
+is inserted.
 
 This path follows the official legacy
 [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)
@@ -56,7 +57,7 @@ execution errors so a model can act on their structured fields.
 
 ## Tools
 
-The legacy companion publishes sixteen closed-object schemas:
+The legacy companion publishes seventeen closed-object schemas:
 
 - `seat_status`
 - `desktop_snapshot`
@@ -73,10 +74,11 @@ The legacy companion publishes sixteen closed-object schemas:
 - `pointer_move`
 - `pointer_click`
 - `keyboard_type`
+- `keyboard_key`
 - `capture_obscured`
 
-The modern list has the same tools plus `seat_release`. `seat_status` opens one
-of at most eight provider contexts and returns its positive integer `context`.
+The modern list has the same seventeen tools plus `seat_release`. `seat_status`
+opens one of at most eight provider contexts and returns its positive integer `context`.
 Pass that context to every later modern tool call and call `seat_release` when
 finished. A context lasts until explicit release, provider transport failure,
 or companion exit; identifiers are never reused by a running process. They are
@@ -85,13 +87,20 @@ authenticates the companion peer, owns grants and scope, and rechecks each wire
 call. A private-profile companion has only its one inherited provider
 connection, so only the first modern context can consume it.
 
-Each desktop tool maps one-to-one to a typed revision-6 call. Ordinary results
+Each desktop tool maps one-to-one to a typed revision-7 call. Ordinary results
 contain matching JSON in `structuredContent` and a text block for clients that
 do not consume structured results. A successful capture instead contains one
 `image/png` block; its structured result retains target, dimensions, and format
 but omits the large base64 field so image data is not duplicated. A wire error
 sets `isError: true` without converting its stable code or retry action into
 English control flow.
+
+Use `keyboard_key` for one conventional focused command such as `page_down`,
+Control+L, Control+F, Control+W, or Alt+Left. Its `key` comes from the finite
+published enum; optional `modifiers` are unique and ordered `control`, `alt`,
+`shift`, `super`. Prefer this path before a coordinate-based pointer action,
+and prefer titles and other metadata before requesting pixels.
+`keyboard_type` remains the separate bounded text path.
 
 ## Lazy provider boundary
 

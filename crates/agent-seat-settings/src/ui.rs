@@ -1496,7 +1496,7 @@ fn capability_groups() -> [(&'static str, &'static str, Vec<CapabilitySpec>); 5]
                     capability: Capability::InputKeyboard,
                     title: "Keyboard text",
                     atom: "input_keyboard",
-                    description: "Type bounded text only when the target already owns keyboard focus.",
+                    description: "Type bounded text or send one key command only when the target already owns keyboard focus.",
                     dependency: "Window structure and an enabled runtime seat",
                 },
             ],

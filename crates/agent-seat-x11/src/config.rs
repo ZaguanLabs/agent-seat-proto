@@ -92,7 +92,7 @@ capabilities = [
   # "launch_list",        # List applications admitted by launch policy.
   # "launch_execute",     # Start an admitted desktop entry without a shell.
   # "input_pointer",      # Move or click only inside the unobscured target.
-  # "input_keyboard",     # Type bounded text only into a focused target.
+  # "input_keyboard",     # Type bounded text or send one key action to a focused target.
   # "capture_obscured",   # Capture one scoped client's own pixels.
 ]
 

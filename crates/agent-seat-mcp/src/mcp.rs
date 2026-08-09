@@ -7,9 +7,9 @@ use std::sync::OnceLock;
 
 use agent_seat_proto::{
     ApplicationLaunchRequest, ApplicationListRequest, Call, ClientGeometryRequest,
-    ClientStateRequest, ClientWorkspaceRequest, Empty, KeyboardTypeRequest, Outcome,
-    PointerClickRequest, PointerMoveRequest, PollRequest, Reply, SubscribeRequest, TargetRequest,
-    Validate as _, WorkspaceRequest,
+    ClientStateRequest, ClientWorkspaceRequest, Empty, KeyboardKeyRequest, KeyboardTypeRequest,
+    Outcome, PointerClickRequest, PointerMoveRequest, PollRequest, Reply, SubscribeRequest,
+    TargetRequest, Validate as _, WorkspaceRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -26,6 +26,71 @@ const MODERN_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabili
 const STATIC_RESULT_TTL_MS: u64 = 3_600_000;
 const MAX_MODERN_CONTEXTS: usize = 8;
 const MAX_MCP_LINE_BYTES: usize = 1024 * 1024;
+const KEYBOARD_KEYS: [&str; 63] = [
+    "backspace",
+    "delete",
+    "enter",
+    "escape",
+    "tab",
+    "space",
+    "insert",
+    "home",
+    "end",
+    "page_up",
+    "page_down",
+    "arrow_left",
+    "arrow_right",
+    "arrow_up",
+    "arrow_down",
+    "a",
+    "b",
+    "c",
+    "d",
+    "e",
+    "f",
+    "g",
+    "h",
+    "i",
+    "j",
+    "k",
+    "l",
+    "m",
+    "n",
+    "o",
+    "p",
+    "q",
+    "r",
+    "s",
+    "t",
+    "u",
+    "v",
+    "w",
+    "x",
+    "y",
+    "z",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "f10",
+    "f11",
+    "f12",
+];
 
 pub(crate) fn serve(socket: Option<PathBuf>, seat: Option<Seat>) -> Result<(), String> {
     let stdin = io::stdin();
@@ -178,7 +243,7 @@ impl Server {
                     "title": "Agent Seat",
                     "version": env!("CARGO_PKG_VERSION")
                 },
-                "instructions": "Use seat_status first. Observe before mutation; treat stale and timed_out results as requiring a fresh observation. The provider, not this companion, owns every grant and policy decision."
+                "instructions": "Use seat_status first. Observe before mutation; prefer focused standard keyboard commands before coordinate pointer actions and metadata before pixels. Treat stale and timed_out results as requiring a fresh observation. The provider owns every grant and policy decision."
             }),
         )
     }
@@ -228,7 +293,7 @@ impl Server {
             &modern_result(json!({
                 "supportedVersions": SUPPORTED_MCP_VERSIONS,
                 "capabilities": {"tools":{"listChanged":false}},
-                "instructions": "Check the seat, observe before acting, refresh stale targets, prefer metadata over pixels, and report queued work as queued.",
+                "instructions": "Check the seat, observe before acting, refresh stale targets, prefer focused standard keyboard commands before coordinate pointer actions and metadata before pixels, and report queued work as queued.",
                 "ttlMs": STATIC_RESULT_TTL_MS,
                 "cacheScope": "public"
             })),
@@ -1024,6 +1089,25 @@ fn build_tools() -> Box<[Tool]> {
             ),
         },
         Tool {
+            name: "keyboard_key",
+            title: "Send key to client",
+            description: "Send one complete layout-aware key or shortcut only when the target already owns keyboard focus.",
+            input_schema: object_with_target(
+                json!({
+                    "key":{"enum":KEYBOARD_KEYS.as_slice()},
+                    "modifiers":{
+                        "type":"array",
+                        "items":{"enum":["control","alt","shift","super"]},
+                        "maxItems":4,
+                        "uniqueItems":true,
+                        "default":[],
+                        "description":"Use canonical order: control, alt, shift, super."
+                    }
+                }),
+                &["key"],
+            ),
+        },
+        Tool {
             name: "capture_obscured",
             title: "Capture client pixels",
             description: "Capture one freshly observed client's own pixels, including content currently covered by other windows.",
@@ -1128,6 +1212,7 @@ fn translate_call(name: &str, arguments: Option<Value>) -> Result<Call, CallErro
         "pointer_move" => arguments!(PointerMoveRequest, PointerMove),
         "pointer_click" => arguments!(PointerClickRequest, PointerClick),
         "keyboard_type" => arguments!(KeyboardTypeRequest, KeyboardType),
+        "keyboard_key" => arguments!(KeyboardKeyRequest, KeyboardKey),
         "capture_obscured" => arguments!(TargetRequest, CaptureObscured),
         _ => Err(CallError::UnknownTool),
     }?;
@@ -1242,7 +1327,7 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_closed_object_schema() {
-        assert_eq!(tools(Era::Legacy).len(), 16);
+        assert_eq!(tools(Era::Legacy).len(), 17);
         for tool in tools(Era::Legacy) {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -1252,7 +1337,7 @@ mod tests {
     #[test]
     fn modern_tools_make_provider_continuity_explicit() {
         let tools = tools(Era::Modern);
-        assert_eq!(tools.len(), 17);
+        assert_eq!(tools.len(), 18);
         for tool in tools {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -1322,12 +1407,32 @@ mod tests {
                 "keyboard_type",
                 json!({"client":1,"generation":0,"text":"Agent Seat\n"}),
             ),
+            (
+                "keyboard_key",
+                json!({"client":1,"generation":0,"key":"l","modifiers":["control"]}),
+            ),
             ("capture_obscured", json!({"client":1,"generation":0})),
         ];
         for (name, arguments) in calls {
             let call = translate_call(name, Some(arguments)).expect("valid tool fixture");
             call.validate().expect("valid wire call");
         }
+    }
+
+    #[test]
+    fn every_published_keyboard_key_translates_to_the_wire_enum() {
+        let mut unique = std::collections::BTreeSet::new();
+        for key in KEYBOARD_KEYS {
+            assert!(unique.insert(key), "duplicate keyboard key {key}");
+            let call = translate_call(
+                "keyboard_key",
+                Some(json!({"client":1,"generation":0,"key":key})),
+            )
+            .expect("published keyboard key must translate");
+            call.validate()
+                .expect("published keyboard key must validate");
+        }
+        assert_eq!(unique.len(), KEYBOARD_KEYS.len());
     }
 
     #[test]

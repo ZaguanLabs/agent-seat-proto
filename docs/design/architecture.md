@@ -64,7 +64,7 @@ claim physical-user priority. The older separately confined activity broker and
 private-device service remain optional research/hardening components, not
 dependencies of the ordinary input path or the display-neutral wire contract.
 
-The revision-6 capture path uses the same session observer but no input
+The revision-6/7 capture path uses the same session observer but no input
 authority. It automatically redirects only scoped clients selected under the
 capture grant, names one target pixmap under a bounded server-grabbed read,
 converts a verified TrueColor layout, and returns a bounded PNG. It never reads
@@ -126,7 +126,7 @@ The portable contract is factored further: the
 [serialization-neutral information model](../protocol/information-model.md) defines
 session, authority, identity, freshness, operation, and outcome semantics,
 while [`specification.md`](../protocol/specification.md) remains the concrete local
-Unix-stream/strict-JSON revision-6 binding.
+Unix-stream/strict-JSON revision-7 binding.
 
 An integrated window manager or compositor can satisfy a conformance profile
 using state and ordering it owns directly. The standalone X11 reference may

@@ -129,7 +129,7 @@ lifecycle and resource behavior, required public fixtures, and prohibited
 claims. It remains experimental pending genuinely independent evidence.
 
 The separately registered
-[`agent-seat.x11-tier0.5-input.v1`](../protocol/profiles/x11-tier0.5-input-v1.md)
+[`agent-seat.x11-tier0.5-input.v2`](../protocol/profiles/x11-tier0.5-input-v2.md)
 profile records the weaker revision-5 X11 input claim, exact action boundary,
 volatile admission lifecycle, public fixtures, and prohibited physical-user
 claims. Reference evidence covers a useful subset; its document explicitly
@@ -389,7 +389,7 @@ UID that can otherwise open uinput, and an installed worker reached live
 `seat_status`. The physical replacement matrix and LightDM lock-transition
 contract are not yet proven. Those gates block only a future profile claiming
 trusted physical-user interruption; they do not block the explicitly weaker
-Tier 0.5 pointer, click, and focused-text surface.
+Tier 0.5 pointer, click, focused-text, and single-key-command surface.
 
 The remaining evidence now has a participant-facing integration contract with
 stable harness, physical-replacement, and full-system lock fixture IDs. It

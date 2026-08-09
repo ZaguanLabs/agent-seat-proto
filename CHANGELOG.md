@@ -17,6 +17,18 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added experimental wire revision 7 and
+  `agent-seat.x11-tier0.5-input.v2`. The separately granted `keyboard_key`
+  operation sends exactly one finite layout-aware key or shortcut to an
+  already focused fresh target, with optional canonical
+  Control/Alt/Shift/Super modifiers. It supports navigation keys, letters,
+  digits, and F1--F12 without exposing raw keycodes, held state, focus forcing,
+  or sequences. Both MCP eras publish closed schemas and now instruct agents
+  to prefer focused standard commands before coordinate pointer actions and
+  metadata before pixels. Isolated Openbox/Xvfb tests cover Page Down and
+  Control+L with balanced releases. This milestone is `agent-seat-proto`
+  0.1.5, `agent-seat-mcp` 0.1.7, `agent-seat-x11` 0.1.27, and Settings 0.1.8.
+
 - Added `agent-seat-mcp` 0.1.6 support for MCP `2026-07-28` while retaining the
   complete MCP `2025-11-25` path. Modern clients can use `server/discover`
   without initialization, send version/capability metadata independently on

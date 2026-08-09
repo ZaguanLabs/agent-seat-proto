@@ -1,4 +1,4 @@
-//! Strict revision-6 messages and bounded Tier 0 profile values.
+//! Strict revision-7 messages and bounded Tier 0 profile values.
 
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +38,8 @@ pub const MAX_APPLICATIONS: usize = 256;
 pub const MAX_INPUT_TEXT_BYTES: usize = 1024;
 /// Maximum independently reportable actions in one input request.
 pub const MAX_INPUT_ACTIONS: usize = 256;
+/// Maximum logical modifiers on one keyboard-key action.
+pub const MAX_KEYBOARD_MODIFIERS: usize = 4;
 /// Maximum width of one obscured-client capture.
 pub const MAX_CAPTURE_WIDTH: u16 = 2048;
 /// Maximum height of one obscured-client capture.
@@ -245,7 +247,7 @@ pub enum Capability {
     LaunchExecute,
     /// Move or click the pointer only within an unobscured target.
     InputPointer,
-    /// Type bounded text only into a focused target.
+    /// Type bounded text or send one bounded key action to a focused target.
     InputKeyboard,
     /// Capture the pixels owned by one freshly scoped client.
     CaptureObscured,
@@ -437,6 +439,9 @@ pub enum Call {
     /// Type bounded text into the currently focused target.
     #[serde(rename = "keyboard.type")]
     KeyboardType(KeyboardTypeRequest),
+    /// Send one bounded key or shortcut to the currently focused target.
+    #[serde(rename = "keyboard.key")]
+    KeyboardKey(KeyboardKeyRequest),
     /// Capture one freshly scoped client, including obscured pixels.
     #[serde(rename = "capture.obscured")]
     CaptureObscured(TargetRequest),
@@ -457,7 +462,7 @@ impl Call {
             Self::ApplicationsList(_) => Capability::LaunchList,
             Self::ApplicationLaunch(_) => Capability::LaunchExecute,
             Self::PointerMove(_) | Self::PointerClick(_) => Capability::InputPointer,
-            Self::KeyboardType(_) => Capability::InputKeyboard,
+            Self::KeyboardType(_) | Self::KeyboardKey(_) => Capability::InputKeyboard,
             Self::CaptureObscured(_) => Capability::CaptureObscured,
         }
     }
@@ -479,6 +484,7 @@ impl Validate for Call {
             Self::PointerMove(value) => value.validate(),
             Self::PointerClick(value) => value.validate(),
             Self::KeyboardType(value) => value.validate(),
+            Self::KeyboardKey(value) => value.validate(),
             Self::CaptureObscured(value) => value.validate(),
         }
     }
@@ -808,6 +814,186 @@ impl Validate for KeyboardTypeRequest {
         }
         if actions > MAX_INPUT_ACTIONS {
             return Err("keyboard text exceeds the action bound");
+        }
+        Ok(())
+    }
+}
+
+/// One portable key name independent of backend keycodes and keyboard rows.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyboardKey {
+    /// Backspace.
+    Backspace,
+    /// Forward delete.
+    Delete,
+    /// Enter or Return.
+    Enter,
+    /// Escape.
+    Escape,
+    /// Tab.
+    Tab,
+    /// Space.
+    Space,
+    /// Insert.
+    Insert,
+    /// Home.
+    Home,
+    /// End.
+    End,
+    /// Page Up, called Prior by the original X11 keysym.
+    PageUp,
+    /// Page Down, called Next by the original X11 keysym.
+    PageDown,
+    /// Left arrow.
+    ArrowLeft,
+    /// Right arrow.
+    ArrowRight,
+    /// Up arrow.
+    ArrowUp,
+    /// Down arrow.
+    ArrowDown,
+    /// Lowercase `a` in the effective layout.
+    A,
+    /// Lowercase `b` in the effective layout.
+    B,
+    /// Lowercase `c` in the effective layout.
+    C,
+    /// Lowercase `d` in the effective layout.
+    D,
+    /// Lowercase `e` in the effective layout.
+    E,
+    /// Lowercase `f` in the effective layout.
+    F,
+    /// Lowercase `g` in the effective layout.
+    G,
+    /// Lowercase `h` in the effective layout.
+    H,
+    /// Lowercase `i` in the effective layout.
+    I,
+    /// Lowercase `j` in the effective layout.
+    J,
+    /// Lowercase `k` in the effective layout.
+    K,
+    /// Lowercase `l` in the effective layout.
+    L,
+    /// Lowercase `m` in the effective layout.
+    M,
+    /// Lowercase `n` in the effective layout.
+    N,
+    /// Lowercase `o` in the effective layout.
+    O,
+    /// Lowercase `p` in the effective layout.
+    P,
+    /// Lowercase `q` in the effective layout.
+    Q,
+    /// Lowercase `r` in the effective layout.
+    R,
+    /// Lowercase `s` in the effective layout.
+    S,
+    /// Lowercase `t` in the effective layout.
+    T,
+    /// Lowercase `u` in the effective layout.
+    U,
+    /// Lowercase `v` in the effective layout.
+    V,
+    /// Lowercase `w` in the effective layout.
+    W,
+    /// Lowercase `x` in the effective layout.
+    X,
+    /// Lowercase `y` in the effective layout.
+    Y,
+    /// Lowercase `z` in the effective layout.
+    Z,
+    /// Digit zero in the effective layout.
+    #[serde(rename = "0")]
+    Digit0,
+    /// Digit one in the effective layout.
+    #[serde(rename = "1")]
+    Digit1,
+    /// Digit two in the effective layout.
+    #[serde(rename = "2")]
+    Digit2,
+    /// Digit three in the effective layout.
+    #[serde(rename = "3")]
+    Digit3,
+    /// Digit four in the effective layout.
+    #[serde(rename = "4")]
+    Digit4,
+    /// Digit five in the effective layout.
+    #[serde(rename = "5")]
+    Digit5,
+    /// Digit six in the effective layout.
+    #[serde(rename = "6")]
+    Digit6,
+    /// Digit seven in the effective layout.
+    #[serde(rename = "7")]
+    Digit7,
+    /// Digit eight in the effective layout.
+    #[serde(rename = "8")]
+    Digit8,
+    /// Digit nine in the effective layout.
+    #[serde(rename = "9")]
+    Digit9,
+    /// Function key F1.
+    F1,
+    /// Function key F2.
+    F2,
+    /// Function key F3.
+    F3,
+    /// Function key F4.
+    F4,
+    /// Function key F5.
+    F5,
+    /// Function key F6.
+    F6,
+    /// Function key F7.
+    F7,
+    /// Function key F8.
+    F8,
+    /// Function key F9.
+    F9,
+    /// Function key F10.
+    F10,
+    /// Function key F11.
+    F11,
+    /// Function key F12.
+    F12,
+}
+
+/// One portable momentary modifier for a bounded keyboard-key action.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyboardModifier {
+    /// Control.
+    Control,
+    /// Alt, excluding AltGr/ISO Level 3.
+    Alt,
+    /// Shift.
+    Shift,
+    /// Super.
+    Super,
+}
+
+/// One complete key press/release action, optionally surrounded by modifiers.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeyboardKeyRequest {
+    /// Fresh target that must own the current X11 input focus.
+    #[serde(flatten)]
+    pub target: TargetRequest,
+    /// Portable key name resolved through the live keyboard map.
+    pub key: KeyboardKey,
+    /// Unique modifiers in canonical control, alt, shift, super order.
+    #[serde(default)]
+    pub modifiers: BoundedList<KeyboardModifier, MAX_KEYBOARD_MODIFIERS>,
+}
+
+impl Validate for KeyboardKeyRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()?;
+        if !strictly_ordered(&self.modifiers) {
+            return Err("keyboard modifiers must be unique and canonically ordered");
         }
         Ok(())
     }
@@ -1625,6 +1811,56 @@ mod tests {
     }
 
     #[test]
+    fn keyboard_key_is_typed_bounded_and_canonical() {
+        let target = TargetRequest {
+            client: ClientId::new(NonZeroU64::MIN),
+            generation: Generation::new(0),
+        };
+        let request = KeyboardKeyRequest {
+            target,
+            key: KeyboardKey::L,
+            modifiers: BoundedList::new(vec![KeyboardModifier::Control])
+                .expect("bounded modifier fixture"),
+        };
+        assert!(request.validate().is_ok());
+        assert_eq!(
+            serde_json::to_value(&request).expect("keyboard key JSON"),
+            serde_json::json!({
+                "client": 1,
+                "generation": 0,
+                "key": "l",
+                "modifiers": ["control"]
+            })
+        );
+        assert!(
+            KeyboardKeyRequest {
+                target,
+                key: KeyboardKey::PageDown,
+                modifiers: BoundedList::new(vec![
+                    KeyboardModifier::Shift,
+                    KeyboardModifier::Control,
+                ])
+                .expect("bounded modifier fixture"),
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            KeyboardKeyRequest {
+                target,
+                key: KeyboardKey::PageDown,
+                modifiers: BoundedList::new(vec![
+                    KeyboardModifier::Control,
+                    KeyboardModifier::Control,
+                ])
+                .expect("bounded modifier fixture"),
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
     fn input_calls_keep_pointer_and_keyboard_grants_separate() {
         let target = TargetRequest {
             client: ClientId::new(NonZeroU64::MIN),
@@ -1644,6 +1880,15 @@ mod tests {
             Call::KeyboardType(KeyboardTypeRequest {
                 target,
                 text: InputText::new("a").expect("keyboard fixture"),
+            })
+            .required_capability(),
+            Capability::InputKeyboard
+        );
+        assert_eq!(
+            Call::KeyboardKey(KeyboardKeyRequest {
+                target,
+                key: KeyboardKey::PageDown,
+                modifiers: BoundedList::default(),
             })
             .required_capability(),
             Capability::InputKeyboard

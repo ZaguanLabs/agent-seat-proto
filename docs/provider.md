@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus experimental obscured-capture and Tier 0.5 input profiles.
-`agent-seat-x11` 0.1.26 owns lifecycle, policy, local
+`agent-seat-x11` 0.1.27 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -259,7 +259,7 @@ before releasing the grab. Thus two conforming providers cannot both observe
 an empty selection and overwrite one another.
 
 The selected root and the dedicated owner window receive byte-identical
-revision-6 `_AGENT_SEAT` advertisements only after ownership succeeds. A
+revision-7 `_AGENT_SEAT` advertisements only after ownership succeeds. A
 second provider refuses to compete. Losing the selection terminates the
 provider. Missing or mismatched properties remain undiscoverable rather than
 falling back to a conventional filename.
@@ -277,7 +277,7 @@ Each admitted connection has fixed read/write deadlines and one sequential
 request stream; there is no per-session request queue. The provider refuses
 capacity beyond `max_sessions`, evicts a peer that does not complete framing
 before its deadline, and ends a session at its request bound. Frames retain
-the revision-6 direction limits: 65,536 request bytes and 12,582,912 response
+the revision-7 direction limits: 65,536 request bytes and 12,582,912 response
 bytes.
 
 The provider advertises `ewmh_observation`, `ewmh_management`, and
@@ -288,9 +288,10 @@ Every request is checked against the grant first; missing authority returns
 `refused`.
 
 When either input capability is granted, the provider additionally advertises
-`input_injection` and accepts revision-6 `pointer.move`, `pointer.click`, or
-`keyboard.type`. No broker, root service, evdev permission, uinput permission,
-or `input`-group membership is required. Each independently reportable action
+`input_injection` and accepts revision-7 `pointer.move`, `pointer.click`,
+`keyboard.type`, or `keyboard.key`. No broker, root service, evdev permission,
+uinput permission, or `input`-group membership is required. Each independently
+reportable action
 refreshes the fresh target under a short X server grab and rechecks the
 volatile seat generation before XTEST.
 Pointer destinations must be visibly topmost inside the target. Keyboard text
@@ -300,6 +301,12 @@ never forced. Unsupported symbols, compose/IME sequences, active depressed or
 latched modifiers, and incomplete XKB evidence fail before that character is
 sent. Calls state only how many actions were queued and synchronized, never
 general application acceptance.
+
+`keyboard.key` resolves one finite named key and optional canonical
+Control/Alt/Shift/Super modifiers from the same live XKB evidence. It is the
+preferred path for standard focused commands such as Page Down or Control+L
+because it avoids fragile pointer coordinates. It cannot force focus, accept a
+raw keycode, hold a key, or execute a sequence.
 
 This simple profile does not advertise `human_activity` and cannot prevent a
 physical event from overlapping an agent action. The runtime seat is an
