@@ -233,7 +233,9 @@ is [`docs/mcp.md`](docs/mcp.md), and provider setup is
 implementation-independent standards direction is the repository's non-external
 [`R0 pre-RFC draft`](docs/r0-protocol-rfc.md), beginning with the standalone
 [`agent-seat.x11-ewmh-core.v1`](docs/profiles/x11-ewmh-core-v1.md) backend
-profile.
+profile and portable
+[`agent-seat.conformance-report/1`](docs/conformance-report.md) evidence
+format.
 
 ## Project policy
 

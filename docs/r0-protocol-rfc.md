@@ -442,12 +442,19 @@ Logs alone do not prove conformance. A future reusable conformance suite SHOULD
 express expected requests, externally visible outcomes, timing bounds, and
 negative authority without importing implementation internals.
 
+Portable evidence is recorded using the experimental
+[`agent-seat.conformance-report/1`](conformance-report.md) format and its
+strict [JSON Schema](conformance-report-v1.schema.json). The format binds a
+subject, exact wire revision, registered profile, tested surface, released
+environment, stable fixture results, content-digested public evidence,
+negative-authority enforcement, limitations, and a reproducible conclusion.
+It does not self-certify or promote profile maturity.
+
 ## 11. Open work before external publication
 
 This draft is ready for independent review, not external standards submission.
 The next revision SHOULD:
 
-- define a portable black-box conformance report format;
 - obtain review from integrated compositor/window-manager maintainers; and
 - resolve governance, registry custody, change control, and the venue for any
   external standard.

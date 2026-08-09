@@ -231,23 +231,31 @@ The required suite uses an isolated X server and a released EWMH window
 manager. It observes public wire, socket, filesystem, process, and X11 behavior;
 logs alone cannot pass a case. The suite proves:
 
-1. exact opening, peer-credential grant intersection, strict decoding, bounds,
-   timeout eviction, and reconnect invalidation;
-2. empty, populated, changing, and malformed public desktop observations;
-3. title denial, scope filtering before allocation, leave-scope invalidation,
-   and fresh identity on return;
-4. ordered event convergence and deterministic overflow resynchronization;
-5. every management no-send branch plus observed, timed-out, target-gone, X11
-   error, and provider-loss branches;
-6. unsupported EWMH operations emit no substitute request;
-7. catalog precedence, strict desktop-entry parsing, all admission modes,
-   execution-time re-resolution, shell-free launch, bounded children, and
-   qualified correlation;
-8. live-owner refusal, stale-owned-socket recovery, foreign-path refusal,
-   ownership loss, provider crash, and window-manager survival; and
-9. absence of raw backend identifiers, ungranted titles, capture, input,
-   accessibility, broker administration, and claims of application handling at
-   the public protocol boundary.
+- `opening.strict`: exact opening, peer-credential grant intersection, strict
+  decoding, bounds, timeout eviction, and reconnect invalidation;
+- `observation.desktop`: empty, populated, changing, and malformed public
+  desktop observations;
+- `scope.identity`: title denial, scope filtering before allocation,
+  leave-scope invalidation, and fresh identity on return;
+- `events.resynchronization`: ordered event convergence and deterministic
+  overflow resynchronization;
+- `management.outcomes`: every management no-send branch plus observed,
+  timed-out, target-gone, X11 error, and provider-loss branches;
+- `management.no-emulation`: unsupported EWMH operations emit no substitute
+  request;
+- `launch.controlled`: catalog precedence, strict desktop-entry parsing, all
+  admission modes, execution-time re-resolution, shell-free launch, bounded
+  children, and qualified correlation;
+- `lifecycle.independent`: live-owner refusal, stale-owned-socket recovery,
+  foreign-path refusal, ownership loss, provider crash, and window-manager
+  survival; and
+- `boundary.no-extra-surface`: absence of raw backend identifiers, ungranted
+  titles, capture, input, accessibility, broker administration, and claims of
+  application handling at the public protocol boundary.
+
+All nine IDs are required. A conforming report uses
+[`agent-seat.conformance-report/1`](../conformance-report.md) or a later
+registered format and includes each ID exactly once.
 
 Same-user X11 bypass and compromise of a process already holding ambient
 desktop authorization are limitations to report, not fixture failures that the

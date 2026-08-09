@@ -23,6 +23,15 @@
       "status": "reserved_core"
     }
   ],
+  "report_formats": [
+    {
+      "id": 1,
+      "name": "agent-seat.conformance-report/1",
+      "status": "experimental",
+      "specification": "conformance-report.md",
+      "schema": "conformance-report-v1.schema.json"
+    }
+  ],
   "revision_4": {
     "client_messages": [
       "hello",

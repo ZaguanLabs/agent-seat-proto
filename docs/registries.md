@@ -30,6 +30,7 @@ does not recognize that exact value stops rather than guessing. The file
 contains:
 
 - protocol identity and historical wire-revision allocations;
+- portable conformance-report format allocations;
 - the repository-reserved core namespace;
 - exact revision-4 message, capability, feature, backend, assurance, call,
   reply, event, state, action, result, error, and retry atoms; and

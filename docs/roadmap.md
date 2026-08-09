@@ -58,6 +58,14 @@ observation, management send boundary and outcomes, controlled launch,
 lifecycle and resource behavior, required public fixtures, and prohibited
 claims. It remains experimental pending genuinely independent evidence.
 
+The experimental
+[`agent-seat.conformance-report/1`](conformance-report.md) format now provides
+a closed JSON Schema for portable subject/binding/profile identity, released
+environment, stable fixture results, digested public evidence,
+negative-authority enforcement, limitations, and pass/fail/incomplete
+conclusions. Its checked-in example is explicitly incomplete and is not
+evidence.
+
 Prepare an implementation-independent RFC from behavior that has survived the
 reference implementation and hostile tests. The RFC must have three clearly
 separated layers:
@@ -80,8 +88,8 @@ R0 also defines revision allocation, extension ownership, capability
 negotiation, security considerations, conformance terminology, and the process
 for independent implementations to report compatible subsets. Publication as
 an external RFC or standard remains a later maintainer/community decision. The
-draft records the remaining work for a portable conformance report format,
-external review, external registry governance, and publication.
+draft records the remaining work for external implementation and desktop-
+maintainer review, external registry governance, and publication.
 
 ## E0 — bootstrap
 

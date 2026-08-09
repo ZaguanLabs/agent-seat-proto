@@ -1,0 +1,419 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Agent Seat conformance report format 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "report_id",
+    "generated_at_utc",
+    "subject",
+    "binding",
+    "profile",
+    "surface",
+    "environment",
+    "fixtures",
+    "negative_authority",
+    "limitations",
+    "summary"
+  ],
+  "properties": {
+    "format": {
+      "const": "agent-seat.conformance-report/1"
+    },
+    "report_id": {
+      "$ref": "#/$defs/nonempty"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-([0-2][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+    },
+    "subject": {
+      "$ref": "#/$defs/implementation"
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protocol",
+        "wire_revision",
+        "transport"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "agent-seat"
+        },
+        "wire_revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "transport": {
+          "$ref": "#/$defs/nonempty"
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identifier",
+        "claimed_status"
+      ],
+      "properties": {
+        "identifier": {
+          "$ref": "#/$defs/atom"
+        },
+        "claimed_status": {
+          "enum": [
+            "experimental",
+            "provisional",
+            "normative",
+            "withdrawn"
+          ]
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capabilities",
+        "features"
+      ],
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/atom_set"
+        },
+        "features": {
+          "$ref": "#/$defs/atom_set"
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "harness",
+        "components",
+        "isolation"
+      ],
+      "properties": {
+        "harness": {
+          "$ref": "#/$defs/implementation"
+        },
+        "components": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/component"
+          }
+        },
+        "isolation": {
+          "$ref": "#/$defs/bounded_text"
+        }
+      }
+    },
+    "fixtures": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": {
+        "$ref": "#/$defs/fixture"
+      }
+    },
+    "negative_authority": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "$ref": "#/$defs/negative_authority"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/bounded_text"
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "conclusion",
+        "required",
+        "passed",
+        "failed",
+        "skipped",
+        "errors"
+      ],
+      "properties": {
+        "conclusion": {
+          "enum": [
+            "pass",
+            "fail",
+            "incomplete"
+          ]
+        },
+        "required": {
+          "$ref": "#/$defs/count"
+        },
+        "passed": {
+          "$ref": "#/$defs/count"
+        },
+        "failed": {
+          "$ref": "#/$defs/count"
+        },
+        "skipped": {
+          "$ref": "#/$defs/count"
+        },
+        "errors": {
+          "$ref": "#/$defs/count"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonempty": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "bounded_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "atom": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+    },
+    "atom_set": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/atom"
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1024
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "source_revision"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "version": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "source_revision": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "build_digest": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name",
+        "version"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "operating_system",
+            "kernel",
+            "display_server",
+            "window_manager",
+            "compositor",
+            "display_manager",
+            "service_manager",
+            "other"
+          ]
+        },
+        "name": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "version": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "build": {
+          "$ref": "#/$defs/bounded_text"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sha256",
+        "observations"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "wire_transcript",
+            "process_state",
+            "filesystem_state",
+            "socket_state",
+            "desktop_state",
+            "negative_authority",
+            "timing",
+            "other"
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifact_uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "format": "uri-reference"
+        },
+        "observations": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "wire",
+              "process",
+              "filesystem",
+              "socket",
+              "desktop",
+              "timing"
+            ]
+          }
+        }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "requirement",
+        "result",
+        "evidence"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/atom"
+        },
+        "requirement": {
+          "enum": [
+            "required",
+            "optional"
+          ]
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "fail",
+            "skipped",
+            "error"
+          ]
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400000
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "pass"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "negative_authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor",
+        "forbidden_authority",
+        "enforcement",
+        "fixture_ids",
+        "result"
+      ],
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/nonempty"
+        },
+        "forbidden_authority": {
+          "$ref": "#/$defs/bounded_text"
+        },
+        "enforcement": {
+          "$ref": "#/$defs/bounded_text"
+        },
+        "fixture_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/atom"
+          }
+        },
+        "result": {
+          "enum": [
+            "pass",
+            "fail",
+            "incomplete"
+          ]
+        }
+      }
+    }
+  }
+}

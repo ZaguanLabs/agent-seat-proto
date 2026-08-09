@@ -318,6 +318,16 @@ Agent Seat implementation code, schema, test, fixture, comment, or prose was
 consulted, copied, translated, or adapted. The draft adds no runtime behavior,
 dependency, wire revision, or external standards claim.
 
+The serialization-neutral information model, registry projection and custody
+policy, standalone X11/EWMH core profile, stable fixture identifiers,
+conformance report semantics, schema, and incomplete example are original work
+derived from the same repository contracts and public behavior. The report
+schema uses the JSON Schema Draft 2020-12 meta-schema published by the JSON
+Schema project at <https://json-schema.org/draft/2020-12/schema>; no schema,
+example, implementation, or prose was copied from another conformance system.
+These documents add no runtime dependency, wire change, certification, or
+external standards claim.
+
 ## Provider private-device deployment
 
 The optional provider user unit, startup absence check, user-manager launch

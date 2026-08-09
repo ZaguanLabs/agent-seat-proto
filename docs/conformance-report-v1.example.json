@@ -1,0 +1,77 @@
+{
+  "format": "agent-seat.conformance-report/1",
+  "report_id": "example-not-evidence",
+  "generated_at_utc": "2026-08-09T00:00:00Z",
+  "subject": {
+    "name": "example-provider",
+    "version": "0.0.0",
+    "source_revision": "example"
+  },
+  "binding": {
+    "protocol": "agent-seat",
+    "wire_revision": 4,
+    "transport": "local-json-unix-stream"
+  },
+  "profile": {
+    "identifier": "agent-seat.x11-ewmh-core.v1",
+    "claimed_status": "experimental"
+  },
+  "surface": {
+    "capabilities": [
+      "observe_structure"
+    ],
+    "features": [
+      "ewmh_observation"
+    ]
+  },
+  "environment": {
+    "harness": {
+      "name": "example-harness",
+      "version": "0.0.0",
+      "source_revision": "example"
+    },
+    "components": [
+      {
+        "kind": "display_server",
+        "name": "example-isolated-x-server",
+        "version": "0.0.0"
+      },
+      {
+        "kind": "window_manager",
+        "name": "example-ewmh-manager",
+        "version": "0.0.0"
+      }
+    ],
+    "isolation": "Illustrative isolated display; this file is not evidence."
+  },
+  "fixtures": [
+    {
+      "id": "opening.strict",
+      "requirement": "required",
+      "result": "skipped",
+      "evidence": []
+    }
+  ],
+  "negative_authority": [
+    {
+      "actor": "example requesting peer",
+      "forbidden_authority": "ungranted provider operation",
+      "enforcement": "No enforcement was exercised by this illustrative report.",
+      "fixture_ids": [
+        "opening.strict"
+      ],
+      "result": "incomplete"
+    }
+  ],
+  "limitations": [
+    "Illustrative schema fixture only; no conformance test was run."
+  ],
+  "summary": {
+    "conclusion": "incomplete",
+    "required": 1,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 1,
+    "errors": 0
+  }
+}
