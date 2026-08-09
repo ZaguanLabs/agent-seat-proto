@@ -1,13 +1,13 @@
-# Agent Seat local JSON binding, wire revision 5
+# Agent Seat local JSON binding, wire revision 6
 
-Status: experimental Tier 0.5 input extension over the released E1 contract.
-Revision 5 is intentionally incompatible with Agent Seat revisions 3 and 4
-and Nobox revision 2.
+Status: experimental obscured-capture and Tier 0.5 input profiles over the
+released E1 core contract. Revision 6 is intentionally incompatible with Agent
+Seat revisions 3, 4, and 5 and Nobox revision 2.
 
 This document is the concrete pathname-Unix-stream and strict-JSON binding for
 the portable semantics in the pre-RFC
 [`information model`](information-model.md). Its JSON field names, framing,
-socket discovery, and byte limits belong to revision 5, not to the abstract
+socket discovery, and byte limits belong to revision 6, not to the abstract
 model. This binding remains the repository's normative implemented wire
 contract if the pre-RFC documents differ.
 
@@ -45,6 +45,13 @@ and a separate `input_keyboard` grant. It deliberately does not claim trusted
 physical-activity detection. Strict older decoders cannot safely interpret
 the additions, so revision 5 does not change an earlier revision in place.
 
+Revision 6 adds the separate `capture_obscured` grant,
+`capture.obscured` call, bounded PNG result, and `obscured_capture` feature.
+It does not add capture to the Tier 0 core, expose an output, or claim that
+pixels were visible to the person. The larger response-frame bound exists only
+to carry one bounded image. Strict revision-5 peers cannot interpret that
+result, so revision 6 allocates a new exact language.
+
 An advertisement and opening message name one exact revision. There is no
 range negotiation. A mismatched pair closes with `incompatible_revision` and
 does not guess from JSON fields.
@@ -67,14 +74,14 @@ exactly that many UTF-8 JSON bytes:
 
 - A zero length is malformed.
 - Client-to-provider payloads are at most 65,536 bytes.
-- Provider-to-client payloads are at most 1,048,576 bytes.
+- Provider-to-client payloads are at most 12,582,912 bytes.
 - The receiver rejects an over-bound prefix before allocating its payload.
 - EOF before any prefix byte is a clean stream end. EOF inside a prefix or
   payload is truncated input.
 - The JSON value is one complete object. Trailing bytes, duplicate known
   fields, unknown fields, unknown enum values, and wrong JSON types are
   malformed.
-- Serde's finite JSON recursion limit applies; revision 5 defines no recursive
+- Serde's finite JSON recursion limit applies; revision 6 defines no recursive
   message value.
 
 Lengths constrain encoded bytes, not Unicode scalar counts. Bounded lists stop
@@ -91,10 +98,10 @@ The first client message is `hello`. A provider answers with exactly one
   "type": "hello",
   "body": {
     "protocol": "agent-seat",
-    "revision": 5,
+    "revision": 6,
     "peer": {
       "name": "agent-seat-mcp",
-      "version": "0.1.3",
+      "version": "0.1.5",
       "purpose": "translate MCP desktop tools"
     },
     "requested": ["observe_structure", "observe_titles"]
@@ -111,16 +118,16 @@ unique, canonical list of at most 32 atoms.
   "type": "welcome",
   "body": {
     "protocol": "agent-seat",
-    "revision": 5,
+    "revision": 6,
     "session": 1,
-    "provider": {"name": "agent-seat-x11", "version": "0.1.0"},
+    "provider": {"name": "agent-seat-x11", "version": "0.1.26"},
     "backend": "x11_ewmh",
     "assurance": "tier0",
     "features": ["ewmh_observation"],
     "granted": ["observe_structure"],
     "limits": {
       "request_frame_bytes": 65536,
-      "response_frame_bytes": 1048576,
+      "response_frame_bytes": 12582912,
       "events_per_poll": 1024,
       "poll_wait_ms": 30000
     }
@@ -153,13 +160,16 @@ Canonical capability order is:
 10. `launch_execute`
 11. `input_pointer`
 12. `input_keyboard`
+13. `capture_obscured`
 
 Core features are `ewmh_observation`, `ewmh_management`, and
-`desktop_launch`. Reserved optional feature names are
-`client_visible_capture`, `obscured_capture`, `output_capture`,
-`input_injection`, `human_activity`, and `accessibility`. Advertising a feature
-is an implementation claim governed by its profile threat model; absent
-features remain typed `unsupported` behavior.
+`desktop_launch`. Revision 6 implements the optional `obscured_capture` feature
+only when its separate capability is granted. Other reserved optional feature
+names are `client_visible_capture`, `output_capture`, `input_injection`,
+`human_activity`, and `accessibility`; the Tier 0.5 input profile may advertise
+`input_injection`. Advertising a feature is an implementation claim governed
+by its profile threat model; absent features remain typed `unsupported`
+behavior.
 
 ## Requests and responses
 
@@ -215,6 +225,7 @@ The core call names and arguments are:
 | `pointer.move` | `input_pointer` | fresh client and client-relative unsigned `x`, `y` |
 | `pointer.click` | `input_pointer` | fresh client, client-relative unsigned `x`, `y`, and primary/middle/secondary button |
 | `keyboard.type` | `input_keyboard` | fresh client and bounded nonempty `text` |
+| `capture.obscured` | `capture_obscured` | fresh client |
 
 Client IDs are nonzero provider-session handles. They are not XIDs. A
 generation and sequence are provider-local unsigned 64-bit freshness values;
@@ -293,6 +304,37 @@ cannot distinguish XTEST from physical input or guarantee that physical input
 will always win a race. A person and the agent can therefore overlap. Stop the
 provider or disable its volatile seat to revoke later Agent Seat requests.
 
+## Obscured-capture result
+
+Capture is an optional X11 profile and not a Tier 0 core observation. The call
+requires `observe_structure`, the separate `capture_obscured` grant, a nonempty
+configured client scope, and an exact current client generation. The provider
+uses X Composite automatic redirection for only clients admitted to that
+session's scope. It owns and removes only its own redirections.
+
+A successful result carries the exact target, nonzero `width` and `height`,
+`format = "png"`, and one base64 string without a data-URL prefix. Width and
+height are each at most 2,048; their product is at most 2,073,600 pixels. The
+decoded PNG is at most 7,340,032 bytes and contains eight-bit RGB samples. The
+base64 field and complete response remain independently bounded by the wire.
+
+The provider refreshes scope and generation under an X server grab, names only
+the already redirected target pixmap, reads it, frees the pixmap identity, and
+then releases the grab. It supports only a server-described TrueColor ZPixmap
+layout that it can convert explicitly. Missing Composite 0.2, an unviewable or
+destroyed target, unsupported visuals, dimension excess, cleanup failure, or
+incomplete X11 evidence returns a typed error without substituting root or
+output pixels.
+
+`obscured_capture` means target-owned storage can include target content hidden
+behind another window. It does not mean output capture, decorations, a cursor,
+or proof that the person saw those pixels. Composite cannot reconstruct pixels
+that were already obscured before this provider enrolled the client; the
+profile therefore promises current target-owned storage painted after
+enrollment, not historical pre-enrollment contents. The MCP companion emits
+the PNG once as an `image/png` content block and omits its base64 data from
+`structuredContent`.
+
 ## Launch result
 
 Application pages contain at most 256 entries ordered uniquely by canonical
@@ -340,7 +382,7 @@ Retry is one of `never`, `reobserve`, or `reconnect`.
 three NUL-separated UTF-8 fields and no trailing NUL:
 
 ```text
-agent-seat NUL 5 NUL /absolute/pathname/socket
+agent-seat NUL 6 NUL /absolute/pathname/socket
 ```
 
 The revision uses canonical decimal. The socket is nonempty, absolute, has no
@@ -359,8 +401,9 @@ filesystem or product-specific fallback.
 
 ## End result
 
-Revision 5 retains the bounded T0--T3 contract and adds the explicitly
-operator-gated Tier 0.5 pointer and keyboard surface. It gives the MCP
-translator no authority and keeps every core outcome externally testable. A
-later incompatible field, enum, or semantic change allocates another revision
-instead of weakening strict decoding.
+Revision 6 retains the bounded T0--T3 contract and the explicitly
+operator-gated Tier 0.5 pointer and keyboard surface, then adds one separately
+granted target-owned image operation. It gives the MCP translator no authority
+and keeps every core outcome externally testable. A later incompatible field,
+enum, or semantic change allocates another revision instead of weakening
+strict decoding.

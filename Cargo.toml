@@ -24,8 +24,10 @@ all = "deny"
 
 [workspace.dependencies]
 agent-seat-activity-broker = { path = "crates/agent-seat-activity-broker", version = "0.1.17", default-features = false }
+base64 = "0.22"
 dbus = "0.9.10"
 evdev = "0.13.2"
+png = "0.18"
 rustix = { version = "1", features = ["fs", "net", "process"] }
 sd-listen-fds = "0.2.0"
 serde = { version = "1", features = ["derive"] }

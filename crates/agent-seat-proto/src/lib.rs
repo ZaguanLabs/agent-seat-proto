@@ -1,4 +1,4 @@
-//! Display-server-neutral Agent Seat Protocol revision 5.
+//! Display-server-neutral Agent Seat Protocol revision 6.
 //!
 //! This crate owns bounded wire values, strict JSON serialization, frame
 //! encoding, and advertisement parsing. It owns no transport listener,
@@ -22,7 +22,7 @@ pub use message::*;
 pub const PROTOCOL_NAME: &str = "agent-seat";
 
 /// Independently specified Tier 0 wire revision.
-pub const PROTOCOL_REVISION: u16 = 5;
+pub const PROTOCOL_REVISION: u16 = 6;
 
 /// X11 property carrying the provider advertisement.
 pub const ADVERTISEMENT_PROPERTY: &str = "_AGENT_SEAT";
@@ -34,7 +34,7 @@ pub const MAX_ADVERTISEMENT_BYTES: usize = 256;
 pub const MAX_REQUEST_FRAME_BYTES: usize = 64 * 1024;
 
 /// Maximum provider-to-client frame size in bytes.
-pub const MAX_RESPONSE_FRAME_BYTES: usize = 1024 * 1024;
+pub const MAX_RESPONSE_FRAME_BYTES: usize = 12 * 1024 * 1024;
 
 /// Validation performed after strict deserialization and before use.
 pub trait Validate {

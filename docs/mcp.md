@@ -23,7 +23,7 @@ act on their structured fields.
 
 ## Tools
 
-The companion publishes fifteen closed-object schemas:
+The companion publishes sixteen closed-object schemas:
 
 - `seat_status`
 - `desktop_snapshot`
@@ -40,10 +40,14 @@ The companion publishes fifteen closed-object schemas:
 - `pointer_move`
 - `pointer_click`
 - `keyboard_type`
+- `capture_obscured`
 
-Each maps one-to-one to a typed revision-5 call. Results contain matching JSON
+Each maps one-to-one to a typed revision-6 call. Ordinary results contain matching JSON
 in `structuredContent` and a text block for clients that do not consume
-structured results. A wire error sets `isError: true` without converting its
+structured results. A successful capture instead contains one `image/png`
+block; its structured result retains target, dimensions, and format but omits
+the large base64 field so image data is not duplicated. A wire error sets
+`isError: true` without converting its
 stable code or retry action into English control flow.
 
 ## Lazy provider boundary

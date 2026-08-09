@@ -51,6 +51,18 @@ before each spawn, constructs an argv vector directly, and never passes desktop
 metadata or peer data through a shell. Invalid entries disappear rather than
 being partially interpreted.
 
+T4 adds one experimental, separately granted obscured-client capture profile.
+It depends on `observe_structure` and redirects only clients currently admitted
+to that session's scope using X Composite automatic mode. The provider names
+and reads only the target's off-screen pixmap under a short server grab, frees
+the name, and never falls back to a client-window, root, or output `GetImage`.
+It removes only redirections it selected. Results have fixed dimensions,
+pixels, PNG, base64, and frame bounds. The grant intentionally allows reading
+target-owned content hidden by another window; it grants no other client's
+pixels and does not claim that the person saw the image. Composite cannot
+recover pixels already obscured before enrollment, so the promise begins with
+target painting after enrollment.
+
 The standalone provider is a policy boundary against accidental overreach,
 malformed peers, and a compromised translator. It is not an isolation boundary
 against another process that already has the same user's X11 authority.
@@ -123,6 +135,9 @@ PID inference, establish companion confinement.
 - One provider owns a screen through an X11 selection. Ownership prevents
   accidental conforming duplicates, not malicious selection theft.
 - Raw X11 resource identifiers do not cross the provider boundary.
+- Capture is never implicit in structure observation: `capture_obscured` is a
+  separate grant, and absent or incomplete Composite evidence fails without a
+  root, output, or core-GetImage fallback.
 - Missing, hidden, and out-of-scope direct client lookups are indistinguishable.
 - Optional malformed client metadata is omitted; malformed or absent required
   desktop structure fails the observation instead of inventing state.

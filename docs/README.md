@@ -10,6 +10,8 @@ overview. These guides cover normal configuration and operation:
 - [Settings](settings.md) — graphical and terminal configuration workflows.
 - [Tier 0.5 volatile seat and input](tier-0.5-seat-gate.md) — explicit runtime
   enable/disable plus the bounded pointer, click, and focused-text claim.
+- [Obscured-client capture](protocol/profiles/x11-obscured-capture-v1.md) —
+  separately granted, bounded target-owned PNG capture and its limitations.
 - [Compatibility](compatibility.md) — released and experimental combinations,
   evidence, and known limitations.
 

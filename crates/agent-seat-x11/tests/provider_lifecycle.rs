@@ -1,6 +1,7 @@
 //! Process-boundary T0 lifecycle, policy, ownership, and isolation tests.
 
 use std::fs::{self, DirBuilder, File};
+use std::io::Cursor;
 use std::io::{BufRead as _, Read as _, Write as _};
 use std::num::NonZeroU64;
 use std::os::unix::fs::DirBuilderExt as _;
@@ -28,12 +29,16 @@ use agent_seat_x11::{
     ActivePolicyStatus, RuntimeSeatCommand, active_policy_status, control_runtime_seat,
     read_policy, replace_policy,
 };
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use rustix::process::{Pid, Signal, geteuid, kill_process};
 use x11rb::connection::Connection as _;
+use x11rb::protocol::composite::ConnectionExt as _;
 use x11rb::protocol::shape::{ConnectionExt as _, SK, SO};
 use x11rb::protocol::xproto::{
     AtomEnum, ClientMessageEvent, ClipOrdering, ConfigureWindowAux, ConnectionExt as _,
-    CreateWindowAux, EventMask, InputFocus, PropMode, Rectangle, StackMode, WindowClass,
+    CreateGCAux, CreateWindowAux, EventMask, InputFocus, PropMode, Rectangle, StackMode,
+    WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -592,6 +597,22 @@ fn write_input_config(directory: &Path) -> PathBuf {
     path
 }
 
+fn write_capture_config(directory: &Path) -> PathBuf {
+    let path = write_config(
+        directory,
+        &["observe_structure", "observe_titles", "capture_obscured"],
+        4,
+        2_000,
+    );
+    let source = fs::read_to_string(&path).expect("read base capture config");
+    fs::write(
+        &path,
+        format!("{source}\n[observation]\nclients = \"all_workspaces\"\ntitles = true\n"),
+    )
+    .expect("write capture config");
+    path
+}
+
 fn write_private_input_config(directory: &Path) -> PathBuf {
     let path = write_input_config(directory);
     let source = fs::read_to_string(&path).expect("read input config");
@@ -780,6 +801,10 @@ impl OverrideWindow {
         self.connection.sync().expect("raise overlay sync");
     }
 
+    fn fill(&self, pixel: u32) {
+        fill_window(&self.connection, self.window, pixel, 1_024, 768);
+    }
+
     fn fragment_input_shape(&self, rectangles: usize) {
         let rectangles = (0..rectangles)
             .map(|index| Rectangle {
@@ -948,6 +973,10 @@ impl TestClient {
         self.connection.flush().expect("rename flush");
     }
 
+    fn fill(&self, pixel: u32) {
+        fill_window(&self.connection, self.window, pixel, 320, 180);
+    }
+
     fn move_to_workspace(&self, workspace: u32) {
         let atom = intern(&self.connection, b"_NET_WM_DESKTOP");
         let event = ClientMessageEvent::new(32, self.window, atom, [workspace, 2, 0, 0, 0]);
@@ -1030,6 +1059,37 @@ impl TestClient {
     }
 }
 
+fn fill_window(connection: &RustConnection, window: u32, pixel: u32, width: u16, height: u16) {
+    let gc = connection
+        .generate_id()
+        .expect("fixture graphics context ID");
+    connection
+        .create_gc(gc, window, &CreateGCAux::new().foreground(pixel))
+        .expect("fixture graphics context request")
+        .check()
+        .expect("fixture graphics context");
+    connection
+        .poly_fill_rectangle(
+            window,
+            gc,
+            &[Rectangle {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            }],
+        )
+        .expect("fixture fill request")
+        .check()
+        .expect("fixture fill");
+    connection
+        .free_gc(gc)
+        .expect("fixture graphics context cleanup request")
+        .check()
+        .expect("fixture graphics context cleanup");
+    connection.sync().expect("fixture fill sync");
+}
+
 fn intern(connection: &RustConnection, name: &[u8]) -> u32 {
     connection
         .intern_atom(false, name)
@@ -1037,6 +1097,30 @@ fn intern(connection: &RustConnection, name: &[u8]) -> u32 {
         .reply()
         .expect("atom reply")
         .atom
+}
+
+fn can_name_window_pixmap(display: &str, window: u32) -> bool {
+    let (connection, _) = x11rb::connect(Some(display)).expect("Composite cleanup probe");
+    let version = connection
+        .composite_query_version(0, 4)
+        .expect("Composite version request")
+        .reply()
+        .expect("Composite version reply");
+    assert!(version.major_version == 0 && version.minor_version >= 2);
+    let pixmap = connection.generate_id().expect("Composite probe pixmap ID");
+    let named = connection
+        .composite_name_window_pixmap(window, pixmap)
+        .expect("Composite name request")
+        .check()
+        .is_ok();
+    if named {
+        connection
+            .free_pixmap(pixmap)
+            .expect("Composite probe cleanup request")
+            .check()
+            .expect("Composite probe cleanup");
+    }
+    named
 }
 
 fn start_openbox(display: &str) -> Child {
@@ -1837,8 +1921,116 @@ fn current_workspace_scope_hides_titles_and_rekeys_returning_clients() {
     });
     assert_ne!(returned.clients[0].id, first.id);
     assert_eq!(returned.clients[0].title, None);
-
     client.destroy();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn obscured_capture_returns_only_fresh_target_owned_pixels() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("obscured-capture");
+    let config = write_capture_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("capture peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::CaptureObscured,
+            ],
+        ),
+        ServerMessage::Welcome(welcome)
+            if welcome.features.contains(&agent_seat_proto::Feature::ObscuredCapture)
+                && welcome.granted.contains(&Capability::CaptureObscured)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "capture-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "capture-target")
+        })
+    });
+    let observed_target = client_named(&observed, "capture-target");
+    // Paint after the capture grant has enrolled the scoped window in
+    // Composite storage. Pre-enrollment obscured pixels are not recoverable.
+    client.fill(0xff0000);
+
+    let cover = OverrideWindow::create(&xvfb.display, 0, 0, 1_024, 768);
+    cover.fill(0x00ff00);
+    cover.raise();
+
+    let capture = match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::CaptureObscured(target(&observed_target)),
+    ) {
+        Outcome::Ok(Reply::Capture(capture)) => capture,
+        other => panic!("unexpected capture outcome: {other:?}"),
+    };
+    assert_eq!(capture.target, target(&observed_target));
+    assert_eq!((capture.width, capture.height), (320, 180));
+    let bytes = BASE64
+        .decode(capture.data.as_bytes())
+        .expect("capture base64");
+    let decoder = png::Decoder::new(Cursor::new(bytes));
+    let mut reader = decoder.read_info().expect("capture PNG header");
+    let mut pixels = vec![0; reader.output_buffer_size().expect("capture PNG size")];
+    let info = reader.next_frame(&mut pixels).expect("capture PNG frame");
+    assert_eq!((info.width, info.height), (320, 180));
+    assert_eq!(info.color_type, png::ColorType::Rgb);
+    let center = (90 * 320 + 160) * 3;
+    assert_eq!(&pixels[center..center + 3], &[255, 0, 0]);
+
+    drop(stream);
+    let cleanup_deadline = Instant::now() + Duration::from_secs(2);
+    while can_name_window_pixmap(&xvfb.display, client.window) {
+        assert!(
+            Instant::now() < cleanup_deadline,
+            "capture session retained its automatic redirection"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let mut stream = UnixStream::connect(&socket).expect("replacement capture peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::CaptureObscured,
+            ],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "capture-target")
+        })
+    });
+    let observed_target = client_named(&observed, "capture-target");
+    client.destroy();
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::CaptureObscured(target(&observed_target)),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::NoSuchClient
+    ));
+
     let _ = openbox.kill();
     let _ = openbox.wait();
 }

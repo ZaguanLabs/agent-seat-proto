@@ -19,7 +19,7 @@ use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
 
 pub(crate) const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 /// Maximum number of capability atoms in the provider policy grant.
-pub const MAX_POLICY_CAPABILITIES: usize = 11;
+pub const MAX_POLICY_CAPABILITIES: usize = 13;
 const DEFAULT_MAX_SESSIONS: u8 = 4;
 const MAX_SESSIONS: u8 = 32;
 const DEFAULT_MAX_REQUESTS: u16 = 1024;
@@ -78,6 +78,8 @@ const FIRST_RUN_TEMPLATE_SUFFIX: &str = r#"
 # `launch_execute` requires `launch_list`.
 # Pointer and keyboard input require `observe_structure`. They are additionally
 # denied unless the running provider's volatile seat has been enabled locally.
+# Obscured capture requires `observe_structure` and can reveal target-owned
+# pixels even while another window covers the target.
 capabilities = [
   "observe_structure",
   # "observe_titles",     # Read window titles; also set titles = true below.
@@ -91,6 +93,7 @@ capabilities = [
   # "launch_execute",     # Start an admitted desktop entry without a shell.
   # "input_pointer",      # Move or click only inside the unobscured target.
   # "input_keyboard",     # Type bounded text only into a focused target.
+  # "capture_obscured",   # Capture one scoped client's own pixels.
 ]
 
 [observation]
@@ -526,6 +529,7 @@ const fn capability_name(capability: Capability) -> &'static str {
         Capability::LaunchExecute => "launch_execute",
         Capability::InputPointer => "input_pointer",
         Capability::InputKeyboard => "input_keyboard",
+        Capability::CaptureObscured => "capture_obscured",
     }
 }
 
@@ -1160,6 +1164,11 @@ impl RawGrant {
         {
             return Err("input capabilities require observe_structure".to_owned());
         }
+        if self.capabilities.contains(&Capability::CaptureObscured)
+            && !self.capabilities.contains(&Capability::ObserveStructure)
+        {
+            return Err("capture_obscured requires observe_structure".to_owned());
+        }
         Ok(Grant {
             uid: self.uid,
             capabilities: self.capabilities,
@@ -1348,6 +1357,7 @@ mod tests {
             ("launch_execute", "launch_list"),
             ("input_pointer", "observe_structure"),
             ("input_keyboard", "observe_structure"),
+            ("capture_obscured", "observe_structure"),
         ] {
             let source =
                 format!("enabled = true\n[grant]\nuid = {uid}\ncapabilities = [\"{capability}\"]");
@@ -1454,5 +1464,34 @@ mod tests {
             Some(vec![Capability::ObserveStructure])
         );
         assert_eq!(config.granted(uid + 1, [].iter()), None);
+    }
+
+    #[test]
+    fn policy_bound_accepts_every_current_capability_together() {
+        let uid = geteuid().as_raw();
+        let capabilities = vec![
+            Capability::ObserveStructure,
+            Capability::ObserveTitles,
+            Capability::ObserveEvents,
+            Capability::ManageActivate,
+            Capability::ManageClose,
+            Capability::ManageWorkspace,
+            Capability::ManageState,
+            Capability::ManageGeometry,
+            Capability::LaunchList,
+            Capability::LaunchExecute,
+            Capability::InputPointer,
+            Capability::InputKeyboard,
+            Capability::CaptureObscured,
+        ];
+        assert_eq!(capabilities.len(), MAX_POLICY_CAPABILITIES);
+        assert!(
+            RawGrant {
+                uid,
+                capabilities: BoundedList::new(capabilities).expect("complete capability set"),
+            }
+            .validate(uid)
+            .is_ok()
+        );
     }
 }

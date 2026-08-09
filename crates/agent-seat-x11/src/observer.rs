@@ -1,5 +1,6 @@
 //! Bounded per-session EWMH snapshots and convergent event diffs.
 
+mod capture;
 mod input;
 mod keyboard;
 mod manager;
@@ -43,10 +44,17 @@ pub(crate) struct Observer {
     events: VecDeque<EventEnvelope>,
     retained_after: u64,
     resync_required: bool,
+    capture_enabled: bool,
+    capture_extension_checked: bool,
+    redirected_clients: HashSet<u32>,
 }
 
 impl Observer {
-    pub(crate) fn connect(scope: ClientScope, show_titles: bool) -> Result<Self, Failure> {
+    pub(crate) fn connect(
+        scope: ClientScope,
+        show_titles: bool,
+        capture_enabled: bool,
+    ) -> Result<Self, Failure> {
         let (connection, screen) = x11rb::connect(None)
             .map_err(|_| Failure::unavailable("cannot connect an X11 observer"))?;
         let root = connection
@@ -70,6 +78,9 @@ impl Observer {
             events: VecDeque::with_capacity(MAX_EVENTS),
             retained_after: 0,
             resync_required: false,
+            capture_enabled,
+            capture_extension_checked: false,
+            redirected_clients: HashSet::new(),
         })
     }
 
@@ -205,12 +216,45 @@ impl Observer {
             self.scope,
             self.show_titles,
         )?;
+        if self.capture_enabled {
+            let clients = raw
+                .clients
+                .iter()
+                .map(|client| client.xid)
+                .collect::<Vec<_>>();
+            self.reconcile_capture_targets(&clients)?;
+        }
         let Some(previous) = self.model.take() else {
             self.model = Some(self.initial_model(raw)?);
             return Ok(());
         };
         self.model = Some(self.diff_model(previous, raw)?);
         Ok(())
+    }
+
+    pub(super) fn under_server_grab<T>(
+        &mut self,
+        action: impl FnOnce(&mut Self) -> Result<T, Failure>,
+    ) -> Result<T, Failure> {
+        self.connection
+            .grab_server()
+            .map_err(|_| Failure::unavailable("cannot request an X11 server grab"))?
+            .check()
+            .map_err(|_| Failure::unavailable("cannot acquire an X11 server grab"))?;
+        let result = action(self);
+        let released = self
+            .connection
+            .ungrab_server()
+            .map_err(|_| Failure::unavailable("cannot request an X11 server ungrab"))
+            .and_then(|cookie| {
+                cookie
+                    .check()
+                    .map_err(|_| Failure::unavailable("cannot release the X11 server grab"))
+            });
+        match (result, released) {
+            (Ok(value), Ok(())) => Ok(value),
+            (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+        }
     }
 
     fn initial_model(&mut self, raw: RawDesktop) -> Result<Model, Failure> {

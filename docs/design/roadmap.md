@@ -3,8 +3,9 @@
 Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
 complete. R0 has an initial repository pre-RFC draft. The Tier 0 core and C0
 shipped in product release v0.1.0; S0 is complete on `main` in
-`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. Revision 5 now has a
-working experimental Tier 0.5 pointer/click/text slice; the more complex T5R
+`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. Revision 6 now has a
+working experimental obscured-client capture profile and retains revision 5's
+Tier 0.5 pointer/click/text slice; the more complex T5R
 physical-priority research remains separately gated. E0 evidence is
 recorded in
 [`e0-verification.md`](../verification/e0-verification.md).
@@ -249,16 +250,17 @@ Tier 0 core.
 
 ## Optional profiles
 
-Status: first-release decisions complete, 2026-08-08. The evidence and stop
+Status: first-release decisions complete; the narrow T4 obscured-client path
+is experimentally implemented in revision 6, 2026-08-09. The evidence and stop
 conditions are recorded in
 [`optional-profiles.md`](optional-profiles.md). T4 output/core-window capture,
 the strong T5 physical-interruption claim, and T6 semantics remain unsupported.
 Revision 5 separately implements a weaker operator-gated Tier 0.5 input claim.
-A narrowly target-owned Composite `obscured_capture` is deferred to a new wire
-revision and does not delay C0.
+Revision 6 implements separately granted Composite `obscured_capture` with
+fresh scope, fixed image bounds, and no output or core-GetImage fallback.
 
-- T4 may add capture only for modes that can reapply visibility and scope at
-  capture time without returning unrelated pixels.
+- T4 obscured capture is experimental; output and client-visible capture stay
+  stopped. Composite enrollment cannot reconstruct already-obscured pixels.
 - T5 may claim human-activity suppression only when a stronger backend can
   meet that contract. Tier 0.5 advertises no such feature.
 - T6 may add bounded semantics only after fresh correlation and hidden-scope

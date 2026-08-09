@@ -8,7 +8,8 @@ acceptance, or isolation from another same-user X11 client. It has only
 reference-implementation evidence and is not yet provisional.
 
 Owning specification: the Agent Seat repository pre-RFC. Supported binding:
-local JSON wire revision 5. Backend atom: `x11_ewmh`. Assurance atom: `tier0`.
+local JSON wire revisions 5 and 6. Backend atom: `x11_ewmh`. Assurance atom:
+`tier0`.
 Required base profile: `agent-seat.x11-ewmh-core.v1` with
 `observe_structure`.
 
@@ -34,7 +35,7 @@ A session claiming this profile:
 - does not advertise `human_activity` from this profile;
 - grants `input_pointer` and `input_keyboard` separately;
 - requires `observe_structure` with either input grant; and
-- implements revision-5 `pointer.move`, `pointer.click`, and `keyboard.type`
+- implements revision-5-or-6 `pointer.move`, `pointer.click`, and `keyboard.type`
   only for the granted subset.
 
 The profile does not add wire values or change the base profile. Capture,

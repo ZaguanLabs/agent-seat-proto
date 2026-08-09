@@ -42,8 +42,9 @@ arbitrary same-UID processes.
 
 The core profile is observation, supported management, and controlled launch.
 Capture, input, and accessibility remain separately reviewed optional
-profiles. Revision 5 defines an explicitly weaker Tier 0.5 X11 input profile;
-providers that do not implement it simply omit its grants and feature.
+profiles. Revision 6 defines a separately granted obscured-client capture
+profile and retains the explicitly weaker Tier 0.5 X11 input profile;
+providers that do not implement either simply omit its grants and feature.
 
 The experimental revision-5 input path uses the provider's existing X11
 connection, XTEST, current target/focus evidence, the live XKB map, and the
@@ -53,6 +54,13 @@ reachable with bounded safe modifiers. It does not read raw input devices or
 claim physical-user priority. The older separately confined activity broker and
 private-device service remain optional research/hardening components, not
 dependencies of the ordinary input path or the display-neutral wire contract.
+
+The revision-6 capture path uses the same session observer but no input
+authority. It automatically redirects only scoped clients selected under the
+capture grant, names one target pixmap under a bounded server-grabbed read,
+converts a verified TrueColor layout, and returns a bounded PNG. It never reads
+the root or an output and cannot reconstruct pixels already obscured before
+enrollment.
 
 The crate also owns the non-runtime settings API used by the
 `agent-seat-settings` application. It exposes a typed, bounded draft of a
@@ -109,7 +117,7 @@ The portable contract is factored further: the
 [serialization-neutral information model](../protocol/information-model.md) defines
 session, authority, identity, freshness, operation, and outcome semantics,
 while [`specification.md`](../protocol/specification.md) remains the concrete local
-Unix-stream/strict-JSON revision-5 binding.
+Unix-stream/strict-JSON revision-6 binding.
 
 An integrated window manager or compositor can satisfy a conformance profile
 using state and ordering it owns directly. The standalone X11 reference may

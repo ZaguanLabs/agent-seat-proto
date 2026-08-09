@@ -105,7 +105,7 @@ similar startup conventions do not prove identical lifetime behavior.
 
 ## Settings integration
 
-`agent-seat-settings` 0.1.6 shows the selected provider's volatile status in a
+`agent-seat-settings` 0.1.7 shows the selected provider's volatile status in a
 fourth `RUNTIME SEAT` state-rail node and in a dedicated Overview panel. The
 panel provides manual Refresh, **Enable for this instance**, and immediate
 **Disable now** controls. Enable requires a confirmation that names the current

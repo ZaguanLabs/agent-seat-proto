@@ -6,7 +6,7 @@ is owned from its first commit by
 [`ZaguanLabs`](https://github.com/ZaguanLabs).
 
 E1 and the T0--T3 Tier 0 core are complete. Current source implements strict
-Agent Seat wire revision 5, a generic MCP `2025-11-25` companion, and a standalone
+Agent Seat wire revision 6, a generic MCP `2025-11-25` companion, and a standalone
 provider with bounded EWMH observation, freshness-checked management, and
 policy-controlled desktop-entry launch. The five deliverables are:
 
@@ -29,6 +29,12 @@ process, XTEST, the live keyboard map, fresh target evidence, and the volatile
 runtime seat. It needs no root service, raw input-device permission, additional
 group membership, or activity broker. It does not claim physical-user priority;
 a person and an agent can overlap on ordinary X11.
+
+Revision 6 adds an experimental, separately granted obscured-client capture.
+It uses a freshly scoped X Composite named pixmap and returns one bounded PNG;
+it never captures the root or an output. The result can include target-owned
+pixels hidden behind another window, but cannot reconstruct pixels that were
+already obscured before the provider enrolled the client.
 
 Keyboard text follows the current effective XKB layout and group. The provider
 uses XKB key types and levels, including bounded Shift, Level3, and Level5
@@ -73,6 +79,10 @@ For desktop input, grant `observe_structure` plus `input_pointer` and/or
 `input_keyboard` in the policy (or on Settings → Access), restart the provider
 after saving, then enable the current runtime seat. No device-group or root
 setup is part of this path.
+
+For target-owned screenshots, grant `observe_structure` plus
+`capture_obscured`, restart the provider, and observe the client before calling
+`capture_obscured`. The MCP result is an actual `image/png` content block.
 
 The provider runs in the foreground and every process starts with a volatile
 disabled seat. Add only `agent-seat-x11 &` to Openbox autostart after

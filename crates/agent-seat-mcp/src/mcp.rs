@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use agent_seat_proto::{
     ApplicationLaunchRequest, ApplicationListRequest, Call, ClientGeometryRequest,
     ClientStateRequest, ClientWorkspaceRequest, Empty, KeyboardTypeRequest, Outcome,
-    PointerClickRequest, PointerMoveRequest, PollRequest, SubscribeRequest, TargetRequest,
+    PointerClickRequest, PointerMoveRequest, PollRequest, Reply, SubscribeRequest, TargetRequest,
     Validate as _, WorkspaceRequest,
 };
 use serde::{Deserialize, Serialize};
@@ -544,6 +544,12 @@ fn build_tools() -> Box<[Tool]> {
                 &["text"],
             ),
         },
+        Tool {
+            name: "capture_obscured",
+            title: "Capture client pixels",
+            description: "Capture one freshly observed client's own pixels, including content currently covered by other windows.",
+            input_schema: target(),
+        },
     ]
     .into_boxed_slice()
 }
@@ -606,6 +612,7 @@ fn translate_call(name: &str, arguments: Option<Value>) -> Result<Call, CallErro
         "pointer_move" => arguments!(PointerMoveRequest, PointerMove),
         "pointer_click" => arguments!(PointerClickRequest, PointerClick),
         "keyboard_type" => arguments!(KeyboardTypeRequest, KeyboardType),
+        "capture_obscured" => arguments!(TargetRequest, CaptureObscured),
         _ => Err(CallError::UnknownTool),
     }?;
     call.validate()
@@ -616,9 +623,16 @@ fn translate_call(name: &str, arguments: Option<Value>) -> Result<Call, CallErro
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ToolResult {
-    content: [TextContent; 1],
+    content: Vec<ToolContent>,
     structured_content: Value,
     is_error: bool,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum ToolContent {
+    Text(TextContent),
+    Image(ImageContent),
 }
 
 #[derive(Serialize)]
@@ -627,7 +641,38 @@ struct TextContent {
     text: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ImageContent {
+    r#type: &'static str,
+    data: String,
+    mime_type: &'static str,
+}
+
 fn tool_outcome(outcome: Outcome) -> ToolResult {
+    if let Outcome::Ok(Reply::Capture(capture)) = outcome {
+        let structured_content = json!({
+            "status":"ok",
+            "body":{
+                "kind":"capture",
+                "value":{
+                    "target":capture.target,
+                    "width":capture.width,
+                    "height":capture.height,
+                    "format":capture.format
+                }
+            }
+        });
+        return ToolResult {
+            content: vec![ToolContent::Image(ImageContent {
+                r#type: "image",
+                data: capture.data.into_string(),
+                mime_type: "image/png",
+            })],
+            structured_content,
+            is_error: false,
+        };
+    }
     let is_error = matches!(outcome, Outcome::Error(_));
     match serde_json::to_value(outcome) {
         Ok(structured_content) => tool_result(structured_content, is_error),
@@ -648,10 +693,10 @@ fn tool_error(code: &str, retry: &str, message: &str) -> ToolResult {
 fn tool_result(structured_content: Value, is_error: bool) -> ToolResult {
     let text = structured_content.to_string();
     ToolResult {
-        content: [TextContent {
+        content: vec![ToolContent::Text(TextContent {
             r#type: "text",
             text,
-        }],
+        })],
         structured_content,
         is_error,
     }
@@ -659,13 +704,17 @@ fn tool_result(structured_content: Value, is_error: bool) -> ToolResult {
 
 #[cfg(test)]
 mod tests {
-    use agent_seat_proto::Validate as _;
+    use std::num::NonZeroU64;
+
+    use agent_seat_proto::{
+        CaptureData, CaptureFormat, CaptureReply, ClientId, Generation, Validate as _,
+    };
 
     use super::*;
 
     #[test]
     fn every_tool_has_a_closed_object_schema() {
-        assert_eq!(tools().len(), 15);
+        assert_eq!(tools().len(), 16);
         for tool in tools() {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -711,6 +760,7 @@ mod tests {
                 "keyboard_type",
                 json!({"client":1,"generation":0,"text":"Agent Seat\n"}),
             ),
+            ("capture_obscured", json!({"client":1,"generation":0})),
         ];
         for (name, arguments) in calls {
             let call = translate_call(name, Some(arguments)).expect("valid tool fixture");
@@ -724,5 +774,25 @@ mod tests {
             translate_call("seat_status", Some(json!({"extra":true}))),
             Err(CallError::Arguments(_))
         ));
+    }
+
+    #[test]
+    fn capture_results_emit_one_image_without_structured_data_duplication() {
+        let result = tool_outcome(Outcome::Ok(Reply::Capture(CaptureReply {
+            target: TargetRequest {
+                client: ClientId::new(NonZeroU64::MIN),
+                generation: Generation::new(0),
+            },
+            width: 1,
+            height: 1,
+            format: CaptureFormat::Png,
+            data: CaptureData::new("iVBORw0KGgo=").expect("capture fixture"),
+        })));
+        let value = serde_json::to_value(result).expect("MCP capture result");
+        assert_eq!(value["content"][0]["type"], "image");
+        assert_eq!(value["content"][0]["mimeType"], "image/png");
+        assert_eq!(value["content"][0]["data"], "iVBORw0KGgo=");
+        assert_eq!(value["structuredContent"]["body"]["value"]["width"], 1);
+        assert!(value["structuredContent"]["body"]["value"]["data"].is_null());
     }
 }

@@ -80,9 +80,10 @@ The pages divide one policy into bounded tasks:
 
 - **Overview** explicitly enables or disables the policy and exposes the exact
   saved and recovery paths.
-- **Access** manages observation, management, launch, pointer, and keyboard
-  capability atoms. Dependencies are stated beside each control and are never
-  enabled silently.
+- **Access** manages observation, management, launch, pointer, keyboard, and
+  obscured-client capture capability atoms. Dependencies are stated beside
+  each control and are never enabled silently. Capture is separate because it
+  can reveal target-owned pixels hidden behind another window.
 - **Visible windows** selects no clients, the current workspace, or all
   workspaces and independently gates title text.
 - **Applications** selects deny, allow-list, or allow-installed mode and shows

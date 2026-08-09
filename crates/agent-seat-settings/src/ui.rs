@@ -1391,7 +1391,7 @@ struct CapabilitySpec {
     dependency: &'static str,
 }
 
-fn capability_groups() -> [(&'static str, &'static str, Vec<CapabilitySpec>); 4] {
+fn capability_groups() -> [(&'static str, &'static str, Vec<CapabilitySpec>); 5] {
     [
         (
             "Observe",
@@ -1500,6 +1500,17 @@ fn capability_groups() -> [(&'static str, &'static str, Vec<CapabilitySpec>); 4]
                     dependency: "Window structure and an enabled runtime seat",
                 },
             ],
+        ),
+        (
+            "Capture",
+            "Read bounded pixels owned by one freshly observed client.",
+            vec![CapabilitySpec {
+                capability: Capability::CaptureObscured,
+                title: "Obscured client pixels",
+                atom: "capture_obscured",
+                description: "Capture the target client's own pixels even when another window covers it.",
+                dependency: "Window structure",
+            }],
         ),
     ]
 }
@@ -1687,5 +1698,17 @@ mod tests {
                 .iter()
                 .all(|spec| spec.dependency.contains("enabled runtime seat"))
         );
+    }
+
+    #[test]
+    fn access_page_exposes_obscured_capture_as_a_separate_grant() {
+        let groups = capability_groups();
+        let capture = groups
+            .iter()
+            .find(|(name, _, _)| *name == "Capture")
+            .expect("Capture capability group");
+        assert_eq!(capture.2.len(), 1);
+        assert_eq!(capture.2[0].capability, Capability::CaptureObscured);
+        assert_eq!(capture.2[0].dependency, "Window structure");
     }
 }

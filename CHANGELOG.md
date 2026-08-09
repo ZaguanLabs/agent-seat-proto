@@ -17,6 +17,17 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added experimental wire revision 6 and the separately granted
+  `agent-seat.x11-obscured-capture.v1` profile. `capture_obscured` enrolls only
+  scoped clients in X Composite automatic storage and `capture_obscured` MCP
+  calls return one bounded `image/png` block without duplicating its data in
+  structured JSON. The provider never reads the root or an output, explicitly
+  converts validated TrueColor storage, cleans up its own pixmap/redirection
+  resources, and refuses stale, missing, unsupported, or over-bound targets.
+  Isolated Openbox/Xvfb evidence covers a differently colored covering window
+  and target destruction. This milestone is `agent-seat-proto` 0.1.4,
+  `agent-seat-mcp` 0.1.5, `agent-seat-x11` 0.1.26, and Settings 0.1.7.
+
 - Added the experimental `agent-seat.x11-tier0.5-input.v1` conformance profile
   and expanded `agent-seat-x11` 0.1.24 public-boundary evidence to all logical
   button pairs, Return/Tab, unmapped-character no-send, and bounded hostile X11

@@ -2,7 +2,7 @@
 
 Status: repository pre-RFC draft, 2026-08-09. This document defines the
 portable semantic layer proposed for future standardization. It does not alter
-the implemented local JSON wire contract; revision 5 remains defined by
+the implemented local JSON wire contract; revision 6 remains defined by
 [`specification.md`](specification.md).
 
 ## Purpose and separation

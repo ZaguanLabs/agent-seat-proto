@@ -50,7 +50,7 @@ pub(crate) fn run(
         return close(
             &mut stream,
             ErrorCode::IncompatibleRevision,
-            "exact Agent Seat revision 5 is required",
+            "exact Agent Seat revision 6 is required",
         );
     }
     let Some(seat_permit) = seat.permit() else {
@@ -80,6 +80,9 @@ pub(crate) fn run(
         Feature::EwmhManagement,
         Feature::DesktopLaunch,
     ];
+    if granted.contains(&agent_seat_proto::Capability::CaptureObscured) {
+        features.push(Feature::ObscuredCapture);
+    }
     if granted.iter().any(|capability| {
         matches!(
             capability,
@@ -275,6 +278,7 @@ fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
                 | Call::PointerMove(_)
                 | Call::PointerClick(_)
                 | Call::KeyboardType(_)
+                | Call::CaptureObscured(_)
         ) || granted.contains(&agent_seat_proto::Capability::ObserveStructure))
         && (!matches!(call, Call::ApplicationLaunch(_))
             || granted.contains(&agent_seat_proto::Capability::LaunchList))
@@ -363,6 +367,10 @@ fn provider_call(
             })
             .map(Reply::Input)
             .map_err(CallFailure::Observation),
+        Call::CaptureObscured(arguments) => observer_for(observer, context.granted, context.config)
+            .and_then(|observer| observer.capture_obscured(arguments))
+            .map(Reply::Capture)
+            .map_err(CallFailure::Observation),
     };
     match result {
         Ok(reply) => Outcome::Ok(reply),
@@ -421,7 +429,8 @@ fn observer_for<'a>(
     if observer.is_none() {
         let show_titles = config.titles_enabled()
             && granted.contains(&agent_seat_proto::Capability::ObserveTitles);
-        let connected = Observer::connect(config.client_scope(), show_titles)?;
+        let capture_enabled = granted.contains(&agent_seat_proto::Capability::CaptureObscured);
+        let connected = Observer::connect(config.client_scope(), show_titles, capture_enabled)?;
         *observer = Some(connected);
     }
     observer
@@ -530,6 +539,22 @@ mod tests {
             &[
                 agent_seat_proto::Capability::ObserveStructure,
                 agent_seat_proto::Capability::ManageClose,
+            ]
+        ));
+
+        let capture = Call::CaptureObscured(agent_seat_proto::TargetRequest {
+            client: agent_seat_proto::ClientId::new(NonZeroU64::MIN),
+            generation: agent_seat_proto::Generation::new(0),
+        });
+        assert!(!authorized(
+            &capture,
+            &[agent_seat_proto::Capability::CaptureObscured]
+        ));
+        assert!(authorized(
+            &capture,
+            &[
+                agent_seat_proto::Capability::ObserveStructure,
+                agent_seat_proto::Capability::CaptureObscured,
             ]
         ));
 

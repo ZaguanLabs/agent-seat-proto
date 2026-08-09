@@ -72,7 +72,7 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
             .as_array()
             .expect("tool array")
             .len(),
-        15
+        16
     );
     let tool_names = responses[1]["result"]["tools"]
         .as_array()
@@ -82,6 +82,7 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
         .collect::<Vec<_>>();
     assert!(tool_names.contains(&"pointer_click"));
     assert!(tool_names.contains(&"keyboard_type"));
+    assert!(tool_names.contains(&"capture_obscured"));
     assert_eq!(responses[2]["result"]["isError"], true);
     assert_eq!(
         responses[2]["result"]["structuredContent"]["body"]["code"],

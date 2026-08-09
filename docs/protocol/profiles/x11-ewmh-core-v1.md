@@ -7,7 +7,8 @@ enough for independent implementation and black-box review, but has not yet
 met the pre-RFC maturity requirement for provisional status.
 
 Owning specification: the Agent Seat repository pre-RFC. Supported binding:
-local JSON wire revision 5. Backend atom: `x11_ewmh`. Assurance atom: `tier0`.
+local JSON wire revisions 5 and 6. Backend atom: `x11_ewmh`. Assurance atom:
+`tier0`.
 
 ## 1. Claim
 
@@ -24,7 +25,7 @@ same-user X11 client.
 
 ## 2. Supported revision and surface
 
-Revision 5 sessions claiming this profile advertise exactly:
+Revision 5 or 6 sessions claiming this profile advertise exactly:
 
 - backend `x11_ewmh`;
 - assurance `tier0`; and
@@ -40,7 +41,7 @@ The profile covers these capabilities:
 
 Each capability remains separately requested, granted, and checked. A provider
 may implement a strict subset and advertise/grant only that subset. The
-`input_pointer` and `input_keyboard` capabilities and every capture, input,
+`input_pointer`, `input_keyboard`, and `capture_obscured` capabilities and every capture, input,
 human-activity, and
 accessibility feature are outside this core profile. Matching this profile does
 not satisfy their separate gates.
@@ -216,8 +217,8 @@ invalidates every old handle and cursor.
 
 ## 10. Resource and denial-of-service bounds
 
-The revision-5 frame, string, list, snapshot, event, page, and wait limits all
-apply. The provider additionally publishes finite session, request, catalog,
+The selected binding's frame, string, list, snapshot, event, page, and wait
+limits all apply. The provider additionally publishes finite session, request, catalog,
 launch-child, filesystem-depth, X11-property, and I/O deadlines. It evicts
 peers that do not complete opening or a frame within the configured deadline
 and recovers the bounded session slot.

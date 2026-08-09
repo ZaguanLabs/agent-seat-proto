@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core plus an experimental Tier 0.5 pointer and keyboard slice.
-`agent-seat-x11` 0.1.25 owns lifecycle, policy, local
+Status: T3 Tier 0 core plus experimental obscured-capture and Tier 0.5 input profiles.
+`agent-seat-x11` 0.1.26 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -33,6 +33,8 @@ contract.
   generation on disable.
 - Realize bounded target-aware pointer and keyboard input through the existing
   X11 session only while that volatile seat remains enabled.
+- Capture only a freshly scoped client's Composite-owned pixels under a
+  separate grant, fixed image bounds, and explicit format conversion.
 
 ## Non-goals
 
@@ -192,6 +194,7 @@ capabilities = [
   "launch_execute",
   # "input_pointer",   # Target-aware move and click.
   # "input_keyboard",  # Focus-bound bounded text.
+  # "capture_obscured", # Target-owned PNG, including later-obscured pixels.
 ]
 
 [observation]
@@ -214,7 +217,7 @@ directory enforces the same-user boundary and the accepted socket's
 `SO_PEERCRED` UID selects the grant; `hello.peer` remains descriptive.
 Capabilities must be unique and are intersected with the peer's canonically
 ordered request. `observe_titles`, `observe_events`, every management
-capability, `input_pointer`, and `input_keyboard` require
+capability, `input_pointer`, `input_keyboard`, and `capture_obscured` require
 `observe_structure`; `launch_execute` requires `launch_list`. Calls recheck
 those dependencies in the live session. An omitted grant denies every peer.
 
@@ -223,7 +226,7 @@ those dependencies in the live session. An omitted grant denies every peer.
 | `max_sessions` | 4 | 1..32 |
 | `max_requests_per_session` | 1024 | 1..4096 |
 | `io_timeout_ms` | 2000 | 50..10000 |
-| grant capabilities | empty | at most 12 unique atoms |
+| grant capabilities | empty | at most 13 unique atoms |
 | `observation.clients` | `none` | `none`, `current_workspace`, `all_workspaces` |
 | `observation.titles` | `false` | boolean |
 | `launch.mode` | `deny` | `deny`, `allow_listed`, `allow_installed` |
@@ -256,7 +259,7 @@ before releasing the grab. Thus two conforming providers cannot both observe
 an empty selection and overwrite one another.
 
 The selected root and the dedicated owner window receive byte-identical
-revision-5 `_AGENT_SEAT` advertisements only after ownership succeeds. A
+revision-6 `_AGENT_SEAT` advertisements only after ownership succeeds. A
 second provider refuses to compete. Losing the selection terminates the
 provider. Missing or mismatched properties remain undiscoverable rather than
 falling back to a conventional filename.
@@ -274,7 +277,8 @@ Each admitted connection has fixed read/write deadlines and one sequential
 request stream; there is no per-session request queue. The provider refuses
 capacity beyond `max_sessions`, evicts a peer that does not complete framing
 before its deadline, and ends a session at its request bound. Frames retain
-the revision-5 direction limits.
+the revision-6 direction limits: 65,536 request bytes and 12,582,912 response
+bytes.
 
 The provider advertises `ewmh_observation`, `ewmh_management`, and
 `desktop_launch`. It implements `seat.status` and `desktop.snapshot` with
@@ -284,7 +288,7 @@ Every request is checked against the grant first; missing authority returns
 `refused`.
 
 When either input capability is granted, the provider additionally advertises
-`input_injection` and accepts revision-5 `pointer.move`, `pointer.click`, or
+`input_injection` and accepts revision-6 `pointer.move`, `pointer.click`, or
 `keyboard.type`. No broker, root service, evdev permission, uinput permission,
 or `input`-group membership is required. Each independently reportable action
 refreshes the fresh target under a short X server grab and rechecks the
@@ -308,6 +312,17 @@ cross the wire. `observation.clients = "current_workspace"` filters clients
 before titles are read; a client leaving that scope is removed, and returning
 later receives a fresh opaque ID. `observation.titles = true` still requires an
 `observe_titles` session grant.
+
+When `capture_obscured` is granted, the observer additionally advertises
+`obscured_capture` and selects Composite automatic redirection only for clients
+inside that session's current scope. `capture.obscured` rechecks the exact
+target under a server grab, names and reads only its redirected pixmap, frees
+the name, and returns a bounded RGB PNG. A session removes its own redirections
+as clients leave scope and on teardown. The operation includes neither root nor
+output pixels and has no core-GetImage fallback. It can reveal target-owned
+pixels covered after enrollment; pixels already obscured before enrollment
+cannot be reconstructed and are outside the promise. See the
+[capture profile](protocol/profiles/x11-obscured-capture-v1.md).
 
 Events are monotonic diffs between bounded samples, not pushed window-manager
 transactions. An empty subscription filter selects every event class; a

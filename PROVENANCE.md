@@ -202,6 +202,18 @@ installed-registry matrix were written for this repository from public X11,
 process, and application-visible behavior. No Nobox code, schema, fixture,
 comment, test, or prose was consulted or adapted.
 
+The revision-6 obscured-client capture profile and implementation are original
+work derived from the public X.Org Composite 0.4 protocol and X11 core
+`GetImage`/pixmap-format contracts. The standards references are the X.Org
+[Composite protocol](https://www.x.org/releases/X11R7.5/doc/compositeproto/compositeproto.txt)
+and [X11 protocol](https://www.x.org/releases/current/doc/xproto/x11protocol.pdf).
+The implementation uses safe `x11rb` extension bindings, the small `base64`
+encoding crate, and the safe Rust `png` encoder under explicit image and frame
+bounds. The scoped-enrollment lifecycle, TrueColor conversion, MCP image
+projection, covering-window fixture, protocol schema, and prose were written
+for this repository. No Nobox code, schema, test, fixture, comment, or prose
+was consulted or adapted.
+
 The rootless private-device input fixture is original test work over the same
 public process, wire, and X11 behavior. It uses the already installed
 Bubblewrap executable only to replace `/dev` for the real provider process,

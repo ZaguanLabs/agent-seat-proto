@@ -113,31 +113,6 @@ impl Observer {
         })
     }
 
-    fn under_server_grab<T>(
-        &mut self,
-        action: impl FnOnce(&mut Self) -> Result<T, Failure>,
-    ) -> Result<T, Failure> {
-        self.connection
-            .grab_server()
-            .map_err(|_| Failure::unavailable("cannot request an X11 server grab"))?
-            .check()
-            .map_err(|_| Failure::unavailable("cannot acquire an X11 server grab"))?;
-        let result = action(self);
-        let released = self
-            .connection
-            .ungrab_server()
-            .map_err(|_| Failure::unavailable("cannot request an X11 server ungrab"))
-            .and_then(|cookie| {
-                cookie
-                    .check()
-                    .map_err(|_| Failure::unavailable("cannot release the X11 server grab"))
-            });
-        match (result, released) {
-            (Ok(value), Ok(())) => Ok(value),
-            (Err(error), _) | (Ok(_), Err(error)) => Err(error),
-        }
-    }
-
     fn pointer_destination(
         &mut self,
         target_request: agent_seat_proto::TargetRequest,

@@ -1,7 +1,8 @@
 # Optional X11 profile decisions
 
-Status: historical first Tier 0 core release decision, 2026-08-08. T4 is
-deferred and T6 remains stopped. The strong T5 physical-interruption promise
+Status: historical first Tier 0 core release decision, 2026-08-08. T4 now has
+an experimental revision-6 obscured-client profile; T6 remains stopped. The
+strong T5 physical-interruption promise
 also remains stopped; later revision 5 separately implements a weaker,
 explicitly operator-gated Tier 0.5 input claim. None delays the Tier 0 core.
 
@@ -64,14 +65,20 @@ presented as output capture or `client_visible_capture`.
   shipped.
 - Core `GetImage` client capture fails because obscured regions can contain
   unrelated pixels and is not shipped.
-- A future `obscured_capture` profile may be specified for a freshly scoped,
-  mapped target using only its Composite named pixmap. It requires a new wire
-  revision and an explicit grant because it can reveal target content hidden
-  behind other windows.
+- Revision 6 implements an experimental `obscured_capture` profile for a
+  freshly scoped, viewable target using only its Composite named pixmap. It has
+  a separate `capture_obscured` grant because it can reveal target content
+  hidden behind other windows.
+- Automatic redirection begins when a client enters an admitted session scope.
+  Composite cannot reconstruct target pixels that were already obscured before
+  enrollment, so the profile covers current target-owned storage painted after
+  enrollment rather than historical contents.
 - Grounded coordinate grids remain an encoding layered on a qualifying future
   capture, never a way to make an unsafe source safe.
 
-No capture feature is advertised in the first core release.
+No capture feature is part of the core. Revision 6 advertises
+`obscured_capture` only to a session granted its optional capability; output
+and client-visible capture remain stopped.
 
 ## T5 input decision
 

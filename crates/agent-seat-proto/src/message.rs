@@ -1,4 +1,4 @@
-//! Strict revision-5 messages and core Tier 0 values.
+//! Strict revision-6 messages and bounded Tier 0 profile values.
 
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +38,16 @@ pub const MAX_APPLICATIONS: usize = 256;
 pub const MAX_INPUT_TEXT_BYTES: usize = 1024;
 /// Maximum independently reportable actions in one input request.
 pub const MAX_INPUT_ACTIONS: usize = 256;
+/// Maximum width of one obscured-client capture.
+pub const MAX_CAPTURE_WIDTH: u16 = 2048;
+/// Maximum height of one obscured-client capture.
+pub const MAX_CAPTURE_HEIGHT: u16 = 2048;
+/// Maximum pixels in one obscured-client capture.
+pub const MAX_CAPTURE_PIXELS: usize = 1920 * 1080;
+/// Maximum PNG bytes before base64 wire encoding.
+pub const MAX_CAPTURE_PNG_BYTES: usize = 7 * 1024 * 1024;
+/// Maximum base64 bytes carrying one PNG capture.
+pub const MAX_CAPTURE_DATA_BYTES: usize = MAX_CAPTURE_PNG_BYTES.div_ceil(3) * 4;
 /// Longest event poll wait.
 pub const MAX_POLL_WAIT_MS: u32 = 30_000;
 
@@ -55,6 +65,8 @@ pub type Title = BoundedText<MAX_TITLE_BYTES>;
 pub type ApplicationId = BoundedText<MAX_APPLICATION_ID_BYTES>;
 /// Text to type through the live X11 keyboard map.
 pub type InputText = BoundedText<MAX_INPUT_TEXT_BYTES>;
+/// Base64-encoded PNG data for one bounded capture.
+pub type CaptureData = BoundedText<MAX_CAPTURE_DATA_BYTES>;
 /// A workspace name.
 pub type WorkspaceName = BoundedText<MAX_WORKSPACE_NAME_BYTES>;
 
@@ -235,6 +247,8 @@ pub enum Capability {
     InputPointer,
     /// Type bounded text only into a focused target.
     InputKeyboard,
+    /// Capture the pixels owned by one freshly scoped client.
+    CaptureObscured,
 }
 
 /// Functionality implemented by the current provider/backend.
@@ -423,6 +437,9 @@ pub enum Call {
     /// Type bounded text into the currently focused target.
     #[serde(rename = "keyboard.type")]
     KeyboardType(KeyboardTypeRequest),
+    /// Capture one freshly scoped client, including obscured pixels.
+    #[serde(rename = "capture.obscured")]
+    CaptureObscured(TargetRequest),
 }
 
 impl Call {
@@ -441,6 +458,7 @@ impl Call {
             Self::ApplicationLaunch(_) => Capability::LaunchExecute,
             Self::PointerMove(_) | Self::PointerClick(_) => Capability::InputPointer,
             Self::KeyboardType(_) => Capability::InputKeyboard,
+            Self::CaptureObscured(_) => Capability::CaptureObscured,
         }
     }
 }
@@ -461,6 +479,7 @@ impl Validate for Call {
             Self::PointerMove(value) => value.validate(),
             Self::PointerClick(value) => value.validate(),
             Self::KeyboardType(value) => value.validate(),
+            Self::CaptureObscured(value) => value.validate(),
         }
     }
 }
@@ -976,6 +995,8 @@ pub enum Reply {
     Launched(LaunchReply),
     /// Bounded input realization result.
     Input(InputReply),
+    /// Bounded target-owned client image.
+    Capture(CaptureReply),
 }
 
 impl Validate for Reply {
@@ -989,7 +1010,96 @@ impl Validate for Reply {
             Self::Applications(value) => value.validate(),
             Self::Launched(value) => value.validate(),
             Self::Input(value) => value.validate(),
+            Self::Capture(value) => value.validate(),
         }
+    }
+}
+
+/// Portable encoding of one captured client image.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureFormat {
+    /// Portable Network Graphics with eight-bit RGB samples.
+    Png,
+}
+
+/// One bounded image of a freshly scoped client.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureReply {
+    /// Exact client generation used for the capture.
+    pub target: TargetRequest,
+    /// Image width in pixels.
+    pub width: u16,
+    /// Image height in pixels.
+    pub height: u16,
+    /// Portable image representation.
+    pub format: CaptureFormat,
+    /// Base64-encoded image bytes, without a data-URL prefix.
+    pub data: CaptureData,
+}
+
+impl Validate for CaptureReply {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()?;
+        let pixels = usize::from(self.width)
+            .checked_mul(usize::from(self.height))
+            .ok_or("capture dimensions overflow")?;
+        if self.width == 0
+            || self.height == 0
+            || self.width > MAX_CAPTURE_WIDTH
+            || self.height > MAX_CAPTURE_HEIGHT
+            || pixels > MAX_CAPTURE_PIXELS
+        {
+            return Err("capture dimensions are outside revision bounds");
+        }
+        if !valid_png_base64(self.data.as_bytes()) {
+            return Err("capture data is not a canonical base64 PNG");
+        }
+        Ok(())
+    }
+}
+
+fn valid_png_base64(data: &[u8]) -> bool {
+    if data.len() < 12 || data.len() % 4 != 0 || !data.starts_with(b"iVBORw0KGgo") {
+        return false;
+    }
+    let padding = data.iter().rev().take_while(|byte| **byte == b'=').count();
+    if padding > 2 {
+        return false;
+    }
+    let body = &data[..data.len() - padding];
+    if !body
+        .iter()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/'))
+        || !data[data.len() - padding..]
+            .iter()
+            .all(|byte| *byte == b'=')
+    {
+        return false;
+    }
+    match padding {
+        0 => true,
+        1 => body
+            .last()
+            .and_then(|byte| base64_value(*byte))
+            .is_some_and(|value| value & 0b11 == 0),
+        2 => body
+            .last()
+            .and_then(|byte| base64_value(*byte))
+            .is_some_and(|value| value & 0b1111 == 0),
+        _ => false,
+    }
+}
+
+fn base64_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
     }
 }
 
@@ -1538,5 +1648,32 @@ mod tests {
             .required_capability(),
             Capability::InputKeyboard
         );
+        assert_eq!(
+            Call::CaptureObscured(target).required_capability(),
+            Capability::CaptureObscured
+        );
+    }
+
+    #[test]
+    fn capture_payloads_are_portable_and_dimension_bounded() {
+        let target = TargetRequest {
+            client: ClientId::new(NonZeroU64::MIN),
+            generation: Generation::new(0),
+        };
+        let capture = |width, height, data: &str| CaptureReply {
+            target,
+            width,
+            height,
+            format: CaptureFormat::Png,
+            data: CaptureData::new(data).expect("bounded capture fixture"),
+        };
+        assert!(capture(1, 1, "iVBORw0KGgo=").validate().is_ok());
+        assert!(capture(0, 1, "iVBORw0KGgo=").validate().is_err());
+        assert!(
+            capture(MAX_CAPTURE_WIDTH, MAX_CAPTURE_HEIGHT, "iVBORw0KGgo=")
+                .validate()
+                .is_err()
+        );
+        assert!(capture(1, 1, "AAAAAAAAAAAA").validate().is_err());
     }
 }

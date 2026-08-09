@@ -65,6 +65,12 @@ impl<const MAX: usize> BoundedText<MAX> {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Consumes the bound wrapper without copying its allocation.
+    #[must_use]
+    pub fn into_string(self) -> String {
+        self.0.into_string()
+    }
 }
 
 impl<const MAX: usize> Deref for BoundedText<MAX> {
