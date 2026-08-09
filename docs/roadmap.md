@@ -36,7 +36,9 @@ installed systemd-service deny/enable/deny round trip, including MCP refusal
 while disabled, a successful fresh session while enabled, generation advance
 on disable, and selection-bound discovery across equivalent `DISPLAY`
 spellings. Its pre-logout LightDM evidence is recorded; the deliberate
-logout/relogin observation remains pending.
+logout/relogin observation now passes for the recorded released
+LightDM/Openbox/systemd combination. Other launchers and the separate trusted
+lock-transition ordering gate remain unverified.
 
 ## Goals
 

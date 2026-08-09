@@ -388,6 +388,11 @@ Desktop protocols frequently expose ambient same-user authority. Agent Seat
 can reduce accidental overreach and constrain an untrusted companion, but it
 cannot revoke authority held independently by another process. Each profile
 MUST state its OS-user, session, display-server, and peer-isolation assumptions.
+A deployment MUST distinguish cooperative use from enforced mediation. A
+harness retaining general execution or desktop authority can choose another
+path even when Agent Seat is available; making Agent Seat its only desktop
+path requires independently verified process or session confinement and is not
+implied by protocol conformance.
 
 Titles, application identifiers, process metadata, geometry, screenshots,
 accessibility trees, and input activity can disclose private information.

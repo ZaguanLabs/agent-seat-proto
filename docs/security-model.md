@@ -48,6 +48,16 @@ The standalone provider is a policy boundary against accidental overreach,
 malformed peers, and a compromised translator. It is not an isolation boundary
 against another process that already has the same user's X11 authority.
 
+Two deployment claims must remain distinct. In a cooperative deployment, a
+harness with unrestricted command execution as the desktop user can bypass
+Agent Seat through ambient X11, ordinary desktop tools, or its own automation;
+the protocol still offers a faster, structured, scoped, and auditable path,
+but it is not mandatory mediation. In an enforced deployment, the harness and
+companion must be launched without those independent authorities so that the
+provider channel is their only desktop path. The provider cannot manufacture
+that confinement from inside the desktop session, and conformance to the wire
+protocol alone never proves it.
+
 T5R's optional reference deployment introduces two additional boundaries. The
 activity broker alone receives exact read-only evdev descriptors and reduces
 them to readiness, instance, epoch, and terminal stop state. The X11 provider
