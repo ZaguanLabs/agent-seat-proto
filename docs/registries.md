@@ -33,7 +33,8 @@ contains:
 - the repository-reserved core namespace;
 - exact revision-4 message, capability, feature, backend, assurance, call,
   reply, event, state, action, result, error, and retry atoms; and
-- separately allocated profile and extension records, currently empty.
+- separately allocated profile and extension records. The first profile is
+  `agent-seat.x11-ewmh-core.v1`; no extensions are allocated.
 
 Array order is significant only when a registry entry declares
 `canonical_order: true`. Other arrays are published deterministically for

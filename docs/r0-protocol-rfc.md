@@ -281,6 +281,13 @@ Implementing the same tools, using the same library, or copying a reference
 deployment is not profile conformance. Conformance requires the stated
 evidence and tests on the claiming implementation.
 
+The first complete repository profile is
+[`agent-seat.x11-ewmh-core.v1`](profiles/x11-ewmh-core-v1.md). It specifies the
+standalone X11/EWMH core independently of the reference crate and explicitly
+excludes input, lock-state, application-identity, and same-user isolation
+claims. It remains experimental until independent evidence meets the maturity
+rule below.
+
 ### 5.3 Assurance vocabulary
 
 This draft reserves two initial assurance families without making either a
@@ -440,8 +447,6 @@ negative authority without importing implementation internals.
 This draft is ready for independent review, not external standards submission.
 The next revision SHOULD:
 
-- specify at least one complete backend conformance profile independently from
-  the reference implementation;
 - define a portable black-box conformance report format;
 - obtain review from integrated compositor/window-manager maintainers; and
 - resolve governance, registry custody, change control, and the venue for any

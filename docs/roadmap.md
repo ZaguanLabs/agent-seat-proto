@@ -51,6 +51,13 @@ revisions remain the repository's normative wire contract. A hand-reviewed
 generated data or the projection itself runtime authority. No external
 standards status is currently claimed.
 
+The first complete implementation-independent backend profile is
+[`agent-seat.x11-ewmh-core.v1`](profiles/x11-ewmh-core-v1.md). It defines the
+supported revision/capability subset, authority inventory, convergent
+observation, management send boundary and outcomes, controlled launch,
+lifecycle and resource behavior, required public fixtures, and prohibited
+claims. It remains experimental pending genuinely independent evidence.
+
 Prepare an implementation-independent RFC from behavior that has survived the
 reference implementation and hostile tests. The RFC must have three clearly
 separated layers:
@@ -73,8 +80,8 @@ R0 also defines revision allocation, extension ownership, capability
 negotiation, security considerations, conformance terminology, and the process
 for independent implementations to report compatible subsets. Publication as
 an external RFC or standard remains a later maintainer/community decision. The
-draft records the remaining work for an independent backend profile and report
-format, external review, external registry governance, and publication.
+draft records the remaining work for a portable conformance report format,
+external review, external registry governance, and publication.
 
 ## E0 — bootstrap
 

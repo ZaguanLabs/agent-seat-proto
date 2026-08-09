@@ -217,6 +217,17 @@
       "reconnect"
     ]
   },
-  "profiles": [],
+  "profiles": [
+    {
+      "identifier": "agent-seat.x11-ewmh-core.v1",
+      "status": "experimental",
+      "specification": "profiles/x11-ewmh-core-v1.md",
+      "wire_revisions": [
+        4
+      ],
+      "backend": "x11_ewmh",
+      "assurance": "tier0"
+    }
+  ],
   "extensions": []
 }

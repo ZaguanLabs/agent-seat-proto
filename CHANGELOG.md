@@ -14,6 +14,11 @@ All notable changes to this project are documented here.
   registries plus repository custody, immutability, namespace, and change-
   transaction rules. Released specifications remain authoritative, and the
   projection is neither generated runtime source nor external endorsement.
+- Added the complete implementation-independent
+  `agent-seat.x11-ewmh-core.v1` experimental profile: authority inventory,
+  supported core surface, convergent observation, qualified EWMH management,
+  controlled launch, lifecycle/resource requirements, public fixtures, known
+  limitations, and prohibited claims. Input remains outside the profile.
 - Added `agent-seat-mcp` 0.1.3 and `agent-seat-x11` 0.1.16 private companion
   deployment. The provider user unit uses one fixed mode-0600 socket. The
   emitted MCP registration has systemd preconnect only that socket with
