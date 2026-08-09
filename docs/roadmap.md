@@ -31,6 +31,13 @@ volatile latch or enable automatically. LightDM is the first logout/relogin
 compatibility case, while other launchers remain independent participants in
 the same lifecycle contract.
 
+The [Tier 0.5 verification record](t0.5-verification.md) now contains an
+installed systemd-service deny/enable/deny round trip, including MCP refusal
+while disabled, a successful fresh session while enabled, generation advance
+on disable, and selection-bound discovery across equivalent `DISPLAY`
+spellings. Its pre-logout LightDM evidence is recorded; the deliberate
+logout/relogin observation remains pending.
+
 ## Goals
 
 - Define one strict, bounded Agent Seat wire contract.
