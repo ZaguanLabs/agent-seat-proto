@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus an experimental T5 pointer slice.
-`agent-seat-x11` 0.1.19 owns lifecycle, policy, local
+`agent-seat-x11` 0.1.20 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -149,6 +149,14 @@ connecting to X11 or the provider socket. Unlocked crash-stale markers are
 ignored. Missing or unavailable evidence is reported as unknown rather than
 as proof that the provider is stopped; this best-effort channel grants no
 authority and is not a same-user security boundary.
+
+The library's separate Tier 0.5 control API is intentionally not part of those
+saved-policy and marker APIs. It validates the current X11 selection-bound
+advertisement and performs one fixed, bounded status, Enable, or Disable
+request against the derived provider control socket. The Settings GTK shell
+uses this typed boundary for its runtime panel; its display-independent model
+and terminal commands do not call it. The API exposes neither private framing
+nor an independent grant authority.
 
 ### Policy reference
 

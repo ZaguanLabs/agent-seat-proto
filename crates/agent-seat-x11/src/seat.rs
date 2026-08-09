@@ -74,7 +74,7 @@ impl SeatGate {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct SeatStatus {
+pub(crate) struct SeatStatus {
     enabled: bool,
     generation: u64,
 }
@@ -85,6 +85,14 @@ impl SeatStatus {
             enabled: is_enabled(raw),
             generation: raw / 2,
         }
+    }
+
+    pub(crate) const fn enabled(self) -> bool {
+        self.enabled
+    }
+
+    pub(crate) const fn generation(self) -> u64 {
+        self.generation
     }
 }
 
@@ -141,7 +149,10 @@ pub(crate) fn handle_pending(listener: &UnixListener, gate: &SeatGate) -> Result
         .map_err(|error| format!("cannot acknowledge seat-control request: {error}"))
 }
 
-pub(crate) fn request(path: &std::path::Path, command: ControlCommand) -> Result<String, String> {
+pub(crate) fn request(
+    path: &std::path::Path,
+    command: ControlCommand,
+) -> Result<SeatStatus, String> {
     let mut stream = UnixStream::connect(path)
         .map_err(|error| format!("cannot connect to running provider seat control: {error}"))?;
     stream
@@ -159,13 +170,7 @@ pub(crate) fn request(path: &std::path::Path, command: ControlCommand) -> Result
     stream
         .read_exact(&mut response)
         .map_err(|error| format!("cannot read seat-control response: {error}"))?;
-    let status = decode_status(response)?;
-    let state = if status.enabled {
-        "enabled"
-    } else {
-        "disabled"
-    };
-    Ok(format!("Seat {state} (generation {}).", status.generation))
+    decode_status(response)
 }
 
 fn encode_status(status: SeatStatus) -> [u8; RESPONSE_BYTES] {

@@ -65,19 +65,22 @@ the exact policy loaded by current provider processes. These APIs do not
 connect to X11, open the provider socket, or alter the policy active in a
 running process.
 
-A future Settings milestone may deliberately add the Tier 0.5 operator plane
-as a separate reviewed authority. That would not turn saved configuration into
-runtime state or put an enable operation on MCP; opening Settings, saving a
-policy, login, and unlock must remain unable to enable implicitly.
+The separate typed Tier 0.5 control API validates the live selection-bound X11
+advertisement, derives the provider-private control socket, and performs one
+bounded status, Enable, or Disable request. It is not part of the policy API,
+does not expose the fixed private framing, and is not an Agent Seat wire or MCP
+operation.
 
 ## `agent-seat-settings`
 
 This executable is a human-facing editor, not a provider. Its
 display-independent model depends on `agent-seat-x11` for the exact policy
 schema, XDG catalog, and atomic writes. Its GTK 4 shell may present and review
-drafts but never connects to X11 directly, opens the provider socket, exposes
-MCP tools, or changes a running grant. Terminal check, print, and recovery
-commands execute without initializing GTK.
+drafts. The shell alone may call the typed Tier 0.5 boundary to inspect or
+change the current provider-owned volatile latch; it never owns either socket,
+exposes MCP tools, changes a saved grant implicitly, or starts and stops the
+provider. Terminal check, print, and recovery commands execute without
+initializing GTK or contacting X11 or the provider.
 
 ## Dependency direction
 
@@ -86,7 +89,8 @@ agent-seat-mcp ──> agent-seat-proto <── agent-seat-x11 <── agent-sea
                                            │
                                            ├── X11/EWMH realization
                                            ├── grants and scope
-                                           └── XDG launch and saved policy
+                                           ├── XDG launch and saved policy
+                                           └── typed volatile-seat control
 ```
 
 The protocol crate never points outward. The companion and provider share

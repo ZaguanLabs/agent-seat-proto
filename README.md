@@ -200,7 +200,10 @@ Run `agent-seat-settings` with no command to open its GTK interface. The
 complete interface edits activation, capability grants, visible-window scope,
 the bounded XDG launch catalog, and resource limits. It validates and shows an
 exact policy diff before an atomic save, retains a private recovery policy, and
-distinguishes saved policy from best-effort active-provider evidence. See
+distinguishes saved policy, best-effort active-policy evidence, and the current
+provider's volatile Tier 0.5 seat. The separate runtime panel can Refresh,
+explicitly Enable for this provider instance, or immediately Disable; opening
+and saving never enable it. See
 [the Settings guide](docs/settings.md) for the complete first-run and recovery
 workflow.
 

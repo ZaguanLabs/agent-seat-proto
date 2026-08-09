@@ -6,6 +6,14 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added the Tier 0.5 Settings control surface in `agent-seat-settings` 0.1.5
+  and a typed provider-library control boundary in `agent-seat-x11` 0.1.20.
+  The GTK state rail and Overview page keep saved activation, active-policy
+  evidence, and the current provider's volatile seat distinct; status and all
+  three control actions are isolated-X11 tested. Opening or saving never
+  enables the seat, Enable requires explicit confirmation, and Disable remains
+  an immediate generation-revoking action.
+
 - Split the protocol pre-RFC's portable semantics into an explicit
   serialization-neutral information model and identified the existing
   pathname-Unix-stream, strict-JSON revision 4 contract as one concrete

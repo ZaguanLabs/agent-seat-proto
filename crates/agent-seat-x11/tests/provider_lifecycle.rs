@@ -24,7 +24,10 @@ use agent_seat_proto::{
     RequestId, Sequence, ServerMessage, StateAction, SubscribeRequest, TargetRequest,
     WorkspaceRequest, read_frame, write_frame,
 };
-use agent_seat_x11::{ActivePolicyStatus, active_policy_status, read_policy, replace_policy};
+use agent_seat_x11::{
+    ActivePolicyStatus, RuntimeSeatCommand, active_policy_status, control_runtime_seat,
+    read_policy, replace_policy,
+};
 use rustix::process::{Pid, Signal, geteuid, kill_process};
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{
@@ -267,6 +270,11 @@ fn volatile_seat_gate_denies_by_default_revokes_sessions_and_resets_on_restart()
     let socket = directory.0.join("seat.sock");
     let mut provider = Provider::start_disabled(&xvfb.display, &config, &socket);
 
+    assert_eq!(
+        query_runtime_seat(&xvfb.display, &socket, "status"),
+        "disabled:0"
+    );
+
     let equivalent_display = format!("{}.0", xvfb.display);
     let status = seat_command(&equivalent_display, &socket, "status");
     assert!(status.status.success());
@@ -286,11 +294,9 @@ fn volatile_seat_gate_denies_by_default_revokes_sessions_and_resets_on_restart()
                     .is_some_and(|message| message.as_str().contains("disabled"))
     ));
 
-    let enabled = seat_command(&xvfb.display, &socket, "enable");
-    assert!(enabled.status.success());
     assert_eq!(
-        String::from_utf8_lossy(&enabled.stdout),
-        "Seat enabled (generation 0).\n"
+        query_runtime_seat(&xvfb.display, &socket, "enable"),
+        "enabled:0"
     );
     let mut admitted = UnixStream::connect(&socket).expect("enabled provider peer");
     assert!(matches!(
@@ -298,11 +304,9 @@ fn volatile_seat_gate_denies_by_default_revokes_sessions_and_resets_on_restart()
         ServerMessage::Welcome(_)
     ));
 
-    let disabled = seat_command(&xvfb.display, &socket, "disable");
-    assert!(disabled.status.success());
     assert_eq!(
-        String::from_utf8_lossy(&disabled.stdout),
-        "Seat disabled (generation 1).\n"
+        query_runtime_seat(&xvfb.display, &socket, "disable"),
+        "disabled:1"
     );
     let reenabled = seat_command(&xvfb.display, &socket, "enable");
     assert!(reenabled.status.success());
@@ -336,6 +340,52 @@ fn volatile_seat_gate_denies_by_default_revokes_sessions_and_resets_on_restart()
         String::from_utf8_lossy(&restarted.stdout),
         "Seat disabled (generation 0).\n"
     );
+}
+
+#[test]
+fn runtime_seat_control_helper() {
+    let Some(action) = std::env::var_os("AGENT_SEAT_RUNTIME_CONTROL") else {
+        return;
+    };
+    let result = std::env::var_os("AGENT_SEAT_RUNTIME_RESULT").expect("runtime result path");
+    let command = match action.to_str().expect("runtime control UTF-8") {
+        "status" => RuntimeSeatCommand::Status,
+        "enable" => RuntimeSeatCommand::Enable,
+        "disable" => RuntimeSeatCommand::Disable,
+        action => panic!("unexpected runtime control {action:?}"),
+    };
+    let status = control_runtime_seat(command).expect("runtime seat control");
+    let state = if status.is_enabled() {
+        "enabled"
+    } else {
+        "disabled"
+    };
+    fs::write(result, format!("{state}:{}", status.generation()))
+        .expect("write runtime seat result");
+}
+
+fn query_runtime_seat(display: &str, socket: &Path, action: &str) -> String {
+    let result = socket
+        .parent()
+        .expect("runtime control directory")
+        .join(format!("runtime-seat-{action}.txt"));
+    let output = Command::new(std::env::current_exe().expect("provider test executable"))
+        .args(["--exact", "runtime_seat_control_helper", "--nocapture"])
+        .env("DISPLAY", display)
+        .env(
+            "XDG_RUNTIME_DIR",
+            socket.parent().expect("socket runtime directory"),
+        )
+        .env("AGENT_SEAT_RUNTIME_CONTROL", action)
+        .env("AGENT_SEAT_RUNTIME_RESULT", &result)
+        .output()
+        .expect("run runtime seat helper");
+    assert!(
+        output.status.success(),
+        "runtime seat helper failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::read_to_string(result).expect("read runtime seat result")
 }
 
 #[test]

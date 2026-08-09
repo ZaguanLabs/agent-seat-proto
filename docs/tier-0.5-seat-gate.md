@@ -102,11 +102,24 @@ future providers can implement the same lifecycle without copying a LightDM
 hook. Each launcher still needs a process-level logout/relogin test because
 similar startup conventions do not prove identical lifetime behavior.
 
-## Future Settings integration
+## Settings integration
 
-The Settings application may show provider presence, the volatile state, and
-explicit Enable and Disable controls. It must distinguish saved policy state
-from runtime seat state, warn that enable lasts only for the current provider
-instance, and never enable automatically while opening, saving, logging in, or
-unlocking. Adding that UI is a later milestone; the command interface is the
-current auditable operator path.
+`agent-seat-settings` 0.1.5 shows the selected provider's volatile status in a
+fourth `RUNTIME SEAT` state-rail node and in a dedicated Overview panel. The
+panel provides manual Refresh, **Enable for this instance**, and immediate
+**Disable now** controls. Enable requires a confirmation that names the current
+provider lifetime; Disable revokes the generation without an extra dialog so
+the operator stop remains prompt.
+
+The GTK shell calls one typed `agent-seat-x11` library boundary. That boundary
+performs the same selection-bound advertisement validation, private-socket
+derivation, bounded I/O, and provider peer authentication as the command. It
+does not duplicate the fixed control protocol, invoke a shell, or spawn
+`agent-seat-x11`.
+
+Saved policy, active-policy evidence, and volatile seat state remain separate
+facts. Opening Settings performs only a status request. Opening, saving,
+reloading, restoring, logging in, and unlocking never send Enable. The
+display-independent policy model and terminal recovery commands never
+initialize GTK, inspect X11, or contact the control plane. The command
+interface remains available as the smallest auditable operator path.

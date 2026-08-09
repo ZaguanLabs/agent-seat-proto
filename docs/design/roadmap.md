@@ -10,7 +10,8 @@ recorded in
 
 ## T0.5 — volatile provider seat gate
 
-Status: implemented experimentally in `agent-seat-x11` 0.1.17, 2026-08-09.
+Status: implemented experimentally in `agent-seat-x11` 0.1.20 and
+`agent-seat-settings` 0.1.5, 2026-08-09.
 
 The provider now starts with a disabled runtime seat independently of saved
 policy. A separate local operator command can inspect, enable, or disable the
@@ -25,11 +26,15 @@ It is a useful operator consent/kill switch under the confined-companion
 profile, not same-UID isolation and not a solution to the remaining LightDM
 credential-surface ordering gate.
 
-The next UI milestone may add explicit runtime status, Enable, and Disable
-controls to Settings. It must not conflate saved policy activation with the
-volatile latch or enable automatically. LightDM is the first logout/relogin
-compatibility case, while other launchers remain independent participants in
-the same lifecycle contract.
+Settings now shows an independent `RUNTIME SEAT` state-rail node and an
+Overview panel with bounded status, explicit Enable, immediate Disable, and
+manual Refresh controls. The panel uses the provider library's typed private
+control boundary; it does not duplicate the fixed protocol or spawn a command.
+Opening, saving, reloading, restoring, login, and unlock never enable the
+volatile latch. The display-independent Settings policy model and terminal
+recovery commands remain display-independent. LightDM is the first
+logout/relogin compatibility case, while other launchers remain independent
+participants in the same lifecycle contract.
 
 The [Tier 0.5 verification record](../verification/t0.5-verification.md) now contains an
 installed systemd-service deny/enable/deny round trip, including MCP refusal
@@ -267,11 +272,13 @@ following bounded tasks:
 - distinguish saved configuration from the policy active in a running
   provider, with an explicit restart instruction when required.
 
-The settings application is a policy editor, not a second authority. It must
-not expose MCP tools, connect to X11, listen on the provider socket, grant a
-live session, silently enable capabilities, or start/stop the provider without
-a separate user-confirmed design. It must reuse the provider's exact parser
-and validation rules rather than maintaining a schema that can drift.
+The S0 policy surface is an editor, not a second authority. It must not expose
+MCP tools, listen on or own a provider socket, grant a live session, silently
+enable capabilities, or start/stop the provider. It must reuse the provider's
+exact parser and validation rules rather than maintaining a schema that can
+drift. The later T0.5 panel is a separately reviewed exception only for calling
+the provider-owned volatile status/Enable/Disable plane; it does not expand
+the policy model or make Settings an independent runtime authority.
 
 Writes must be recoverable and race-aware: reject symlinks and non-regular
 targets, preserve ownership, replace only after successful validation, retain

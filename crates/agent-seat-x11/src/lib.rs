@@ -21,6 +21,7 @@ pub use config::{
 pub use launch::{MAX_INSTALLED_APPLICATIONS, installed_applications};
 
 use std::ffi::OsString;
+use std::fmt;
 use std::fs;
 use std::io;
 use std::num::NonZeroU64;
@@ -31,6 +32,74 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
+
+/// One explicit operation on the selected X11 provider's volatile seat gate.
+///
+/// This is a private reference-provider control plane, not an Agent Seat wire
+/// operation and not an MCP capability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeSeatCommand {
+    /// Read the current provider instance's volatile state.
+    Status,
+    /// Admit new sessions for the current provider instance.
+    Enable,
+    /// Revoke the current generation and deny new sessions.
+    Disable,
+}
+
+/// The selected X11 provider instance's volatile seat state.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RuntimeSeatStatus {
+    enabled: bool,
+    generation: u64,
+}
+
+impl RuntimeSeatStatus {
+    /// Reports whether the current provider instance admits new sessions.
+    #[must_use]
+    pub const fn is_enabled(self) -> bool {
+        self.enabled
+    }
+
+    /// Returns the provider-local revocation generation.
+    #[must_use]
+    pub const fn generation(self) -> u64 {
+        self.generation
+    }
+}
+
+impl fmt::Display for RuntimeSeatStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let state = if self.enabled { "enabled" } else { "disabled" };
+        write!(formatter, "Seat {state} (generation {}).", self.generation)
+    }
+}
+
+/// Inspects or changes the selected X11 provider's volatile seat gate.
+///
+/// Discovery validates the live, selection-bound X11 advertisement before
+/// deriving the provider-private control socket. Every request has a bounded
+/// local I/O timeout and the provider authenticates the kernel peer UID.
+///
+/// # Errors
+///
+/// Returns an error when X11 discovery is unavailable or inconsistent, no
+/// provider is advertised, the private control path is invalid, the provider
+/// cannot be reached, or its fixed response is invalid or incomplete.
+pub fn control_runtime_seat(command: RuntimeSeatCommand) -> Result<RuntimeSeatStatus, String> {
+    let provider = ownership::advertised_socket()?;
+    let path = runtime::control_socket_path(&provider)?;
+    let command = match command {
+        RuntimeSeatCommand::Status => seat::ControlCommand::Status,
+        RuntimeSeatCommand::Enable => seat::ControlCommand::Enable,
+        RuntimeSeatCommand::Disable => seat::ControlCommand::Disable,
+    };
+    let status = seat::request(&path, command)?;
+    Ok(RuntimeSeatStatus {
+        enabled: status.enabled(),
+        generation: status.generation(),
+    })
+}
 
 const HELP: &str = r#"agent-seat-x11 - local Agent Seat authority for X11
 
@@ -76,9 +145,7 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
     let options = match Options::parse(arguments)? {
         Command::Run(options) => options,
         Command::Seat(command) => {
-            let provider = ownership::advertised_socket()?;
-            let path = runtime::control_socket_path(&provider)?;
-            println!("{}", seat::request(&path, command)?);
+            println!("{}", control_runtime_seat(command)?);
             return Ok(());
         }
         Command::Help => {
@@ -266,7 +333,7 @@ struct Options {
 
 enum Command {
     Run(Options),
-    Seat(seat::ControlCommand),
+    Seat(RuntimeSeatCommand),
     Help,
 }
 
@@ -280,11 +347,11 @@ impl Options {
                 .next()
                 .ok_or_else(|| "seat requires status, enable, or disable".to_owned())?;
             let command = if action == "status" {
-                seat::ControlCommand::Status
+                RuntimeSeatCommand::Status
             } else if action == "enable" {
-                seat::ControlCommand::Enable
+                RuntimeSeatCommand::Enable
             } else if action == "disable" {
-                seat::ControlCommand::Disable
+                RuntimeSeatCommand::Disable
             } else {
                 return Err(format!("unknown seat action {action:?}"));
             };

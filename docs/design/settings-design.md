@@ -5,7 +5,10 @@
 `agent-seat-settings` is a local policy editor for a person configuring Agent
 Seat for the first time or reviewing an existing grant. Its single job is to
 make the provider's exact saved policy understandable, editable, reviewable,
-and recoverable without becoming another runtime authority.
+and recoverable without becoming another runtime authority. A separately
+bounded Tier 0.5 panel may request status, Enable, or Disable from the
+provider-owned volatile seat gate; it never turns that gate into saved policy
+or authority owned by Settings.
 
 The interface uses the person's language: access, visible windows,
 applications, limits, review, and saved changes. Canonical capability atoms,
@@ -57,9 +60,9 @@ for high-contrast or user-overridden themes.
 The signature element is a persistent policy-state rail:
 
 ```text
-SAVED ───────── DRAFT ───────── ACTIVE
-valid            4 changes       restart required
-config.toml       review          process 4812
+SAVED ─────── DRAFT ─────── ACTIVE POLICY ─────── RUNTIME SEAT
+valid          4 changes     restart required       disabled
+config.toml     review        process 4812           generation 2
 ```
 
 It encodes the application’s central safety distinction. It is not a progress
@@ -90,8 +93,10 @@ chooser; controls remain in the same order.
 
 Pages have these responsibilities:
 
-1. **Overview** shows the exact path, explicit enabled switch, saved-policy
-   validity, recovery-file availability, and restart guidance.
+1. **Overview** shows the exact path, explicit saved-policy switch,
+   saved-policy validity, recovery-file availability, restart guidance, and a
+   visually separate current-provider panel for volatile status plus explicit
+   Enable and Disable actions.
 2. **Access** groups observation, management, and launch capabilities. Every
    row explains its effect and names prerequisites. A prerequisite is never
    enabled silently; incomplete combinations remain visibly refused.
@@ -116,7 +121,12 @@ Pages have these responsibilities:
 - Reloading after an external edit discards nothing without confirmation.
 - Search filters the already bounded in-memory catalog; it does not launch an
   application or query a running provider.
-- The application never starts, stops, signals, or reloads the provider.
+- The application never starts, stops, signals, or reloads the provider. Its
+  running-provider surface is limited to the provider-owned Tier 0.5 status,
+  Enable, and Disable operations.
+- Opening, saving, reloading, restoring, login, and unlock never enable the
+  volatile seat. Enable requires explicit confirmation; Disable remains a
+  prompt one-action operator stop.
 - Every control is reachable by keyboard, focus remains visible, and no state
   relies on color alone. Custom motion is unnecessary; respect GTK's animation
   and reduced-motion settings.

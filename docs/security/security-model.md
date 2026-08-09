@@ -19,7 +19,10 @@ socket verifies the desktop UID and can inspect, enable, or disable the current
 process only. MCP has no corresponding operation. Sessions are bound to one
 enabled generation and are revoked after a transition; pointer input rechecks
 that generation under its X11 server grab. A request already executing may
-finish, so this is not cancellation or a lock-transition guarantee.
+finish, so this is not cancellation or a lock-transition guarantee. The GTK
+Settings shell may invoke the same typed operator boundary, but it neither owns
+the socket nor derives runtime state from saved policy; opening and saving send
+no Enable request.
 
 T1 adds independently sampled EWMH observation. Client enumeration is disabled
 by default. Scope filtering happens before title allocation, titles require

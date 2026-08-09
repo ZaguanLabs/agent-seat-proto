@@ -9,6 +9,7 @@ use agent_seat_settings::SettingsModel;
 use agent_seat_x11::{
     ActivePolicyStatus, ClientScope, LaunchMode, MAX_POLICY_IO_TIMEOUT_MS, MAX_POLICY_REQUESTS,
     MAX_POLICY_SESSIONS, MIN_POLICY_IO_TIMEOUT_MS, MIN_POLICY_REQUESTS, MIN_POLICY_SESSIONS,
+    RuntimeSeatCommand, RuntimeSeatStatus, control_runtime_seat,
 };
 use gtk::gdk;
 use gtk::glib;
@@ -28,11 +29,14 @@ const STYLE: &str = r#"
 .state-good { color: #2d7d62; }
 .state-warning { color: #9a5b00; }
 .state-unknown { color: #52677d; }
+.state-enabled { color: #225eaa; }
+.state-disabled { color: #52677d; }
 .sidebar { min-width: 190px; background: #e2e9f0; border-right: 1px solid #c9d3de; }
 .page { padding: 24px; }
 .page-title { font-size: 22px; font-weight: 700; }
 .page-intro { color: #42566b; margin-bottom: 10px; }
 .panel { background: #ffffff; border: 1px solid #c9d3de; border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+.runtime-seat-panel { border-left: 4px solid #225eaa; }
 .panel-title { font-size: 16px; font-weight: 700; }
 .panel-description { color: #52677d; margin-bottom: 8px; }
 .control-row { padding: 10px 0; border-bottom: 1px solid #e3e8ed; }
@@ -77,11 +81,20 @@ struct CatalogControl {
     search_key: String,
 }
 
+struct RuntimeSeatControls {
+    state: gtk::Label,
+    detail: gtk::Label,
+    refresh: gtk::Button,
+    enable: gtk::Button,
+    disable: gtk::Button,
+}
+
 struct Controls {
     root: gtk::Box,
     saved_state: gtk::Label,
     draft_state: gtk::Label,
     active_state: gtk::Label,
+    runtime: RuntimeSeatControls,
     enabled: gtk::Switch,
     capabilities: Vec<CapabilityControl>,
     clear_grant: gtk::Button,
@@ -133,6 +146,7 @@ fn build_window(application: &Application, model: SettingsModel, created: bool) 
     });
     ui.connect();
     ui.refresh();
+    ui.refresh_runtime_seat();
     let keep_alive = Rc::clone(&ui);
     window.connect_close_request(move |_| keep_alive.close_request());
     window.present();
@@ -164,7 +178,18 @@ fn build_controls(model: &SettingsModel, created: bool) -> Controls {
     let saved_state = gtk::Label::new(None);
     let draft_state = gtk::Label::new(None);
     let active_state = gtk::Label::new(None);
-    let rail = state_rail(&saved_state, &draft_state, &active_state);
+    let runtime = RuntimeSeatControls {
+        state: gtk::Label::new(None),
+        detail: label("Checking the selected X11 provider…", "control-description"),
+        refresh: gtk::Button::with_label("Refresh status"),
+        enable: gtk::Button::with_label("Enable for this instance"),
+        disable: gtk::Button::with_label("Disable now"),
+    };
+    runtime.detail.set_wrap(true);
+    runtime.detail.set_selectable(true);
+    runtime.enable.add_css_class("suggested-action");
+    runtime.disable.add_css_class("destructive-action");
+    let rail = state_rail(&saved_state, &draft_state, &active_state, &runtime.state);
     root.append(&rail);
 
     let enabled = gtk::Switch::new();
@@ -172,7 +197,7 @@ fn build_controls(model: &SettingsModel, created: bool) -> Controls {
     let reload = gtk::Button::with_label("Reload saved policy");
     let restore = gtk::Button::with_label("Restore previous policy");
     restore.add_css_class("destructive-action");
-    let overview = overview_page(model, created, &enabled, &reload, &restore);
+    let overview = overview_page(model, created, &enabled, &runtime, &reload, &restore);
 
     let (access, capabilities, clear_grant) = access_page();
 
@@ -275,6 +300,7 @@ fn build_controls(model: &SettingsModel, created: bool) -> Controls {
         saved_state,
         draft_state,
         active_state,
+        runtime,
         enabled,
         capabilities,
         clear_grant,
@@ -299,11 +325,21 @@ fn build_controls(model: &SettingsModel, created: bool) -> Controls {
     }
 }
 
-fn state_rail(saved: &gtk::Label, draft: &gtk::Label, active: &gtk::Label) -> gtk::Box {
+fn state_rail(
+    saved: &gtk::Label,
+    draft: &gtk::Label,
+    active: &gtk::Label,
+    runtime: &gtk::Label,
+) -> gtk::Box {
     let rail = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     rail.add_css_class("state-rail");
     rail.set_homogeneous(true);
-    for (name, status) in [("SAVED", saved), ("DRAFT", draft), ("ACTIVE", active)] {
+    for (name, status) in [
+        ("SAVED", saved),
+        ("DRAFT", draft),
+        ("ACTIVE POLICY", active),
+        ("RUNTIME SEAT", runtime),
+    ] {
         let node = gtk::Box::new(gtk::Orientation::Vertical, 3);
         node.add_css_class("state-node");
         node.append(&label(name, "state-name"));
@@ -319,16 +355,36 @@ fn overview_page(
     model: &SettingsModel,
     created: bool,
     enabled: &gtk::Switch,
+    runtime_controls: &RuntimeSeatControls,
     reload: &gtk::Button,
     restore: &gtk::Button,
 ) -> gtk::ScrolledWindow {
     let (content, page) = page(
         "Overview",
-        "Review where policy is saved, enable it explicitly, or recover the previous private file.",
+        "Keep saved policy and the current provider's volatile seat visibly separate.",
     );
+
+    let runtime = panel(
+        "Current provider instance",
+        "The runtime seat starts disabled after every provider start. Enabling lasts only until that provider or its X11 display exits; saving policy never enables it.",
+    );
+    runtime.add_css_class("runtime-seat-panel");
+    runtime.append(&control_row(
+        "Runtime seat",
+        "Status follows the live provider advertised on this X11 screen.",
+        &runtime_controls.detail,
+    ));
+    let runtime_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    runtime_actions.set_margin_top(10);
+    runtime_actions.append(&runtime_controls.refresh);
+    runtime_actions.append(&runtime_controls.enable);
+    runtime_actions.append(&runtime_controls.disable);
+    runtime.append(&runtime_actions);
+    content.append(&runtime);
+
     let activation = panel(
-        "Provider activation",
-        "Enabling the saved policy does not start or reload the provider.",
+        "Saved provider policy",
+        "This controls whether reviewed policy may start. It does not change the runtime seat above.",
     );
     activation.append(&control_row(
         "Enable provider policy",
@@ -554,6 +610,56 @@ fn review_page(diff: &gtk::TextView, validation: &gtk::Label) -> gtk::ScrolledWi
     page
 }
 
+#[derive(Debug, Eq, PartialEq)]
+struct RuntimeSeatPresentation {
+    rail: String,
+    detail: String,
+    class: &'static str,
+    can_enable: bool,
+    can_disable: bool,
+}
+
+fn runtime_seat_presentation(
+    result: &Result<RuntimeSeatStatus, String>,
+) -> RuntimeSeatPresentation {
+    match result {
+        Ok(status) => known_runtime_seat_presentation(status.is_enabled(), status.generation()),
+        Err(error) => RuntimeSeatPresentation {
+            rail: "Unavailable · denied".to_owned(),
+            detail: format!(
+                "Runtime status could not be verified, so access stays denied. {error}"
+            ),
+            class: "state-unknown",
+            can_enable: false,
+            can_disable: false,
+        },
+    }
+}
+
+fn known_runtime_seat_presentation(enabled: bool, generation: u64) -> RuntimeSeatPresentation {
+    if enabled {
+        RuntimeSeatPresentation {
+            rail: format!("Enabled · generation {generation}"),
+            detail: format!(
+                "Enabled for the current provider instance at generation {generation}."
+            ),
+            class: "state-enabled",
+            can_enable: false,
+            can_disable: true,
+        }
+    } else {
+        RuntimeSeatPresentation {
+            rail: format!("Disabled · generation {generation}"),
+            detail: format!(
+                "Disabled at generation {generation}. New Agent Seat sessions are denied."
+            ),
+            class: "state-disabled",
+            can_enable: true,
+            can_disable: false,
+        }
+    }
+}
+
 impl Ui {
     fn connect(self: &Rc<Self>) {
         let weak = Rc::downgrade(self);
@@ -562,6 +668,38 @@ impl Ui {
                 draft.set_enabled(button.is_active());
                 Ok(())
             });
+        });
+
+        let weak = Rc::downgrade(self);
+        self.controls.runtime.refresh.connect_clicked(move |_| {
+            if let Some(ui) = weak.upgrade() {
+                ui.refresh_runtime_seat();
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        self.controls.runtime.enable.connect_clicked(move |_| {
+            let weak_action = Weak::clone(&weak);
+            if let Some(ui) = weak.upgrade() {
+                ui.confirm(
+                    "Enable the current runtime seat?",
+                    "New Agent Seat sessions may use the running provider until you disable it or that provider exits. Saved policy does not change.",
+                    "Enable for this instance",
+                    false,
+                    move || {
+                        if let Some(ui) = weak_action.upgrade() {
+                            ui.change_runtime_seat(RuntimeSeatCommand::Enable);
+                        }
+                    },
+                );
+            }
+        });
+
+        let weak = Rc::downgrade(self);
+        self.controls.runtime.disable.connect_clicked(move |_| {
+            if let Some(ui) = weak.upgrade() {
+                ui.change_runtime_seat(RuntimeSeatCommand::Disable);
+            }
         });
 
         for control in &self.controls.capabilities {
@@ -875,6 +1013,58 @@ impl Ui {
         };
         self.controls.active_state.set_text(&text);
         self.controls.active_state.add_css_class(class);
+    }
+
+    fn refresh_runtime_seat(&self) {
+        self.show_runtime_seat(control_runtime_seat(RuntimeSeatCommand::Status));
+    }
+
+    fn change_runtime_seat(&self, command: RuntimeSeatCommand) {
+        match control_runtime_seat(command) {
+            Ok(status) => {
+                self.show_runtime_seat(Ok(status));
+                if status.is_enabled() {
+                    self.success(
+                        "Runtime seat enabled for this provider instance. Saved policy did not change.",
+                    );
+                } else {
+                    self.success(
+                        "Runtime seat disabled. Current sessions are revoked and saved policy did not change.",
+                    );
+                }
+            }
+            Err(error) => {
+                self.show_runtime_seat(Err(error.clone()));
+                self.error(&format!("Runtime seat was not changed: {error}"));
+            }
+        }
+    }
+
+    fn show_runtime_seat(&self, result: Result<RuntimeSeatStatus, String>) {
+        let presentation = runtime_seat_presentation(&result);
+        for class in [
+            "state-good",
+            "state-warning",
+            "state-unknown",
+            "state-enabled",
+            "state-disabled",
+        ] {
+            self.controls.runtime.state.remove_css_class(class);
+        }
+        self.controls.runtime.state.set_text(&presentation.rail);
+        self.controls
+            .runtime
+            .state
+            .add_css_class(presentation.class);
+        self.controls.runtime.detail.set_text(&presentation.detail);
+        self.controls
+            .runtime
+            .enable
+            .set_sensitive(presentation.can_enable);
+        self.controls
+            .runtime
+            .disable
+            .set_sensitive(presentation.can_disable);
     }
 
     fn apply(
@@ -1425,5 +1615,29 @@ mod tests {
         edit_application(&mut draft, blocked.clone(), false).expect("deny installed application");
         assert!(draft.launch_allow().is_empty());
         assert_eq!(draft.launch_deny(), std::slice::from_ref(&blocked));
+    }
+
+    #[test]
+    fn runtime_seat_presentation_keeps_volatile_actions_explicit() {
+        let disabled = known_runtime_seat_presentation(false, 7);
+        assert_eq!(disabled.rail, "Disabled · generation 7");
+        assert!(
+            disabled
+                .detail
+                .contains("New Agent Seat sessions are denied")
+        );
+        assert!(disabled.can_enable);
+        assert!(!disabled.can_disable);
+
+        let enabled = known_runtime_seat_presentation(true, 7);
+        assert_eq!(enabled.rail, "Enabled · generation 7");
+        assert!(enabled.detail.contains("current provider instance"));
+        assert!(!enabled.can_enable);
+        assert!(enabled.can_disable);
+
+        let unavailable = runtime_seat_presentation(&Err("no provider".to_owned()));
+        assert_eq!(unavailable.rail, "Unavailable · denied");
+        assert!(!unavailable.can_enable);
+        assert!(!unavailable.can_disable);
     }
 }

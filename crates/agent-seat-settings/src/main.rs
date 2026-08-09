@@ -27,7 +27,9 @@ OPTIONS:
 
 With no command, the GTK editor opens. A missing default policy is created as
 the same documented, private, disabled template produced by agent-seat-x11.
-Explicit paths are never created. CLI commands do not initialize GTK or X11.
+Its separate runtime panel can inspect or explicitly change only the current
+provider instance's volatile seat. Explicit paths are never created. CLI
+commands do not initialize GTK or X11 and never inspect or change that seat.
 
 Saving or restoring changes the file on disk only. A running provider keeps
 its original policy until it is restarted."#;
