@@ -16,6 +16,13 @@ Status: runtime gate implemented in `agent-seat-x11` 0.1.20 and Settings
 `agent-seat-mcp` 0.1.4, `agent-seat-x11` 0.1.21, and Settings 0.1.6,
 2026-08-09.
 
+`agent-seat-x11` 0.1.22 expands the public X11 evidence to every logical
+button, Return/Tab and unmapped-key behavior, hostile hit-test bounds, and the
+existing rootless private-device probe. R0 now registers the corresponding
+standalone Tier 0.5 input profile; deterministic between-action interruption
+and complete independent negative-authority evidence remain open profile
+fixtures, not hidden implementation claims.
+
 The provider now starts with a disabled runtime seat independently of saved
 policy. A separate local operator command can inspect, enable, or disable the
 current provider instance; the command is not an MCP operation and state is
@@ -110,6 +117,13 @@ supported revision/capability subset, authority inventory, convergent
 observation, management send boundary and outcomes, controlled launch,
 lifecycle and resource behavior, required public fixtures, and prohibited
 claims. It remains experimental pending genuinely independent evidence.
+
+The separately registered
+[`agent-seat.x11-tier0.5-input.v1`](../protocol/profiles/x11-tier0.5-input-v1.md)
+profile records the weaker revision-5 X11 input claim, exact action boundary,
+volatile admission lifecycle, public fixtures, and prohibited physical-user
+claims. Reference evidence covers a useful subset; its document explicitly
+lists the fixtures still missing before a complete conformance report.
 
 The experimental
 [`agent-seat.conformance-report/1`](../protocol/conformance-report.md) format now provides
@@ -232,9 +246,9 @@ Status: first-release decisions complete, 2026-08-08. The evidence and stop
 conditions are recorded in
 [`optional-profiles.md`](optional-profiles.md). T4 output/core-window capture,
 the strong T5 physical-interruption claim, and T6 semantics remain unsupported.
-Revision 5 separately implements a weaker operator-gated Tier 0.5 input claim. A narrowly target-owned
-Composite `obscured_capture` is deferred to a new wire revision and does not
-delay C0.
+Revision 5 separately implements a weaker operator-gated Tier 0.5 input claim.
+A narrowly target-owned Composite `obscured_capture` is deferred to a new wire
+revision and does not delay C0.
 
 - T4 may add capture only for modes that can reapply visibility and scope at
   capture time without returning unrelated pixels.

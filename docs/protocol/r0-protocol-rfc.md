@@ -288,6 +288,12 @@ excludes input, lock-state, application-identity, and same-user isolation
 claims. It remains experimental until independent evidence meets the maturity
 rule below.
 
+The optional
+[`agent-seat.x11-tier0.5-input.v1`](profiles/x11-tier0.5-input-v1.md) profile
+separately specifies volatile admission, target-aware XTEST pointer actions,
+focus-bound text, qualified partial results, and the absence of a
+physical-user-priority claim. Implementing it never widens the core profile.
+
 ### 5.3 Assurance vocabulary
 
 This draft reserves two initial assurance families without making either a
@@ -417,7 +423,7 @@ The following table is descriptive, not a new compatibility promise:
 | --- | --- | --- |
 | revision 3 core and the retained revision 4/5 core | implemented | Strict local lifecycle, bounded observation, qualified EWMH management, and controlled desktop-entry launch. |
 | standalone X11/EWMH Tier 0 | implemented for the core | Convergent observation beside a foreign window manager; no atomic WM-state claim. |
-| revision-5 Tier 0.5 input | experimental, locally implemented | Volatile-seat-gated target-relative movement/click and focus-bound bounded text; no physical-user priority claim. |
+| `agent-seat.x11-tier0.5-input.v1` | experimental, locally implemented subset | Volatile-seat-gated target-relative movement/click and focus-bound bounded text; no physical-user priority claim. |
 | capture | unsupported | No approved wire call or passed profile. |
 | accessibility semantics | unsupported | No approved wire call or passed profile. |
 | integrated Tier 1 backend | profile not yet specified here | No implementation may claim it from tool compatibility alone. |
@@ -477,6 +483,7 @@ Repository contracts and evidence:
 - [Architecture](../design/architecture.md)
 - [Security model](../security/security-model.md)
 - [Optional-profile decisions](../design/optional-profiles.md)
+- [Standalone X11 Tier 0.5 input profile](profiles/x11-tier0.5-input-v1.md)
 - [T5 input reconsideration](../security/t5-input-reconsideration.md)
 - [T5 broker deployment](../security/t5-broker-deployment.md)
 - [T5 lock-state study](../security/t5-lock-state-study.md)

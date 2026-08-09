@@ -249,6 +249,16 @@
       ],
       "backend": "x11_ewmh",
       "assurance": "tier0"
+    },
+    {
+      "identifier": "agent-seat.x11-tier0.5-input.v1",
+      "status": "experimental",
+      "specification": "profiles/x11-tier0.5-input-v1.md",
+      "wire_revisions": [
+        5
+      ],
+      "backend": "x11_ewmh",
+      "assurance": "tier0"
     }
   ],
   "extensions": []

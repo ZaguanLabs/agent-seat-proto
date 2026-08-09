@@ -9,6 +9,7 @@
   [JSON Schema](conformance-report-v1.schema.json), and an
   [example report](conformance-report-v1.example.json)
 - [Standalone X11/EWMH core profile](profiles/x11-ewmh-core-v1.md)
+- [Standalone X11 Tier 0.5 input profile](profiles/x11-tier0.5-input-v1.md)
 
 The implemented wire specification remains normative for the repository. The
 pre-RFC and conformance work does not claim external standards status.

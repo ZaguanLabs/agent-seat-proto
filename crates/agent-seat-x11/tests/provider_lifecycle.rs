@@ -30,9 +30,10 @@ use agent_seat_x11::{
 };
 use rustix::process::{Pid, Signal, geteuid, kill_process};
 use x11rb::connection::Connection as _;
+use x11rb::protocol::shape::{ConnectionExt as _, SK, SO};
 use x11rb::protocol::xproto::{
-    AtomEnum, ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, CreateWindowAux,
-    EventMask, InputFocus, PropMode, StackMode, WindowClass,
+    AtomEnum, ClientMessageEvent, ClipOrdering, ConfigureWindowAux, ConnectionExt as _,
+    CreateWindowAux, EventMask, InputFocus, PropMode, Rectangle, StackMode, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
@@ -671,6 +672,11 @@ struct OverrideWindow {
     window: u32,
 }
 
+struct RootWindowFlood {
+    connection: RustConnection,
+    windows: Vec<u32>,
+}
+
 impl OverrideWindow {
     fn create(display: &str, x: i16, y: i16, width: u16, height: u16) -> Self {
         let (connection, screen) = x11rb::connect(Some(display)).expect("overlay X11 connection");
@@ -725,11 +731,79 @@ impl OverrideWindow {
             .expect("raise overlay");
         self.connection.sync().expect("raise overlay sync");
     }
+
+    fn fragment_input_shape(&self, rectangles: usize) {
+        let rectangles = (0..rectangles)
+            .map(|index| Rectangle {
+                x: i16::try_from((index % 32) * 2).expect("shape x"),
+                y: i16::try_from((index / 32) * 2).expect("shape y"),
+                width: 1,
+                height: 1,
+            })
+            .collect::<Vec<_>>();
+        self.connection
+            .shape_rectangles(
+                SO::SET,
+                SK::INPUT,
+                ClipOrdering::UNSORTED,
+                self.window,
+                0,
+                0,
+                &rectangles,
+            )
+            .expect("fragmented input shape request")
+            .check()
+            .expect("fragmented input shape");
+        self.connection.sync().expect("fragmented input shape sync");
+    }
 }
 
 impl Drop for OverrideWindow {
     fn drop(&mut self) {
         let _ = self.connection.destroy_window(self.window);
+        let _ = self.connection.flush();
+    }
+}
+
+impl RootWindowFlood {
+    fn create(display: &str, count: usize) -> Self {
+        let (connection, screen) = x11rb::connect(Some(display)).expect("flood X11 connection");
+        let screen = &connection.setup().roots[screen];
+        let mut windows = Vec::with_capacity(count);
+        for _ in 0..count {
+            let window = connection.generate_id().expect("flood window ID");
+            connection
+                .create_window(
+                    COPY_DEPTH_FROM_PARENT,
+                    window,
+                    screen.root,
+                    0,
+                    0,
+                    1,
+                    1,
+                    0,
+                    WindowClass::INPUT_OUTPUT,
+                    screen.root_visual,
+                    &CreateWindowAux::new().override_redirect(1),
+                )
+                .expect("flood create request")
+                .check()
+                .expect("flood create");
+            windows.push(window);
+        }
+        connection.sync().expect("flood create sync");
+        Self {
+            connection,
+            windows,
+        }
+    }
+}
+
+impl Drop for RootWindowFlood {
+    fn drop(&mut self) {
+        for window in &self.windows {
+            let _ = self.connection.destroy_window(*window);
+        }
         let _ = self.connection.flush();
     }
 }
@@ -1692,23 +1766,31 @@ fn pointer_move_and_click_are_seat_gated_target_relative_and_observed_on_x11() {
         (expected.dst_x, expected.dst_y)
     );
 
-    assert!(matches!(
-        wire_call(
-            &mut stream,
-            &mut next_id,
-            Call::PointerClick(PointerClickRequest {
-                target: target(&observed_target),
-                x: 25,
-                y: 30,
-                button: PointerButton::Primary,
-            }),
-        ),
-        Outcome::Ok(Reply::Input(reply))
-            if reply.completed == 1
-                && reply.requested == 1
-                && reply.terminal == InputTerminal::Queued
-    ));
-    wait_for_input_events(&client.connection, 0, 1);
+    for button in [
+        PointerButton::Primary,
+        PointerButton::Middle,
+        PointerButton::Secondary,
+    ] {
+        assert!(matches!(
+            wire_call(
+                &mut stream,
+                &mut next_id,
+                Call::PointerClick(PointerClickRequest {
+                    target: target(&observed_target),
+                    x: 25,
+                    y: 30,
+                    button,
+                }),
+            ),
+            Outcome::Ok(Reply::Input(reply))
+                if reply.completed == 1
+                    && reply.requested == 1
+                    && reply.terminal == InputTerminal::Queued
+        ));
+    }
+    let events = wait_for_input_events(&client.connection, 0, 3);
+    assert_eq!(events.button_presses, [1, 2, 3]);
+    assert_eq!(events.button_releases, [1, 2, 3]);
 
     client.destroy();
     let _ = openbox.kill();
@@ -1716,7 +1798,7 @@ fn pointer_move_and_click_are_seat_gated_target_relative_and_observed_on_x11() {
 }
 
 #[test]
-fn pointer_move_is_refused_when_an_override_redirect_window_covers_the_target() {
+fn pointer_hit_test_refuses_covering_and_over_bound_window_state() {
     let xvfb = Xvfb::start();
     let mut openbox = start_openbox(&xvfb.display);
     let directory = FixtureDir::new("pointer-cover");
@@ -1761,6 +1843,36 @@ fn pointer_move_is_refused_when_an_override_redirect_window_covers_the_target() 
     ) {
         Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
         other => panic!("covered pointer outcome: {other:?}"),
+    }
+
+    let fragmented = OverrideWindow::create(&xvfb.display, 0, 0, 1_024, 768);
+    fragmented.fragment_input_shape(257);
+    fragmented.raise();
+    match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::PointerMove(PointerMoveRequest {
+            target: target(&observed_target),
+            x: 25,
+            y: 30,
+        }),
+    ) {
+        Outcome::Error(error) if error.code == ErrorCode::Unavailable => {}
+        other => panic!("fragmented pointer outcome: {other:?}"),
+    }
+
+    let _flood = RootWindowFlood::create(&xvfb.display, 257);
+    match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::PointerMove(PointerMoveRequest {
+            target: target(&observed_target),
+            x: 25,
+            y: 30,
+        }),
+    ) {
+        Outcome::Error(error) if error.code == ErrorCode::Unavailable => {}
+        other => panic!("over-bound pointer ancestry outcome: {other:?}"),
     }
 
     client.destroy();
@@ -1819,6 +1931,7 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
         Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
         other => panic!("unfocused keyboard outcome: {other:?}"),
     }
+    assert_no_input_events(&client.connection);
 
     client
         .connection
@@ -1833,45 +1946,76 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
             &mut next_id,
             Call::KeyboardType(KeyboardTypeRequest {
                 target: target(&observed_target),
-                text: BoundedText::new("aA\n").expect("keyboard text"),
+                text: BoundedText::new("aA\n\t").expect("keyboard text"),
             }),
         ),
         Outcome::Ok(Reply::Input(reply))
-            if reply.completed == 3
-                && reply.requested == 3
+            if reply.completed == 4
+                && reply.requested == 4
                 && reply.terminal == InputTerminal::Queued
     ));
-    // `A` uses the live map's shifted level, so three scalar actions emit
-    // four complete key pairs: `a`, Shift, `a`, and Return.
-    wait_for_input_events(&client.connection, 4, 0);
+    // `A` uses the live map's shifted level, so four scalar actions emit five
+    // complete key pairs: `a`, Shift, `a`, Return, and Tab.
+    let events = wait_for_input_events(&client.connection, 5, 0);
+    assert_eq!(sorted(events.key_presses), sorted(events.key_releases));
+
+    match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::KeyboardType(KeyboardTypeRequest {
+            target: target(&observed_target),
+            text: BoundedText::new("\u{10ffff}").expect("unmapped keyboard text"),
+        }),
+    ) {
+        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
+        other => panic!("unmapped keyboard outcome: {other:?}"),
+    }
+    assert_no_input_events(&client.connection);
 
     client.destroy();
     let _ = openbox.kill();
     let _ = openbox.wait();
 }
 
-fn wait_for_input_events(connection: &RustConnection, key_presses: usize, button_presses: usize) {
+#[derive(Default)]
+struct InputEvents {
+    key_presses: Vec<u8>,
+    key_releases: Vec<u8>,
+    button_presses: Vec<u8>,
+    button_releases: Vec<u8>,
+}
+
+fn wait_for_input_events(
+    connection: &RustConnection,
+    key_presses: usize,
+    button_presses: usize,
+) -> InputEvents {
     let deadline = Instant::now() + Duration::from_secs(2);
-    let mut observed_keys = 0_usize;
-    let mut observed_key_releases = 0_usize;
-    let mut observed_buttons = 0_usize;
-    let mut observed_button_releases = 0_usize;
+    let mut observed = InputEvents::default();
     loop {
         while let Some(event) = connection.poll_for_event().expect("poll input event") {
             match event {
-                x11rb::protocol::Event::KeyPress(_) => observed_keys += 1,
-                x11rb::protocol::Event::KeyRelease(_) => observed_key_releases += 1,
-                x11rb::protocol::Event::ButtonPress(_) => observed_buttons += 1,
-                x11rb::protocol::Event::ButtonRelease(_) => observed_button_releases += 1,
+                x11rb::protocol::Event::KeyPress(event) => {
+                    observed.key_presses.push(event.detail);
+                }
+                x11rb::protocol::Event::KeyRelease(event) => {
+                    observed.key_releases.push(event.detail);
+                }
+                x11rb::protocol::Event::ButtonPress(event) => {
+                    observed.button_presses.push(event.detail);
+                }
+                x11rb::protocol::Event::ButtonRelease(event) => {
+                    observed.button_releases.push(event.detail);
+                }
                 _ => {}
             }
         }
-        if observed_keys >= key_presses
-            && observed_key_releases >= key_presses
-            && observed_buttons >= button_presses
-            && observed_button_releases >= button_presses
+        if observed.key_presses.len() >= key_presses
+            && observed.key_releases.len() >= key_presses
+            && observed.button_presses.len() >= button_presses
+            && observed.button_releases.len() >= button_presses
         {
-            return;
+            return observed;
         }
         assert!(
             Instant::now() < deadline,
@@ -1879,6 +2023,22 @@ fn wait_for_input_events(connection: &RustConnection, key_presses: usize, button
         );
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn assert_no_input_events(connection: &RustConnection) {
+    connection.sync().expect("synchronize no-input assertion");
+    assert!(
+        connection
+            .poll_for_event()
+            .expect("poll no-input assertion")
+            .is_none(),
+        "input was emitted before every precondition passed"
+    );
+}
+
+fn sorted(mut values: Vec<u8>) -> Vec<u8> {
+    values.sort_unstable();
+    values
 }
 
 #[test]

@@ -137,7 +137,9 @@ implementation-independent standards direction is the repository's non-external
 [`R0 pre-RFC draft`](docs/protocol/r0-protocol-rfc.md), beginning with the
 standalone
 [`agent-seat.x11-ewmh-core.v1`](docs/protocol/profiles/x11-ewmh-core-v1.md)
-backend profile and portable
+backend profile, the optional
+[`agent-seat.x11-tier0.5-input.v1`](docs/protocol/profiles/x11-tier0.5-input-v1.md)
+profile, and portable
 [`agent-seat.conformance-report/1`](docs/protocol/conformance-report.md) evidence
 format.
 

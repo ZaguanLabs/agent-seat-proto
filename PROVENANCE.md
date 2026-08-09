@@ -183,6 +183,12 @@ written for this repository. No Nobox or third-party automation code, schema,
 fixture, comment, or prose was consulted or adapted, and no runtime dependency
 was added.
 
+The standalone Tier 0.5 input conformance profile and its expanded logical
+button, keyboard-map, no-send, and hostile-bound fixtures are original
+specification and test work derived from that revision-5 implementation and
+its public process/wire/X11 behavior. No external automation profile,
+conformance fixture, or implementation material was consulted or adapted.
+
 The read-only enrollment inspection command is original work based on the
 public Linux sysfs device view and the documented `udevadm info` query surface.
 It requests only the input-class and seat properties listed in the deployment

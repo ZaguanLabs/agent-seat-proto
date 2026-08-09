@@ -6,6 +6,13 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added the experimental `agent-seat.x11-tier0.5-input.v1` conformance profile
+  and expanded `agent-seat-x11` 0.1.22 public-boundary evidence to all logical
+  button pairs, Return/Tab, unmapped-character no-send, and bounded hostile X11
+  hit-test state. The profile records the exact weaker XTEST claim and keeps
+  deterministic between-action interruption and complete independent
+  negative-authority evidence visibly open.
+
 - Added experimental wire revision 5 and the simple Tier 0.5 X11 input path:
   `pointer_move`, target-relative `pointer_click`, and focus-bound bounded
   `keyboard_type`. The provider uses its existing X11/XTEST authority, current
