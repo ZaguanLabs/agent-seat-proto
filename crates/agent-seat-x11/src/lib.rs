@@ -8,6 +8,7 @@ mod launch;
 mod observer;
 mod ownership;
 mod runtime;
+mod seat;
 mod session;
 
 pub use active::{ActivePolicyStatus, active_policy_status};
@@ -35,12 +36,23 @@ const HELP: &str = r#"agent-seat-x11 - local Agent Seat authority for X11
 
 USAGE:
   agent-seat-x11 [OPTIONS]
+  agent-seat-x11 seat <status|enable|disable>
 
 OPTIONS:
   --config PATH   Read an existing configuration at an absolute path
   --socket PATH   Use an absolute socket path instead of XDG runtime discovery
   --check-config  Validate policy without connecting to X11 or creating a socket
   -h, --help      Print this help
+
+RUNTIME SEAT GATE:
+  Every provider process starts with its seat disabled. It accepts no Agent
+  Seat session until the local operator explicitly runs:
+
+    agent-seat-x11 seat enable
+
+  `seat disable` revokes the current generation; existing sessions must
+  reconnect after a later enable. The state is never written to configuration
+  and disappears whenever the provider or its X11 display exits.
 
 FIRST RUN:
   When run with no options, a missing default configuration is created at
@@ -63,6 +75,12 @@ FIRST RUN:
 pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> {
     let options = match Options::parse(arguments)? {
         Command::Run(options) => options,
+        Command::Seat(command) => {
+            let provider = ownership::advertised_socket()?;
+            let path = runtime::control_socket_path(&provider)?;
+            println!("{}", seat::request(&path, command)?);
+            return Ok(());
+        }
         Command::Help => {
             println!("{HELP}");
             return Ok(());
@@ -76,7 +94,8 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
             "Created first-run configuration at {}.\n\
              The provider has not started. Review the documented policy and run\n\
              `agent-seat-x11 --check-config`. When ready, set enabled = true, validate again,\n\
-             then start the provider.",
+             then start the provider. Every provider start leaves the runtime seat disabled;
+             run `agent-seat-x11 seat enable` only when you want to admit Agent Seat sessions.",
             config_path.display()
         );
         return Ok(());
@@ -102,6 +121,10 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
     if ownership.screen() != screen {
         return Err("selected X11 screen changed during provider startup".to_owned());
     }
+    let control = runtime::ListenerGuard::bind(
+        Some(&runtime::control_socket_path(listener.path())?),
+        screen,
+    )?;
     let _active_policy = match active::ActivePolicyGuard::publish(&policy_snapshot) {
         Ok(guard) => Some(guard),
         Err(error) => {
@@ -116,14 +139,15 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> Result<(), String> 
         .map_err(|error| format!("cannot install shutdown handlers: {error}"))?;
 
     eprintln!(
-        "agent-seat-x11: ready on screen {screen} at {}",
+        "agent-seat-x11: ready on screen {screen} at {}; seat disabled until `agent-seat-x11 seat enable`",
         listener.path().display()
     );
-    serve(listener, ownership, config, stopping)
+    serve(listener, control, ownership, config, stopping)
 }
 
 fn serve(
     listener: runtime::ListenerGuard,
+    control: runtime::ListenerGuard,
     mut ownership: ownership::Ownership,
     config: Arc<config::Config>,
     stopping: Arc<AtomicBool>,
@@ -136,8 +160,10 @@ fn serve(
     let persistent_session = Arc::new(AtomicBool::new(false));
     let mut next_session = 1_u64;
     let mut ownership_lost = false;
+    let seat = Arc::new(seat::SeatGate::new());
 
     while !stopping.load(Ordering::Relaxed) {
+        seat::handle_pending(control.listener(), &seat)?;
         reap(&mut sessions);
         launcher.reap();
         if ownership.lost()? {
@@ -158,6 +184,7 @@ fn serve(
                 let session_launcher = Arc::clone(&launcher);
                 let session_persistent = Arc::clone(&persistent_session);
                 let session_stopping = Arc::clone(&stopping);
+                let session_seat = Arc::clone(&seat);
                 let handle = thread::Builder::new()
                     .name(format!("agent-seat-{session_number}"))
                     .spawn(move || {
@@ -167,6 +194,7 @@ fn serve(
                             session_launcher,
                             session_persistent,
                             session_stopping,
+                            session_seat,
                             session_number,
                         )
                     })
@@ -238,13 +266,33 @@ struct Options {
 
 enum Command {
     Run(Options),
+    Seat(seat::ControlCommand),
     Help,
 }
 
 impl Options {
     fn parse(arguments: impl IntoIterator<Item = OsString>) -> Result<Command, String> {
         let mut options = Self::default();
-        let mut arguments = arguments.into_iter();
+        let mut arguments = arguments.into_iter().peekable();
+        if arguments.peek().is_some_and(|argument| argument == "seat") {
+            let _ = arguments.next();
+            let action = arguments
+                .next()
+                .ok_or_else(|| "seat requires status, enable, or disable".to_owned())?;
+            let command = if action == "status" {
+                seat::ControlCommand::Status
+            } else if action == "enable" {
+                seat::ControlCommand::Enable
+            } else if action == "disable" {
+                seat::ControlCommand::Disable
+            } else {
+                return Err(format!("unknown seat action {action:?}"));
+            };
+            if let Some(argument) = arguments.next() {
+                return Err(format!("unexpected seat argument {argument:?}"));
+            }
+            return Ok(Command::Seat(command));
+        }
         while let Some(argument) = arguments.next() {
             if argument == "--config" {
                 if options.config.is_some() {

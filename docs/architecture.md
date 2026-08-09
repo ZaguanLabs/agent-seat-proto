@@ -32,6 +32,14 @@ identity, strict configuration, grants, scopes, observation, EWMH requests,
 desktop-entry policy, and bounded failure isolation. It never becomes an
 Openbox plugin or window-manager dependency.
 
+The experimental Tier 0.5 deployment adds a second private local socket for a
+volatile provider-owned operator gate. Every provider process starts disabled;
+the separate status/enable/disable command is not an Agent Seat wire call and
+is not reachable through MCP. Each admitted session is bound to one enabled
+generation. The control plane is authenticated to the desktop UID and is
+therefore an operator boundary for the confined companion, not isolation from
+arbitrary same-UID processes.
+
 The core profile is observation, supported management, and controlled launch.
 Capture, input, and accessibility remain separately reviewed optional
 profiles. Revision 3 exposes no calls for absent profiles; their feature atoms
@@ -56,6 +64,11 @@ Lock-held private runtime markers additionally provide best-effort evidence of
 the exact policy loaded by current provider processes. These APIs do not
 connect to X11, open the provider socket, or alter the policy active in a
 running process.
+
+A future Settings milestone may deliberately add the Tier 0.5 operator plane
+as a separate reviewed authority. That would not turn saved configuration into
+runtime state or put an enable operation on MCP; opening Settings, saving a
+policy, login, and unlock must remain unable to enable implicitly.
 
 ## `agent-seat-settings`
 

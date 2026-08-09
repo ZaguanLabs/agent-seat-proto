@@ -115,6 +115,17 @@ struct Provider {
 
 impl Provider {
     fn start(display: &str, config: &Path, socket: &Path) -> Self {
+        let provider = Self::start_disabled(display, config, socket);
+        let output = seat_command(display, socket, "enable");
+        assert!(
+            output.status.success(),
+            "cannot enable provider fixture seat: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        provider
+    }
+
+    fn start_disabled(display: &str, config: &Path, socket: &Path) -> Self {
         Self::wait_until_ready(display, socket, spawn_provider(display, config, socket))
     }
 
@@ -141,7 +152,14 @@ impl Provider {
             .stderr(Stdio::piped())
             .spawn()
             .expect("spawn provider with XDG fixtures");
-        Self::wait_until_ready(display, socket, child)
+        let provider = Self::wait_until_ready(display, socket, child);
+        let output = seat_command(display, socket, "enable");
+        assert!(
+            output.status.success(),
+            "cannot enable provider fixture seat: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        provider
     }
 
     fn wait_until_ready(display: &str, socket: &Path, mut child: Child) -> Self {
@@ -227,6 +245,97 @@ fn spawn_provider(display: &str, config: &Path, socket: &Path) -> Child {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn provider")
+}
+
+fn seat_command(display: &str, socket: &Path, action: &str) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_agent-seat-x11"))
+        .args(["seat", action])
+        .env("DISPLAY", display)
+        .env(
+            "XDG_RUNTIME_DIR",
+            socket.parent().expect("socket runtime directory"),
+        )
+        .output()
+        .expect("run seat-control command")
+}
+
+#[test]
+fn volatile_seat_gate_denies_by_default_revokes_sessions_and_resets_on_restart() {
+    let directory = FixtureDir::new("seat-gate");
+    let xvfb = Xvfb::start();
+    let config = write_config(&directory.0, &["observe_structure"], 4, 500);
+    let socket = directory.0.join("seat.sock");
+    let mut provider = Provider::start_disabled(&xvfb.display, &config, &socket);
+
+    let equivalent_display = format!("{}.0", xvfb.display);
+    let status = seat_command(&equivalent_display, &socket, "status");
+    assert!(status.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&status.stdout),
+        "Seat disabled (generation 0).\n"
+    );
+
+    let mut denied = UnixStream::connect(&socket).expect("disabled provider peer");
+    assert!(matches!(
+        hello_with(&mut denied, vec![Capability::ObserveStructure]),
+        ServerMessage::Goodbye(goodbye)
+            if goodbye.code == ErrorCode::Refused
+                && goodbye
+                    .message
+                    .as_ref()
+                    .is_some_and(|message| message.as_str().contains("disabled"))
+    ));
+
+    let enabled = seat_command(&xvfb.display, &socket, "enable");
+    assert!(enabled.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&enabled.stdout),
+        "Seat enabled (generation 0).\n"
+    );
+    let mut admitted = UnixStream::connect(&socket).expect("enabled provider peer");
+    assert!(matches!(
+        hello_with(&mut admitted, vec![Capability::ObserveStructure]),
+        ServerMessage::Welcome(_)
+    ));
+
+    let disabled = seat_command(&xvfb.display, &socket, "disable");
+    assert!(disabled.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&disabled.stdout),
+        "Seat disabled (generation 1).\n"
+    );
+    let reenabled = seat_command(&xvfb.display, &socket, "enable");
+    assert!(reenabled.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&reenabled.stdout),
+        "Seat enabled (generation 1).\n"
+    );
+    let mut next_id = 1;
+    assert!(matches!(
+        wire_call(
+            &mut admitted,
+            &mut next_id,
+            Call::SeatStatus(Empty {}),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::Revoked
+    ));
+    let mut replacement = UnixStream::connect(&socket).expect("replacement provider peer");
+    assert!(matches!(
+        hello_with(&mut replacement, vec![Capability::ObserveStructure]),
+        ServerMessage::Welcome(_)
+    ));
+    drop(admitted);
+    drop(denied);
+    drop(replacement);
+
+    provider.terminate();
+    let _restarted = Provider::start_disabled(&xvfb.display, &config, &socket);
+    let restarted = seat_command(&xvfb.display, &socket, "status");
+    assert!(restarted.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&restarted.stdout),
+        "Seat disabled (generation 0).\n"
+    );
 }
 
 #[test]
@@ -945,6 +1054,8 @@ fn help_explains_options_first_run_and_configuration_safety() {
         "--config PATH",
         "--socket PATH",
         "--check-config",
+        "seat <status|enable|disable>",
+        "Every provider process starts with its seat disabled",
         "FIRST RUN",
         "$XDG_CONFIG_HOME/agent-seat/config.toml",
         "mode 0600",

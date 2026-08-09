@@ -417,3 +417,16 @@ active-policy marker format and lifecycle are original work derived from the
 provider's saved-versus-active requirement and use the already recorded safe
 Rustix `flock` wrappers. No Nobox source, schema, test, fixture, prose, or
 design artifact was consulted.
+
+## Tier 0.5 volatile seat gate
+
+The disabled-by-default provider latch, private same-UID operator control
+plane, generation-bound session revocation, pointer pre-send recheck, process
+tests, and launcher-neutral lifecycle contract are original work from the
+maintainer's stated requirement that provider presence and an explicit runtime
+seat switch should be necessary for Agent Seat operation. The implementation
+uses this repository's existing Unix peer-credential, private runtime-socket,
+session, and X11 lifecycle mechanisms and adds no dependency. LightDM remains
+an external future black-box lifecycle candidate under the public interfaces
+already recorded above. No Nobox or other product source, schema, fixture,
+test, comment, service definition, or prose was consulted or adapted.

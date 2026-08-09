@@ -77,7 +77,7 @@ impl Drop for ListenerGuard {
     }
 }
 
-fn default_socket_path(screen: usize) -> Result<PathBuf, String> {
+pub(crate) fn default_socket_path(screen: usize) -> Result<PathBuf, String> {
     let base = env::var_os("XDG_RUNTIME_DIR")
         .ok_or_else(|| "XDG_RUNTIME_DIR is required unless --socket is provided".to_owned())?;
     let base = PathBuf::from(base);
@@ -90,6 +90,19 @@ fn default_socket_path(screen: usize) -> Result<PathBuf, String> {
     Ok(base
         .join("agent-seat")
         .join(format!("seat-{display_hash:016x}-s{screen}.sock")))
+}
+
+pub(crate) fn control_socket_path(provider_socket: &Path) -> Result<PathBuf, String> {
+    let base = env::var_os("XDG_RUNTIME_DIR")
+        .ok_or_else(|| "XDG_RUNTIME_DIR is required for seat control".to_owned())?;
+    let base = PathBuf::from(base);
+    if !base.is_absolute() {
+        return Err("XDG_RUNTIME_DIR must be absolute".to_owned());
+    }
+    let provider_hash = fnv1a64(provider_socket.as_os_str().as_encoded_bytes());
+    Ok(base
+        .join("agent-seat")
+        .join(format!("control-{provider_hash:016x}.sock")))
 }
 
 fn validate_socket_path(path: &Path) -> Result<(), String> {

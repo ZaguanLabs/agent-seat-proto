@@ -1,14 +1,18 @@
 //! Atomic per-screen X11 selection and advertisement ownership.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use agent_seat_proto::{ADVERTISEMENT_PROPERTY, Advertisement};
+use agent_seat_proto::{ADVERTISEMENT_PROPERTY, Advertisement, MAX_ADVERTISEMENT_BYTES};
 use x11rb::connection::Connection as _;
 use x11rb::protocol::Event;
-use x11rb::protocol::xproto::{ConnectionExt as _, CreateWindowAux, PropMode, WindowClass};
+use x11rb::protocol::xproto::{
+    AtomEnum, ConnectionExt as _, CreateWindowAux, PropMode, WindowClass,
+};
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 use x11rb::{COPY_DEPTH_FROM_PARENT, CURRENT_TIME, NONE};
+
+const MAX_PROPERTY_LONGS: u32 = (MAX_ADVERTISEMENT_BYTES as u32).div_ceil(4) + 1;
 
 pub(crate) struct Ownership {
     connection: RustConnection,
@@ -129,6 +133,54 @@ pub(crate) fn selected_screen() -> Result<usize, String> {
         .map_err(|error| format!("cannot connect to selected X11 display: {error}"))
 }
 
+pub(crate) fn advertised_socket() -> Result<PathBuf, String> {
+    let (connection, screen_index) = x11rb::connect(None)
+        .map_err(|error| format!("cannot inspect X11 Agent Seat discovery: {error}"))?;
+    let screen = connection.setup().roots.get(screen_index).ok_or_else(|| {
+        "cannot inspect X11 Agent Seat discovery: selected screen is absent".to_owned()
+    })?;
+    let selection = lookup(
+        &connection,
+        format!("_AGENT_SEAT_S{screen_index}").as_bytes(),
+    )?;
+    if selection == NONE {
+        return Err("no Agent Seat provider is advertised on the selected X11 screen".to_owned());
+    }
+    let owner = connection
+        .get_selection_owner(selection)
+        .map_err(x11_error)?
+        .reply()
+        .map_err(x11_error)?
+        .owner;
+    if owner == NONE {
+        return Err("no Agent Seat provider is advertised on the selected X11 screen".to_owned());
+    }
+    let property = lookup(&connection, ADVERTISEMENT_PROPERTY.as_bytes())?;
+    let utf8 = lookup(&connection, b"UTF8_STRING")?;
+    if property == NONE || utf8 == NONE {
+        return Err("the selected X11 screen has no Agent Seat advertisement atoms".to_owned());
+    }
+    let owner_value = read_advertisement(&connection, owner, property, utf8)?;
+    let root_value = read_advertisement(&connection, screen.root, property, utf8)?;
+    if owner_value != root_value {
+        return Err("the X11 Agent Seat advertisements do not match".to_owned());
+    }
+    let current_owner = connection
+        .get_selection_owner(selection)
+        .map_err(x11_error)?
+        .reply()
+        .map_err(x11_error)?
+        .owner;
+    if current_owner != owner {
+        return Err("the X11 Agent Seat provider changed during discovery".to_owned());
+    }
+    let encoded = std::str::from_utf8(&root_value)
+        .map_err(|_| "the X11 Agent Seat advertisement is not UTF-8".to_owned())?;
+    let advertisement = Advertisement::parse(encoded)
+        .map_err(|error| format!("invalid X11 Agent Seat advertisement: {error}"))?;
+    Ok(PathBuf::from(advertisement.socket()))
+}
+
 impl Drop for Ownership {
     fn drop(&mut self) {
         if self.active {
@@ -240,6 +292,45 @@ fn intern(connection: &RustConnection, name: &[u8]) -> Result<u32, String> {
         .reply()
         .map(|reply| reply.atom)
         .map_err(x11_error)
+}
+
+fn lookup(connection: &RustConnection, name: &[u8]) -> Result<u32, String> {
+    connection
+        .intern_atom(true, name)
+        .map_err(x11_error)?
+        .reply()
+        .map(|reply| reply.atom)
+        .map_err(x11_error)
+}
+
+fn read_advertisement(
+    connection: &RustConnection,
+    window: u32,
+    property: u32,
+    utf8: u32,
+) -> Result<Vec<u8>, String> {
+    let reply = connection
+        .get_property(
+            false,
+            window,
+            property,
+            AtomEnum::ANY,
+            0,
+            MAX_PROPERTY_LONGS,
+        )
+        .map_err(x11_error)?
+        .reply()
+        .map_err(x11_error)?;
+    if reply.type_ != utf8
+        || reply.format != 8
+        || reply.bytes_after != 0
+        || reply.value.len() > MAX_ADVERTISEMENT_BYTES
+    {
+        return Err(
+            "the X11 Agent Seat advertisement has invalid type, format, or size".to_owned(),
+        );
+    }
+    Ok(reply.value)
 }
 
 fn x11_error(error: impl std::fmt::Display) -> String {

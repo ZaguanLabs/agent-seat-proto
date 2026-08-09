@@ -176,10 +176,15 @@ After reviewing the policy, validate and start it:
 ```sh
 agent-seat-x11 --check-config
 agent-seat-x11
+# In another terminal, only while Agent Seat access is wanted:
+agent-seat-x11 seat enable
 ```
 
-The provider runs in the foreground. Add `agent-seat-x11 &` to Openbox
-autostart after validating the policy. See [the provider guide](docs/provider.md)
+The provider runs in the foreground and every process starts with a volatile
+disabled seat. Add only `agent-seat-x11 &` to Openbox autostart after
+validating the policy; never auto-run `seat enable`. See the
+[Tier 0.5 gate](docs/tier-0.5-seat-gate.md) and
+[the provider guide](docs/provider.md)
 for the complete configuration and security model. `agent-seat-x11 --help`
 also describes the first-run flow and command-line options.
 

@@ -13,6 +13,14 @@ grant, bounded sessions, and atomic selection ownership. It deliberately
 provides no cross-user isolation and no protection from another process that
 already has the session owner's X11 authority.
 
+T0.5 adds a volatile provider-owned operator latch. A provider begins disabled
+even when its saved policy permits startup. A separate mode-0600 local control
+socket verifies the desktop UID and can inspect, enable, or disable the current
+process only. MCP has no corresponding operation. Sessions are bound to one
+enabled generation and are revoked after a transition; pointer input rechecks
+that generation under its X11 server grab. A request already executing may
+finish, so this is not cancellation or a lock-transition guarantee.
+
 T1 adds independently sampled EWMH observation. Client enumeration is disabled
 by default. Scope filtering happens before title allocation, titles require
 both an explicit policy switch and a session capability, raw XIDs are replaced
@@ -89,6 +97,9 @@ PID inference, establish companion confinement.
 ## Core rules
 
 - The provider is disabled and deny-by-default.
+- Every provider process additionally starts with its volatile seat disabled;
+  provider or X11 death loses the enabled state, and no login or unlock path
+  restores it.
 - Only verified local peers reach grant evaluation; the provider rechecks
   capability, scope, feature, policy, and freshness on every call.
 - One provider owns a screen through an X11 selection. Ownership prevents
@@ -115,6 +126,9 @@ PID inference, establish companion confinement.
 - An input-profile companion must receive exactly one already-connected,
   named provider descriptor; it must not retain X11 discovery, broker, raw
   input, network, home, or arbitrary execution authority.
+- The Tier 0.5 control plane is absent from MCP and the private companion's
+  namespace, but it is not protected from arbitrary processes running as the
+  trusted desktop UID.
 
 Same-user X11 clients may inspect or spoof desktop state and bypass the
 provider entirely. Stronger isolation requires a different OS user/session or

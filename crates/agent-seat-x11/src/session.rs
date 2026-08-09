@@ -19,6 +19,7 @@ use rustix::net::sockopt::socket_peercred;
 use crate::config::{ClientScope, Config};
 use crate::launch::{Failure as LaunchFailure, LaunchSupervisor, SessionCatalog};
 use crate::observer::{Failure as ObservationFailure, Observer, Operation};
+use crate::seat::{SeatGate, SeatPermit};
 
 pub(crate) fn run(
     mut stream: UnixStream,
@@ -26,6 +27,7 @@ pub(crate) fn run(
     launcher: Arc<LaunchSupervisor>,
     persistent_session: Arc<AtomicBool>,
     stopping: Arc<AtomicBool>,
+    seat: Arc<SeatGate>,
     session_number: NonZeroU64,
 ) -> Result<(), String> {
     stream
@@ -51,6 +53,9 @@ pub(crate) fn run(
             "exact Agent Seat revision 4 is required",
         );
     }
+    let Some(seat_permit) = seat.permit() else {
+        return close(&mut stream, ErrorCode::Refused, "operator seat is disabled");
+    };
     let Some(granted) = config.granted(uid, hello.requested.iter()) else {
         return close(
             &mut stream,
@@ -58,6 +63,13 @@ pub(crate) fn run(
             "verified peer UID has no configured grant",
         );
     };
+    if !seat.accepts(seat_permit) {
+        return close(
+            &mut stream,
+            ErrorCode::Revoked,
+            "operator seat generation was revoked",
+        );
+    }
     let persistent_session =
         PersistentSessionGuard::claim(config.provider_private_devices(), persistent_session);
     let granted = BoundedList::new(granted)
@@ -100,6 +112,14 @@ pub(crate) fn run(
 
     let mut observer = None;
     let mut catalog = SessionCatalog::new();
+    let context = SessionContext {
+        session,
+        granted: &granted,
+        config: &config,
+        launcher: &launcher,
+        seat: &seat,
+        seat_permit,
+    };
     for _ in 0..config.max_requests() {
         if persistent_session.is_active() {
             let wait = Timespec {
@@ -127,15 +147,24 @@ pub(crate) fn run(
         };
         match message {
             ClientMessage::Request(request) => {
-                let response = handle(
-                    request,
-                    session,
-                    &granted,
-                    &config,
-                    &launcher,
-                    &mut observer,
-                    &mut catalog,
-                );
+                if !seat.accepts(seat_permit) {
+                    let response = Response {
+                        id: request.id,
+                        outcome: protocol_error(
+                            ErrorCode::Revoked,
+                            Retry::Reconnect,
+                            "operator seat generation was revoked",
+                        ),
+                    };
+                    write_frame(
+                        &mut stream,
+                        &ServerMessage::Response(response),
+                        MAX_RESPONSE_FRAME_BYTES,
+                    )
+                    .map_err(|error| format!("cannot write revoked session response: {error}"))?;
+                    return Ok(());
+                }
+                let response = handle(request, &context, &mut observer, &mut catalog);
                 write_frame(
                     &mut stream,
                     &ServerMessage::Response(response),
@@ -158,6 +187,15 @@ pub(crate) fn run(
         ErrorCode::SessionClosed,
         "session request bound reached",
     )
+}
+
+struct SessionContext<'a> {
+    session: SessionId,
+    granted: &'a [agent_seat_proto::Capability],
+    config: &'a Config,
+    launcher: &'a LaunchSupervisor,
+    seat: &'a SeatGate,
+    seat_permit: SeatPermit,
 }
 
 struct PersistentSessionGuard(Option<Arc<AtomicBool>>);
@@ -199,29 +237,18 @@ pub(crate) fn reject_capacity(mut stream: UnixStream) {
 
 fn handle(
     request: Request,
-    session: SessionId,
-    granted: &[agent_seat_proto::Capability],
-    config: &Config,
-    launcher: &LaunchSupervisor,
+    context: &SessionContext<'_>,
     observer: &mut Option<Observer>,
     catalog: &mut SessionCatalog,
 ) -> Response {
-    let outcome = if !authorized(&request.call, granted) {
+    let outcome = if !authorized(&request.call, context.granted) {
         protocol_error(
             ErrorCode::Refused,
             Retry::Never,
             "capability was not granted",
         )
     } else {
-        provider_call(
-            request.call,
-            session,
-            granted,
-            config,
-            launcher,
-            observer,
-            catalog,
-        )
+        provider_call(request.call, context, observer, catalog)
     };
     Response {
         id: request.id,
@@ -247,83 +274,86 @@ fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
 
 fn provider_call(
     call: Call,
-    session: SessionId,
-    granted: &[agent_seat_proto::Capability],
-    config: &Config,
-    launcher: &LaunchSupervisor,
+    context: &SessionContext<'_>,
     observer: &mut Option<Observer>,
     catalog: &mut SessionCatalog,
 ) -> Outcome {
     let result = match call {
         Call::SeatStatus(_) => {
             return Outcome::Ok(Reply::SeatStatus(agent_seat_proto::SeatStatus {
-                session,
+                session: context.session,
                 sequence: observer
                     .as_ref()
                     .map_or(Sequence::new(0), Observer::sequence),
                 assurance: Assurance::Tier0,
             }));
         }
-        Call::DesktopSnapshot(_) => observer_for(observer, granted, config)
+        Call::DesktopSnapshot(_) => observer_for(observer, context.granted, context.config)
             .and_then(Observer::snapshot)
             .map(Reply::DesktopSnapshot)
             .map_err(CallFailure::Observation),
-        Call::EventsSubscribe(arguments) => observer_for(observer, granted, config)
+        Call::EventsSubscribe(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.subscribe(&arguments.kinds))
             .map(Reply::Subscribed)
             .map_err(CallFailure::Observation),
-        Call::EventsPoll(arguments) => observer_for(observer, granted, config)
+        Call::EventsPoll(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.poll(arguments.after, arguments.limit, arguments.wait_ms))
             .map(Reply::Events)
             .map_err(CallFailure::Observation),
-        Call::ClientActivate(arguments) => observer_for(observer, granted, config)
+        Call::ClientActivate(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.manage(Operation::Activate(arguments)))
             .map(Reply::Management)
             .map_err(CallFailure::Observation),
-        Call::ClientClose(arguments) => observer_for(observer, granted, config)
+        Call::ClientClose(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.manage(Operation::Close(arguments)))
             .map(Reply::Management)
             .map_err(CallFailure::Observation),
-        Call::WorkspaceSwitch(arguments) => observer_for(observer, granted, config)
+        Call::WorkspaceSwitch(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.manage(Operation::WorkspaceSwitch(arguments)))
             .map(Reply::Management)
             .map_err(CallFailure::Observation),
-        Call::ClientWorkspace(arguments) => observer_for(observer, granted, config)
+        Call::ClientWorkspace(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.manage(Operation::ClientWorkspace(arguments)))
             .map(Reply::Management)
             .map_err(CallFailure::Observation),
-        Call::ClientState(arguments) => observer_for(observer, granted, config)
+        Call::ClientState(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.manage(Operation::State(arguments)))
             .map(Reply::Management)
             .map_err(CallFailure::Observation),
-        Call::ClientGeometry(arguments) => observer_for(observer, granted, config)
+        Call::ClientGeometry(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.manage(Operation::Geometry(arguments)))
             .map(Reply::Management)
             .map_err(CallFailure::Observation),
         Call::ApplicationsList(arguments) => catalog
-            .list(arguments, config.launch_policy())
+            .list(arguments, context.config.launch_policy())
             .map(Reply::Applications)
             .map_err(CallFailure::Launch),
-        Call::ApplicationLaunch(arguments) => {
-            launch_application(&arguments.application, granted, config, launcher, observer)
-                .map(Reply::Launched)
-                .map_err(CallFailure::Launch)
-        }
+        Call::ApplicationLaunch(arguments) => launch_application(
+            &arguments.application,
+            context.granted,
+            context.config,
+            context.launcher,
+            observer,
+        )
+        .map(Reply::Launched)
+        .map_err(CallFailure::Launch),
         Call::PointerMove(arguments) => {
-            let Some((broker_socket, broker_peer_uid)) = config.broker() else {
+            let Some((broker_socket, broker_peer_uid)) = context.config.broker() else {
                 return protocol_error(
                     ErrorCode::Unavailable,
                     Retry::Reconnect,
                     "activity broker is not configured",
                 );
             };
-            observer_for(observer, granted, config)
+            observer_for(observer, context.granted, context.config)
                 .and_then(|observer| {
                     observer.pointer_move(
                         arguments,
                         broker_socket,
                         broker_peer_uid,
-                        config.io_timeout(),
+                        context.config.io_timeout(),
+                        context.seat,
+                        context.seat_permit,
                     )
                 })
                 .map(Reply::Input)

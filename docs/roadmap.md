@@ -8,6 +8,29 @@ experimental pointer-move slice; deployment remains gated. E0 evidence is
 recorded in
 [`e0-verification.md`](e0-verification.md).
 
+## T0.5 — volatile provider seat gate
+
+Status: implemented experimentally in `agent-seat-x11` 0.1.17, 2026-08-09.
+
+The provider now starts with a disabled runtime seat independently of saved
+policy. A separate local operator command can inspect, enable, or disable the
+current provider instance; the command is not an MCP operation and state is
+never persisted. Sessions are generation-bound, so disable revokes existing
+sessions and re-enable requires a new handshake. Pointer movement rechecks the
+same generation under its X11 server grab.
+
+This is the launcher-neutral [Tier 0.5 seat-gate contract](tier-0.5-seat-gate.md):
+provider or X11 death denies everything and every new provider begins disabled.
+It is a useful operator consent/kill switch under the confined-companion
+profile, not same-UID isolation and not a solution to the remaining LightDM
+credential-surface ordering gate.
+
+The next UI milestone may add explicit runtime status, Enable, and Disable
+controls to Settings. It must not conflate saved policy activation with the
+volatile latch or enable automatically. LightDM is the first logout/relogin
+compatibility case, while other launchers remain independent participants in
+the same lifecycle contract.
+
 ## Goals
 
 - Define one strict, bounded Agent Seat wire contract.

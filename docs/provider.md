@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus an experimental T5 pointer slice.
-`agent-seat-x11` 0.1.16 owns lifecycle, policy, local
+`agent-seat-x11` 0.1.17 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -28,6 +28,9 @@ contract.
   newly visible scoped client with the exact launch startup ID.
 - Remove the private socket and advertisement on clean shutdown while leaving
   Openbox or another window manager independent.
+- Start every provider instance with a volatile disabled seat, admit no Agent
+  Seat session until an explicit local enable, and revoke the current session
+  generation on disable.
 
 ## Non-goals
 
@@ -41,7 +44,8 @@ contract.
   capture, input, or semantics in the Tier 0 core.
 - Killing a client, synthesizing input, or claiming a foreign WM accepted an
   internally delivered request.
-- Providing a consent window or claiming Tier 1 window-manager authority.
+- Treating the volatile operator gate as same-UID isolation, a trusted lock
+  transition, a consent window, or Tier 1 window-manager authority.
 
 ## Configuration
 
@@ -84,6 +88,8 @@ agent-seat-x11 --check-config
 # Change enabled = false to enabled = true when the policy is ready.
 agent-seat-x11 --check-config
 agent-seat-x11
+# In another terminal, only when Agent Seat access is wanted:
+agent-seat-x11 seat enable
 ```
 
 First-run creation applies only to a no-option invocation and the discovered
@@ -91,6 +97,12 @@ default path. `--check-config` remains read-only, while `--config PATH`
 requires an absolute path to an existing file; neither creates or overwrites a
 configuration. Subsequent ordinary runs also never modify an existing default
 configuration.
+
+Every successful provider start has a second, volatile gate that begins
+disabled independently of the saved policy. See the
+[Tier 0.5 seat-gate contract](tier-0.5-seat-gate.md). `seat enable` applies
+only to the current provider process; `seat disable`, provider exit, X11 loss,
+logout, or restart removes that authorization. No MCP call can change it.
 
 `--check-config` validates the complete policy independently of activation. A
 valid file reports either `valid and enabled` or `valid and disabled` and exits
@@ -380,6 +392,7 @@ systemctl --user import-environment DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP
 agent-seat-x11 --check-config
 systemctl --user start agent-seat-x11-input.service
 systemctl --user status agent-seat-x11-input.service
+agent-seat-x11 seat enable
 ```
 
 The service keeps local `AF_UNIX` access for X11 and the user manager, but
@@ -427,6 +440,10 @@ Start the provider as a separate process from Openbox autostart:
 ```sh
 agent-seat-x11 &
 ```
+
+The provider starts disabled. Run `agent-seat-x11 seat enable` explicitly when
+you want to admit sessions, and `agent-seat-x11 seat disable` to revoke the
+current generation. Do not place the enable command in Openbox autostart.
 
 SIGINT or SIGTERM performs clean withdrawal and socket removal. A crash may
 leave a recoverable socket or stale root property, but it cannot terminate or

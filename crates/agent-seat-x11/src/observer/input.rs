@@ -12,6 +12,7 @@ use x11rb::protocol::xtest::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 
 use super::{Failure, Observer};
+use crate::seat::{SeatGate, SeatPermit};
 
 const MAX_WINDOW_ANCESTORS: usize = 64;
 const MAX_HIT_TEST_CHILDREN: usize = 256;
@@ -24,6 +25,8 @@ impl Observer {
         broker_socket: &Path,
         broker_peer_uid: u32,
         timeout: Duration,
+        seat: &SeatGate,
+        seat_permit: SeatPermit,
     ) -> Result<InputReply, Failure> {
         let mut broker = BrokerConnection::connect(broker_socket, timeout, broker_peer_uid)
             .map_err(|_| Failure::unavailable("cannot connect to the activity broker"))?;
@@ -40,7 +43,7 @@ impl Observer {
             .check()
             .map_err(|_| Failure::unavailable("cannot acquire an X11 server grab"))?;
 
-        let sent = self.prepare_and_move(request, &mut broker, initial);
+        let sent = self.prepare_and_move(request, &mut broker, initial, seat, seat_permit);
         let released = self
             .connection
             .ungrab_server()
@@ -54,7 +57,9 @@ impl Observer {
         released?;
 
         let terminal = match (sent, broker.status()) {
-            (true, Ok(status)) if initial.is_same_ready(status) => InputTerminal::Queued,
+            (true, Ok(status)) if initial.is_same_ready(status) && seat.accepts(seat_permit) => {
+                InputTerminal::Queued
+            }
             _ => InputTerminal::Interrupted,
         };
         Ok(InputReply {
@@ -69,6 +74,8 @@ impl Observer {
         request: PointerMoveRequest,
         broker: &mut BrokerConnection,
         initial: agent_seat_activity_broker::BrokerStatus,
+        seat: &SeatGate,
+        seat_permit: SeatPermit,
     ) -> Result<bool, Failure> {
         self.refresh()?;
         let target = self.target(request.target)?;
@@ -106,7 +113,7 @@ impl Observer {
         let under_grab = broker
             .status()
             .map_err(|_| Failure::unavailable("activity broker evidence was lost"))?;
-        if !initial.is_same_ready(under_grab) {
+        if !initial.is_same_ready(under_grab) || !seat.accepts(seat_permit) {
             return Ok(false);
         }
 
