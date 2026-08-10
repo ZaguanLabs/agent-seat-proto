@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-10
+
+### Changed
+
+- Released every workspace crate as 0.2.0 while retaining exact Agent Seat
+  wire revision 9. The release includes the protocol crate, authority-free MCP
+  companion, standalone X11 provider, Settings application, and optional
+  activity-broker research component.
+- Rewrote the project introduction around Agent Seat as an independent Linux
+  desktop bridge, made the verified Openbox surface and experimental profile
+  limits explicit, and clarified that Apache refers only to the project's
+  license. Agent Seat is not affiliated with the Apache Software Foundation.
+
 ### Fixed
 
 - `agent-seat-mcp` 0.1.11 no longer exposes a raw broken-pipe diagnostic when

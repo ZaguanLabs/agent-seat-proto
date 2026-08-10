@@ -1,6 +1,6 @@
 # Generic MCP companion
 
-`agent-seat-mcp` 0.1.11 implements both MCP `2026-07-28` and `2025-11-25` over
+`agent-seat-mcp` 0.2.0 implements both MCP `2026-07-28` and `2025-11-25` over
 newline-delimited JSON-RPC stdio. A modern host should use `server/discover`;
 an existing host can continue using the legacy `initialize` lifecycle without
 registration changes or changes to any pre-existing tool schema.

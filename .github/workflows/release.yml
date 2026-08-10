@@ -24,7 +24,7 @@ jobs:
       - name: Install Rust 1.85
         run: rustup toolchain install 1.85.0 --profile minimal --component clippy,rustfmt
       - name: Install desktop test dependencies
-        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends desktop-file-utils libdbus-1-dev libgtk-4-dev openbox xterm xvfb
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends desktop-file-utils libdbus-1-dev libgtk-4-dev openbox x11-xkb-utils xterm xvfb
       - name: Verify source
         run: |
           cargo fmt --all --check
@@ -67,9 +67,9 @@ jobs:
           if test -f "$notes"; then
             gh release create "$GITHUB_REF_NAME" "$archive" "$archive.sha256" \
               --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
-              --title "Agent Seat Protocol $GITHUB_REF_NAME" --notes-file "$notes"
+              --title "Agent Seat $GITHUB_REF_NAME" --notes-file "$notes"
           else
             gh release create "$GITHUB_REF_NAME" "$archive" "$archive.sha256" \
               --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
-              --title "Agent Seat Protocol $GITHUB_REF_NAME" --generate-notes
+              --title "Agent Seat $GITHUB_REF_NAME" --generate-notes
           fi

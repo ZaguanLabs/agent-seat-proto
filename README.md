@@ -1,152 +1,156 @@
-# Agent Seat Protocol
+# Agent Seat
 
-`agent-seat-proto` is the canonical Apache-2.0 project for a bounded protocol
-between desktop providers and authority-free agent companions. The repository
-is owned from its first commit by
-[`ZaguanLabs`](https://github.com/ZaguanLabs).
+Agent Seat is a local, policy-controlled bridge between AI agents and a Linux
+desktop. It gives an agent a small set of structured desktop operations while
+leaving authority, scope, and runtime control with a separate process in the
+user's graphical session.
 
-E1 and the T0--T3 Tier 0 core are complete. Current source implements strict
-Agent Seat wire revision 9, a dual-era MCP `2026-07-28` and `2025-11-25`
-companion, and a standalone provider with bounded EWMH observation,
-freshness-checked management, and policy-controlled desktop-entry launch. The
-five deliverables are:
+The current release targets X11 and is proven with Openbox. An agent can inspect
+the windows it is allowed to see, use supported window-manager operations,
+launch admitted desktop applications, and—when separately granted—capture a
+target window or send bounded input. The design favors desktop metadata and
+standard keyboard commands over repeated full-screen screenshots and blind
+coordinate clicks.
 
-- `agent-seat-proto`: display-server-neutral wire types and framing only;
-- `agent-seat-mcp`: a generic MCP translator with no policy authority;
-- `agent-seat-x11`: a standalone Tier 0 provider for unmodified EWMH window
-  managers such as Openbox;
-- `agent-seat-settings`: a human-facing policy editor with display-independent
-  validation, inspection, and recovery commands plus a GTK 4 interface; and
-- `agent-seat-activity-broker`: optional research tooling for a possible future
-  physical-activity assurance profile; it is not required by Tier 0.5 input.
+Agent Seat is an independent open-source project maintained by
+[ZaguanLabs](https://github.com/ZaguanLabs). It is licensed under the Apache
+License 2.0; it is not an Apache Software Foundation project and is not
+affiliated with the Foundation.
 
-The Tier 0 core provides bounded observation, supported EWMH management,
-and controlled desktop-entry launch. Capture, input, and accessibility are
-separate optional profiles and are not core-release promises.
+## What is included
 
-Revision 5 adds an experimental Tier 0.5 X11 bridge: target-aware pointer move
-and click plus focus-bound bounded text. It uses the existing `agent-seat-x11`
-process, XTEST, the live keyboard map, fresh target evidence, and the volatile
-runtime seat. It needs no root service, raw input-device permission, additional
-group membership, or activity broker. It does not claim physical-user priority;
-a person and an agent can overlap on ordinary X11.
+The repository builds five components with deliberately separate roles:
 
-Revision 6 adds an experimental, separately granted obscured-client capture.
-It uses a freshly scoped X Composite named pixmap and returns one bounded PNG;
-it never captures the root or an output. The result can include target-owned
-pixels hidden behind another window, but cannot reconstruct pixels that were
-already obscured before the provider enrolled the client.
+| Component | Role |
+| --- | --- |
+| `agent-seat-x11` | Standalone X11 provider. Owns configuration, policy, grants, X11 authority, launch admission, and the volatile runtime seat. |
+| `agent-seat-mcp` | Authority-free MCP companion. Translates MCP tools to one authenticated provider session and supports MCP `2026-07-28` and `2025-11-25`. |
+| `agent-seat-settings` | GTK 4 and command-line editor for the provider policy, including explicit runtime seat controls. |
+| `agent-seat-proto` | Display-server-neutral bounded wire types and framing. |
+| `agent-seat-activity-broker` | Optional research component for a stronger physical-activity profile; it is not required for ordinary X11 input. |
 
-Keyboard text follows the current effective XKB layout and group. The provider
-uses XKB key types and levels, including bounded Shift, Level3, and Level5
-modifiers, and refuses before sending when a scalar cannot be produced exactly.
-It does not guess from compatibility-map columns, change the layout or group,
-run compose/IME sequences, or use clipboard paste.
+Wire revision 9 provides the released local protocol binding. Crate versions
+and wire revisions are separate: Agent Seat v0.2.0 ships all five crates at
+version 0.2.0 without changing the wire contract.
 
-When direct resolution fails, the diagnostic names the first unavailable
-one-based character position and Unicode code point. Agents must not respond by
-changing the user's XKB layout or mapping or by routing text through an
-ungranted shell/browser clipboard path.
+## What works today
 
-Revision 9 adds separately granted, target-scoped exact Unicode transfer. It
-temporarily replaces X11 clipboard ownership, may expose the text to a
-clipboard manager, and reports verified selection delivery rather than
-application insertion. It never reads or restores the old clipboard. See the
-[text-transfer profile](docs/protocol/profiles/x11-text-transfer-v1.md).
+With Openbox on Linux X11, the v0.2.0 source has verified support for:
 
-Revision 8 adds an explicit long-form text operation for up to 4,096
-preflighted scalar actions and 16 KiB, plus target-relative capture regions of
-at most 262,144 pixels. The MCP companion can also remember at most 32 named
-single clicks for one provider session; replay still passes through every live
-provider check and never becomes a macro or element-identity claim.
+- scoped window and workspace observation, optional titles, and filtered
+  events;
+- freshness-checked EWMH activation, close, workspace, state, and geometry
+  requests;
+- shell-free launch from a bounded XDG desktop-entry catalog and explicit
+  application admission policy;
+- a disabled-by-default, per-provider runtime seat which a person must enable
+  before an agent session is admitted;
+- optional target-relative pointer actions, layout-aware typing, standard key
+  commands such as Control+L and Page Down, and bounded long-form input;
+- optional target-owned PNG capture, including bounded regions; and
+- optional focused UTF-8 text transfer for exact accented and multiline text,
+  with explicit clipboard side effects.
 
-The repository retains the separately confined activity-broker experiment as
-research for a possible future stronger profile. It is intentionally outside
-the ordinary setup path. Its administrator workflow and unresolved physical-
-replacement and trusted-lock gates remain documented under
-[`docs/security`](docs/security/README.md).
-
-The current provider target is a local Linux X11 session. Other Unix peer
-credential mechanisms and non-X11 backends are not yet supported.
+The core release promise is observation, advertised EWMH management, and
+controlled desktop-entry launch. Input, capture, and exact text transfer are
+experimental profiles with separate grants and narrower claims. In particular,
+ordinary X11 cannot give Agent Seat physical-user priority, an accessibility
+tree, proof that an application accepted an action, or permission to capture
+the whole output. See the exact [compatibility matrix](docs/compatibility.md)
+and [security model](docs/security/security-model.md).
 
 ## First run
 
-Run the provider once from your X11 desktop session:
+Build the workspace with Rust 1.85 or newer. The Settings application also
+requires GTK 4 development files (`libgtk-4-dev` on Debian-family systems).
+
+```sh
+cargo build --release --workspace
+```
+
+Install the binaries using your normal packaging or installation method, then
+run the provider once from the X11 desktop session:
 
 ```sh
 agent-seat-x11
 ```
 
-If no configuration exists, the command creates a private, extensively
-commented template at `$XDG_CONFIG_HOME/agent-seat/config.toml`, falling back
-to `$HOME/.config/agent-seat/config.toml`, and exits without connecting to X11.
-The template contains the current UID, explains every setting and capability,
-and remains disabled until the user explicitly changes `enabled = false` to
-`enabled = true`.
-
-After reviewing the policy, validate and start it:
+On first run it creates a private, extensively commented policy at
+`$XDG_CONFIG_HOME/agent-seat/config.toml`, or
+`$HOME/.config/agent-seat/config.toml` when `XDG_CONFIG_HOME` is unset. The
+template starts disabled and the provider exits without connecting to X11.
+Review it, enable only the capabilities and applications you want, then run:
 
 ```sh
 agent-seat-x11 --check-config
 agent-seat-x11
-# In another terminal, only while Agent Seat access is wanted:
+```
+
+In another terminal, explicitly enable access for that provider instance:
+
+```sh
 agent-seat-x11 seat enable
 ```
 
-For desktop input, grant `observe_structure` plus `input_pointer` and/or
-`input_keyboard` in the policy (or on Settings → Access), restart the provider
-after saving, then enable the current runtime seat. No device-group or root
-setup is part of this path.
-
-For exact accented, multilingual, or long text independent of the keyboard
-layout, separately grant `observe_structure` plus `text_transfer`. Restart the
-provider and enable the current seat. This grant replaces the current X11
-clipboard owner during each request, cannot restore prior contents, and may
-allow a clipboard manager to retain the transferred text. Use it only when
-that visible side effect is acceptable.
-
-For target-owned screenshots, grant `observe_structure` plus
-`capture_obscured`, restart the provider, and observe the client before calling
-`capture_obscured` or the smaller `capture_region`. The MCP result is an actual
-`image/png` content block.
-
-The provider runs in the foreground and every process starts with a volatile
-disabled seat. Add only `agent-seat-x11 &` to Openbox autostart after
-validating the policy; never auto-run `seat enable`. See the
-[Tier 0.5 gate](docs/tier-0.5-seat-gate.md) and
-[the provider guide](docs/provider.md)
-for the complete configuration and security model. `agent-seat-x11 --help`
-also describes the first-run flow and command-line options.
-
-The Settings command can inspect and recover policy without a display:
+The seat starts disabled after every provider start and is disabled again when
+the provider exits. Disable it immediately with:
 
 ```sh
-agent-seat-settings --check
-agent-seat-settings --print
-agent-seat-settings --restore-previous
+agent-seat-x11 seat disable
 ```
 
-Run `agent-seat-settings` with no command to open its GTK interface. The
-complete interface edits activation, capability grants, visible-window scope,
-the bounded XDG launch catalog, and resource limits. It validates and shows an
-exact policy diff before an atomic save, retains a private recovery policy, and
-distinguishes saved policy, best-effort active-policy evidence, and the current
-provider's volatile Tier 0.5 seat. The separate runtime panel can Refresh,
-explicitly Enable for this provider instance, or immediately Disable; opening
-and saving never enable it. See
-[the Settings guide](docs/settings.md) for the complete first-run and recovery
-workflow.
+You can edit and validate the same policy graphically:
 
-The first supported source release is product tag `v0.1.0`. Its component
-versions are `agent-seat-proto` 0.1.1, `agent-seat-mcp` 0.1.1, and
-`agent-seat-x11` 0.1.4; crate versions and the wire revision are intentionally
-separate identities.
+```sh
+agent-seat-settings
+```
 
-## Build
+Register the MCP companion with an agent host using the equivalent of:
 
-Rust 1.85 or newer is required. The repository pins its minimum toolchain for
-the ordinary source gate. Building the Settings interface also requires GTK 4
-development files (`libgtk-4-dev` on Debian-family systems):
+```json
+{
+  "mcpServers": {
+    "agent-seat": {
+      "command": "agent-seat-mcp"
+    }
+  }
+}
+```
+
+`agent-seat-mcp --print-mcp-config` prints this minimal registration. Provider
+discovery is lazy, so MCP initialization and tool listing work even when no
+desktop provider is running. If the host removes desktop environment variables,
+pass `DISPLAY`, `--socket`, or `AGENT_SEAT_SOCKET` as described in the
+[companion guide](docs/mcp.md).
+
+For the complete policy, Openbox autostart guidance, application admission,
+optional profile grants, and troubleshooting, read the
+[provider guide](docs/provider.md), [Settings guide](docs/settings.md), and
+[documentation index](docs/README.md).
+
+## How the boundary works
+
+The agent harness does not receive X11 authority from Agent Seat. The generic
+MCP companion owns no policy and discovers no provider until a desktop-backed
+tool is called. `agent-seat-x11` authenticates local peers, applies the saved
+grant and window scope, checks fresh target evidence, and performs only its
+bounded operations.
+
+Configuration activation and runtime access are independent gates. A valid
+saved policy does not enable a running seat, and enabling one provider instance
+does not survive restart, logout, or X11 loss. Requests fail closed when the
+provider, target, focus, scope, or required evidence is missing or stale.
+
+The protocol work is also being developed as a possible implementation-neutral
+foundation for other desktop providers. The current
+[information model](docs/protocol/information-model.md),
+[pre-RFC draft](docs/protocol/r0-protocol-rfc.md), and
+[conformance format](docs/protocol/conformance-report.md) separate portable
+semantics from the X11 backend's actual guarantees.
+
+## Development
+
+The local quality gate is:
 
 ```sh
 cargo fmt --all --check
@@ -155,50 +159,15 @@ cargo test --workspace --all-targets
 cargo doc --workspace --no-deps
 ```
 
-`agent-seat-mcp` supports modern discovery without initialization and retains
-the legacy initialize flow. Discovery and static tool listing need no desktop;
-modern results identify their result type, and the deterministic tool list is
-publicly cacheable for one hour. The first provider-backed tool call resolves
-`--socket`, `AGENT_SEAT_SOCKET`, or the live selection-bound X11 advertisement.
-The standalone provider answers
-authenticated `seat_status`, bounded desktop snapshots, filtered event
-subscriptions, supported EWMH management, and controlled XDG application
-discovery and launch. Separately granted `pointer_move`, `pointer_click`,
-`keyboard_type`, `keyboard_write`, `keyboard_key`, and `text_insert` tools are
-available only while the volatile Tier 0.5 seat is enabled; they are not part
-of the supported Tier 0 core. `text_insert` has its own grant and clipboard
-warning.
+Contributions must remain small, bounded, and explicit about authority and
+assurance. Read [CONTRIBUTING.md](CONTRIBUTING.md) and
+[PROVENANCE.md](PROVENANCE.md) before submitting work. Security reports use
+GitHub private vulnerability reporting as described in
+[SECURITY.md](SECURITY.md).
 
-The [documentation index](docs/README.md) separates user guides from technical
-reference material. Portable pre-RFC semantics are in the
-[`information model`](docs/protocol/information-model.md). The normative
-implemented wire contract is
-[`docs/protocol/specification.md`](docs/protocol/specification.md), with a
-[machine-readable registry projection](docs/protocol/registry-v1.json)
-governed by the repository [registry policy](docs/protocol/registries.md). The
-companion contract is [`docs/mcp.md`](docs/mcp.md), and provider setup is
-[`docs/provider.md`](docs/provider.md). Settings usage is
-[`docs/settings.md`](docs/settings.md). Optional-profile stop decisions are in
-[`docs/design/optional-profiles.md`](docs/design/optional-profiles.md). The
-implementation-independent standards direction is the repository's non-external
-[`R0 pre-RFC draft`](docs/protocol/r0-protocol-rfc.md), beginning with the
-standalone
-[`agent-seat.x11-ewmh-core.v1`](docs/protocol/profiles/x11-ewmh-core-v1.md)
-backend profile, the optional
-[`agent-seat.x11-tier0.5-input.v3`](docs/protocol/profiles/x11-tier0.5-input-v3.md)
-profile, the
-[`agent-seat.x11-text-transfer.v1`](docs/protocol/profiles/x11-text-transfer-v1.md)
-profile, and portable
-[`agent-seat.conformance-report/1`](docs/protocol/conformance-report.md) evidence
-format.
+## License
 
-## Project policy
-
-Contributions are Apache-2.0 under DCO 1.1 sign-off. Read
-[`CONTRIBUTING.md`](CONTRIBUTING.md) and [`PROVENANCE.md`](PROVENANCE.md) before
-submitting work. Security reports use GitHub private vulnerability reporting as
-described in [`SECURITY.md`](SECURITY.md).
-
-This project is independently authored. Nobox is prior art and a future
-black-box compatibility target, not a source dependency. No Nobox code,
-history, fixtures, schemas, or prose is imported here.
+Copyright holders license this project under the
+[Apache License, Version 2.0](LICENSE). “Apache” describes the license only.
+Agent Seat is independently authored and maintained and is not endorsed by,
+sponsored by, or affiliated with the Apache Software Foundation.

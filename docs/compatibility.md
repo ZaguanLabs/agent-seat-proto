@@ -12,7 +12,17 @@ Detailed release-candidate evidence is in
 | 0.1.1 / revision 3 | 0.1.1 | 0.1.3 / `x11_ewmh`, `tier0`, observation + management | Linux, Openbox 3.6.1 / Xvfb | T2 activation, polite close, workspace, state, geometry, and terminal outcomes verified |
 | 0.1.1 / revision 3 | 0.1.1 | 0.1.4 / `x11_ewmh`, `tier0`, observation + management + launch | Linux, Openbox 3.6.1 / Xvfb | Compatible Tier 0 core; policy/refusal, shell-free launch, exact/absent correlation, failure isolation verified |
 
-## Unreleased experimental source
+## v0.2.0 release
+
+| Protocol crate | Companion | Provider/profile | Test environment | Status |
+| --- | --- | --- | --- | --- |
+| 0.2.0 / revision 9 | 0.2.0 | `agent-seat-x11` 0.2.0 / Tier 0 core plus experimental Tier 0.5 input v3, obscured capture v2, and text transfer v1; Settings 0.2.0 | Linux, released Openbox 3.6.1 / isolated Xvfb with XTEST, XKB, Composite 0.4, X-Resource 1.2, and real X11 selection requestors; live Mageia/Openbox/Brave Beta/Suno; dual-era MCP process boundary | Compatible v0.2.0 combination. Tier 0 observation, EWMH management, and admitted XDG launch are released; live Openbox use additionally proves bounded browser launch/navigation, target capture, layout-aware commands, and exact accented multiline text under their separate experimental grants. Delivery does not generally prove application insertion, and physical-user priority remains unsupported. Legacy publishes 23 closed tools and modern 24 including `seat_release`. |
+
+Every workspace crate is version 0.2.0 in this release, including the optional
+`agent-seat-activity-broker` research component. Crate versions do not imply a
+new wire revision or promote an experimental profile into the Tier 0 core.
+
+## Development milestones included in v0.2.0
 
 | Protocol crate | Companion | Provider/profile | Test environment | Status |
 | --- | --- | --- | --- | --- |
@@ -59,8 +69,9 @@ standards status.
 | released `nobox-agent` 0.1.7 / revision 2 | `agent-seat-x11` 0.1.4 / revision 3 | Provider closes during incompatible opening; no request served | Incompatible |
 | `agent-seat-mcp` 0.1.1 / revision 3 | released Nobox 0.1.3 Tier 1 / revision 2 | Provider closes during incompatible opening; companion returns `unavailable`/`reconnect` | Incompatible |
 
-The first release does not advertise capture, input, human-activity, or
-accessibility features. Those combinations are unsupported, not untested.
+The v0.1.0 release did not advertise capture, input, human-activity, or
+accessibility features. Those combinations remain unsupported for that tagged
+release, not untested.
 
 Future entries name exact released versions, advertised wire revision,
 backend features, tested window manager and X server, and one of: compatible,

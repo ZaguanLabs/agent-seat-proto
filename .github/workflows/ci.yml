@@ -19,6 +19,7 @@ concurrency:
 jobs:
   check:
     name: source gate
+    if: ${{ github.event_name == 'pull_request' || !startsWith(github.event.head_commit.message, 'Release v') }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out source

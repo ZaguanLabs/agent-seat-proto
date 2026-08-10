@@ -122,7 +122,7 @@ The first client message is `hello`. A provider answers with exactly one
     "revision": 9,
     "peer": {
       "name": "agent-seat-mcp",
-      "version": "0.1.11",
+      "version": "0.2.0",
       "purpose": "translate MCP desktop tools"
     },
     "requested": ["observe_structure", "observe_titles"]
@@ -141,7 +141,7 @@ unique, canonical list of at most 32 atoms.
     "protocol": "agent-seat",
     "revision": 9,
     "session": 1,
-    "provider": {"name": "agent-seat-x11", "version": "0.1.31"},
+    "provider": {"name": "agent-seat-x11", "version": "0.2.0"},
     "backend": "x11_ewmh",
     "assurance": "tier0",
     "features": ["ewmh_observation"],

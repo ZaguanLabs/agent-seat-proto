@@ -1,7 +1,8 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus experimental obscured-capture, Tier 0.5 input, and
-target-scoped text-transfer profiles. `agent-seat-x11` 0.1.31 owns lifecycle, policy, local
+target-scoped text-transfer profiles. `agent-seat-x11` 0.2.0 owns lifecycle,
+policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`

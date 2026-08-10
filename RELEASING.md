@@ -26,3 +26,10 @@ assembles and inspects a version-prefixed Git archive, writes its SHA-256 file,
 and creates the GitHub release. A matching
 `.github/release-notes/<tag>.md` supplies curated notes when present; otherwise
 GitHub's configured generated notes are used.
+
+Name the corresponding main-branch commit `Release vMAJOR.MINOR.PATCH`. The
+ordinary branch CI skips only that release-commit form because the annotated
+tag workflow runs the complete source gate with stricter documentation checks,
+archive inspection, and desktop-entry validation. Pull requests are never
+skipped by this rule. Do not use that commit form unless the annotated tag will
+be pushed for the same verified commit.

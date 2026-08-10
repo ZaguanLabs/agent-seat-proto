@@ -13,7 +13,7 @@ edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/ZaguanLabs/agent-seat-proto"
 rust-version = "1.85"
-version = "0.1.0"
+version = "0.2.0"
 
 [workspace.lints.rust]
 missing_docs = "warn"
@@ -23,7 +23,7 @@ unsafe_code = "forbid"
 all = "deny"
 
 [workspace.dependencies]
-agent-seat-activity-broker = { path = "crates/agent-seat-activity-broker", version = "0.1.17", default-features = false }
+agent-seat-activity-broker = { path = "crates/agent-seat-activity-broker", version = "0.2.0", default-features = false }
 base64 = "0.22"
 dbus = "0.9.10"
 evdev = "0.13.2"
