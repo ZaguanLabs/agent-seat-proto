@@ -304,11 +304,12 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
 
     assert_eq!(responses.len(), 3);
     assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
-    assert!(
-        responses[0]["result"]["instructions"]
-            .as_str()
-            .is_some_and(|instructions| instructions.contains("never replay an old client ID"))
-    );
+    let instructions = responses[0]["result"]["instructions"]
+        .as_str()
+        .expect("legacy initialization instructions");
+    assert!(instructions.contains("never replay an old client ID"));
+    assert!(instructions.contains("never batch or discard"));
+    assert!(instructions.contains("pixels behind dialogs"));
     assert!(responses[0]["result"]["resultType"].is_null());
     assert_eq!(
         responses[0]["result"]["capabilities"]["tools"]["listChanged"],
@@ -359,6 +360,28 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
             .as_str()
             .is_some_and(|description| description.contains("reports selection delivery"))
     );
+    let snapshot = responses[1]["result"]["tools"]
+        .as_array()
+        .expect("tool array")
+        .iter()
+        .find(|tool| tool["name"] == "desktop_snapshot")
+        .expect("desktop_snapshot tool");
+    assert!(
+        snapshot["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("dialog or window"))
+    );
+    let capture = responses[1]["result"]["tools"]
+        .as_array()
+        .expect("tool array")
+        .iter()
+        .find(|tool| tool["name"] == "capture_obscured")
+        .expect("capture_obscured tool");
+    assert!(
+        capture["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("does not prove visibility"))
+    );
     assert!(responses[1]["result"]["resultType"].is_null());
     assert!(responses[1]["result"]["ttlMs"].is_null());
     assert_eq!(responses[2]["result"]["isError"], true);
@@ -400,11 +423,12 @@ fn modern_discovery_and_tool_listing_are_stateless_cacheable_and_desktop_free() 
     );
     assert_eq!(discovery["ttlMs"], 3_600_000);
     assert_eq!(discovery["cacheScope"], "public");
-    assert!(
-        discovery["instructions"]
-            .as_str()
-            .is_some_and(|instructions| instructions.contains("never replay an old client ID"))
-    );
+    let instructions = discovery["instructions"]
+        .as_str()
+        .expect("modern discovery instructions");
+    assert!(instructions.contains("never replay an old client ID"));
+    assert!(instructions.contains("never batch or discard"));
+    assert!(instructions.contains("pixels behind dialogs"));
     assert_eq!(
         discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
         "agent-seat-mcp"

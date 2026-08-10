@@ -29,6 +29,7 @@ const MAX_MODERN_CONTEXTS: usize = 8;
 const MAX_POINTER_SLOTS: usize = 32;
 const MAX_POINTER_SLOT_NAME_BYTES: usize = 64;
 const MAX_MCP_LINE_BYTES: usize = 1024 * 1024;
+const CAPTURE_INTERACTIVITY_WARNING: &str = "Target-owned pixels may be covered by another client and do not prove visibility, focus, or interactivity. Inspect every mutation result. After an action that may open a dialog or window, take desktop_snapshot and handle its active or newly added client before more input.";
 const KEYBOARD_KEYS: [&str; 63] = [
     "backspace",
     "delete",
@@ -248,7 +249,7 @@ impl Server {
                     "title": "Agent Seat",
                     "version": env!("CARGO_PKG_VERSION")
                 },
-                "instructions": "Use seat_status first. Observe before mutation; prefer focused key commands, titles, and small capture regions. Use text_insert for exact multilingual or long text; it replaces X11 clipboard ownership and reports delivery, not application insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying that click, and reobserve when UI changes. On unavailable/reconnect, stale_context, stale, or timed_out, call seat_status and reobserve; never replay an old client ID or assume a failed mutation did not occur. The provider owns grants and policy."
+                "instructions": "Use seat_status, then observe. Inspect every mutation result; never batch or discard it. Captures are target-owned and can show pixels behind dialogs, so they do not prove visibility, focus, or interactivity. After an action that may open a dialog/window, or when behavior is unexpected, take desktop_snapshot and handle active/new clients before more input. Prefer focused key commands, titles, and small regions. Use text_insert for exact multilingual or long text; it replaces clipboard ownership and reports delivery, not insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying its click; reobserve changed UI. On unavailable/reconnect, stale_context, stale, or timed_out, call seat_status and reobserve; never replay an old client ID or assume a failed mutation did not occur. The provider owns grants and policy."
             }),
         )
     }
@@ -298,7 +299,7 @@ impl Server {
             &modern_result(json!({
                 "supportedVersions": SUPPORTED_MCP_VERSIONS,
                 "capabilities": {"tools":{"listChanged":false}},
-                "instructions": "Check the seat; observe before acting. Prefer focused key commands, titles, and small capture regions. Use text_insert for exact multilingual or long text; it replaces X11 clipboard ownership and reports delivery, not application insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying that click; reobserve changed UI. On unavailable/reconnect, stale_context, stale, or timed_out, call seat_status and reobserve; never replay an old client ID or assume a failed mutation did not occur. Report qualified work exactly.",
+                "instructions": "Use seat_status, then observe. Inspect every mutation result; never batch or discard it. Captures are target-owned and can show pixels behind dialogs, so they do not prove visibility, focus, or interactivity. After an action that may open a dialog/window, or when behavior is unexpected, take desktop_snapshot and handle active/new clients before more input. Prefer focused key commands, titles, and small regions. Use text_insert for exact multilingual or long text; it replaces clipboard ownership and reports delivery, not insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying its click; reobserve changed UI. On unavailable/reconnect, stale_context, stale, or timed_out, call seat_status and reobserve; never replay an old client ID or assume a failed mutation did not occur. Report qualified work exactly.",
                 "ttlMs": STATIC_RESULT_TTL_MS,
                 "cacheScope": "public"
             })),
@@ -1260,7 +1261,7 @@ fn build_tools() -> Box<[Tool]> {
         Tool {
             name: "desktop_snapshot",
             title: "Desktop snapshot",
-            description: "Observe the bounded Tier 0 desktop before choosing a target or mutation.",
+            description: "Observe the bounded Tier 0 desktop before choosing a target or mutation. Repeat after an action that may open a dialog or window; compare active and client IDs before more input.",
             input_schema: empty(),
         },
         Tool {
@@ -1473,13 +1474,13 @@ fn build_tools() -> Box<[Tool]> {
         Tool {
             name: "capture_obscured",
             title: "Capture client pixels",
-            description: "Capture one freshly observed client's own pixels, including content currently covered by other windows.",
+            description: "Capture one freshly observed client's own pixels, including content covered by dialogs or other windows. This does not prove visibility, focus, or interactivity; use desktop_snapshot to inspect the active and newly added clients.",
             input_schema: target(),
         },
         Tool {
             name: "capture_region",
             title: "Capture part of client",
-            description: "Capture a bounded client-relative rectangle, including content covered by other windows. The region may be at most 1,024 pixels on either side and 262,144 pixels total.",
+            description: "Capture a bounded client-relative rectangle, including content covered by dialogs or other windows. This does not prove visibility, focus, or interactivity; use desktop_snapshot after UI-changing actions. The region may be at most 1,024 pixels on either side and 262,144 pixels total.",
             input_schema: object_with_target(
                 json!({
                     "x":{"type":"integer","minimum":0,"maximum":2047},
@@ -1661,11 +1662,7 @@ fn tool_outcome(outcome: Outcome) -> ToolResult {
             }
         });
         return ToolResult {
-            content: vec![ToolContent::Image(ImageContent {
-                r#type: "image",
-                data: capture.data.into_string(),
-                mime_type: "image/png",
-            })],
+            content: capture_content(capture.data.into_string()),
             structured_content,
             is_error: false,
         };
@@ -1683,11 +1680,7 @@ fn tool_outcome(outcome: Outcome) -> ToolResult {
             }
         });
         return ToolResult {
-            content: vec![ToolContent::Image(ImageContent {
-                r#type: "image",
-                data: capture.data.into_string(),
-                mime_type: "image/png",
-            })],
+            content: capture_content(capture.data.into_string()),
             structured_content,
             is_error: false,
         };
@@ -1697,6 +1690,20 @@ fn tool_outcome(outcome: Outcome) -> ToolResult {
         Ok(structured_content) => tool_result(structured_content, is_error),
         Err(error) => tool_error("internal", "never", &error.to_string()),
     }
+}
+
+fn capture_content(data: String) -> Vec<ToolContent> {
+    vec![
+        ToolContent::Image(ImageContent {
+            r#type: "image",
+            data,
+            mime_type: "image/png",
+        }),
+        ToolContent::Text(TextContent {
+            r#type: "text",
+            text: CAPTURE_INTERACTIVITY_WARNING.to_owned(),
+        }),
+    ]
 }
 
 fn tool_error(code: &str, retry: &str, message: &str) -> ToolResult {
@@ -1886,7 +1893,7 @@ mod tests {
     }
 
     #[test]
-    fn capture_results_emit_one_image_without_structured_data_duplication() {
+    fn capture_results_warn_that_target_pixels_do_not_prove_interactivity() {
         let result = tool_outcome(Outcome::Ok(Reply::Capture(CaptureReply {
             target: TargetRequest {
                 client: ClientId::new(NonZeroU64::MIN),
@@ -1901,6 +1908,9 @@ mod tests {
         assert_eq!(value["content"][0]["type"], "image");
         assert_eq!(value["content"][0]["mimeType"], "image/png");
         assert_eq!(value["content"][0]["data"], "iVBORw0KGgo=");
+        assert_eq!(value["content"][1]["type"], "text");
+        assert_eq!(value["content"][1]["text"], CAPTURE_INTERACTIVITY_WARNING);
+        assert_eq!(value["content"].as_array().map(Vec::len), Some(2));
         assert_eq!(value["structuredContent"]["body"]["value"]["width"], 1);
         assert!(value["structuredContent"]["body"]["value"]["data"].is_null());
 
@@ -1920,6 +1930,8 @@ mod tests {
         })));
         let value = serde_json::to_value(result).expect("MCP region result");
         assert_eq!(value["content"][0]["type"], "image");
+        assert_eq!(value["content"][1]["text"], CAPTURE_INTERACTIVITY_WARNING);
+        assert_eq!(value["content"].as_array().map(Vec::len), Some(2));
         assert_eq!(
             value["structuredContent"]["body"]["value"]["region"]["x"],
             10

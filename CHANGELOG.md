@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- `agent-seat-mcp` 0.2.1 now makes the difference between target-owned capture
+  and interactive visibility explicit. Every capture returns one PNG plus a
+  compact warning, both MCP instruction surfaces require callers to inspect
+  every mutation result instead of discarding batched outcomes, and the tool
+  guidance requires a fresh desktop snapshot after a possible dialog/window or
+  unexpected interaction. This prevents an obscured Brave capture from being
+  mistaken for proof that Brave is still active when a native Save dialog has
+  appeared. Recovery works from active/new client IDs even when title policy is
+  disabled.
+- `agent-seat-x11` 0.2.1 focus and pointer-ownership refusals now direct the
+  caller to a fresh snapshot and identify whether to handle the active or
+  covering client. The authority, capture semantics, experimental profiles,
+  and Agent Seat wire revision 9 are unchanged.
+
 ## 0.2.0 - 2026-08-10
 
 ### Changed

@@ -1,6 +1,6 @@
 # Generic MCP companion
 
-`agent-seat-mcp` 0.2.0 implements both MCP `2026-07-28` and `2025-11-25` over
+`agent-seat-mcp` 0.2.1 implements both MCP `2026-07-28` and `2025-11-25` over
 newline-delimited JSON-RPC stdio. A modern host should use `server/discover`;
 an existing host can continue using the legacy `initialize` lifecycle without
 registration changes or changes to any pre-existing tool schema.
@@ -108,13 +108,13 @@ hit-test ancestry, and destination. Save a slot only after observing
 that the original click reached the intended control; reobserve before replay
 after layout or UI changes.
 
-Ordinary results
-contain matching JSON in `structuredContent` and a text block for clients that
-do not consume structured results. A successful capture instead contains one
-`image/png` block; its structured result retains target, dimensions, and format
-but omits the large base64 field so image data is not duplicated. A wire error
-sets `isError: true` without converting its stable code or retry action into
-English control flow.
+Ordinary results contain matching JSON in `structuredContent` and a text block
+for clients that do not consume structured results. A successful capture
+instead contains one `image/png` block followed by a compact interactivity
+warning; its structured result retains target, dimensions, and format but
+omits the large base64 field so image data is not duplicated. A wire error sets
+`isError: true` without converting its stable code or retry action into English
+control flow.
 
 Use `keyboard_key` for one conventional focused command such as `page_down`,
 Control+L, Control+F, Control+W, or Alt+Left. Its `key` comes from the finite
@@ -147,7 +147,18 @@ insertion. `offered` means no supported request arrived by the deadline, and
 Use `capture_region` instead of `capture_obscured` when a small
 client-relative area is sufficient. Each side is at most 1,024 pixels and the
 area is at most 262,144 pixels. The image still comes from the freshly scoped
-target's Composite storage and uses the same separate capture grant.
+target's Composite storage and uses the same separate capture grant. It may
+therefore show target-owned pixels that a dialog or another client currently
+covers. A capture is not evidence that the target is visible, focused, or
+interactive.
+
+Inspect every mutation result instead of batching calls and discarding their
+intermediate outcomes. After an action that may open a dialog or window, or
+whenever interaction behaves unexpectedly, take a fresh `desktop_snapshot`
+before sending more input. Compare `active` and client IDs with the prior
+snapshot and handle the active or newly added client first. A title can make a
+dialog recognizable when title observation is enabled, but recovery must also
+work from active/new client identity when titles are disabled by policy.
 
 ## Lazy provider boundary
 

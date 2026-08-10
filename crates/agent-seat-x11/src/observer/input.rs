@@ -21,6 +21,8 @@ const MAX_WINDOW_ANCESTORS: usize = 64;
 const MAX_HIT_TEST_CHILDREN: usize = 256;
 const MAX_HIT_TEST_RECTANGLES: usize = 256;
 const POINTER_ROOT_FOCUS: u32 = 1;
+const FOCUS_RECOVERY: &str = "keyboard focus is not owned by the target client; inspect this result and take a fresh desktop snapshot to handle the active client";
+const COVER_RECOVERY: &str = "pointer destination is not visibly owned by the target; inspect this result and take a fresh desktop snapshot to handle the covering client";
 
 impl Observer {
     pub(crate) fn pointer_move(
@@ -282,9 +284,7 @@ impl Observer {
             .map_err(|_| Failure::unavailable("cannot inspect X11 input focus"))?
             .focus;
         if focus == x11rb::NONE || focus == POINTER_ROOT_FOCUS {
-            return Err(Failure::invalid(
-                "keyboard focus is not owned by the target client",
-            ));
+            return Err(Failure::invalid(FOCUS_RECOVERY));
         }
         let mut window = focus;
         for _ in 0..MAX_WINDOW_ANCESTORS {
@@ -303,9 +303,7 @@ impl Observer {
             }
             window = parent;
         }
-        Err(Failure::invalid(
-            "keyboard focus is not owned by the target client",
-        ))
+        Err(Failure::invalid(FOCUS_RECOVERY))
     }
 
     fn require_point_owned_by(&self, target: u32, root_x: i16, root_y: i16) -> Result<(), Failure> {
@@ -363,9 +361,7 @@ impl Observer {
                 return Ok(());
             }
         }
-        Err(Failure::invalid(
-            "pointer destination is not visibly owned by the target",
-        ))
+        Err(Failure::invalid(COVER_RECOVERY))
     }
 
     fn is_target_or_reparenting_frame(&self, candidate: u32, target: u32) -> Result<bool, Failure> {

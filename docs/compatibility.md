@@ -22,6 +22,12 @@ Every workspace crate is version 0.2.0 in this release, including the optional
 `agent-seat-activity-broker` research component. Crate versions do not imply a
 new wire revision or promote an experimental profile into the Tier 0 core.
 
+## Unreleased source after v0.2.0
+
+| Protocol crate | Companion | Provider/profile | Test environment | Status |
+| --- | --- | --- | --- | --- |
+| 0.2.0 / revision 9 | 0.2.1 | `agent-seat-x11` 0.2.1 / unchanged Tier 0 core and experimental profiles; Settings 0.2.0 | Linux / MCP unit and dual-era process boundary; isolated Openbox/Xvfb input regressions | Compatible development combination. Capture results add a compact warning that target-owned pixels do not prove visibility, focus, or interactivity. Both MCP eras require inspection of every mutation result and fresh structural observation after possible dialogs/windows; provider focus and covering-client refusals give the same recovery direction. No wire operation, grant, feature, authority, or revision changes. |
+
 ## Development milestones included in v0.2.0
 
 | Protocol crate | Companion | Provider/profile | Test environment | Status |

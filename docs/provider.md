@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus experimental obscured-capture, Tier 0.5 input, and
-target-scoped text-transfer profiles. `agent-seat-x11` 0.2.0 owns lifecycle,
+target-scoped text-transfer profiles. `agent-seat-x11` 0.2.1 owns lifecycle,
 policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
@@ -323,6 +323,12 @@ preferred path for standard focused commands such as Page Down or Control+L
 because it avoids fragile pointer coordinates. It cannot force focus, accept a
 raw keycode, hold a key, or execute a sequence.
 
+A focus or visible-ownership refusal directs the caller to inspect that result
+and take a fresh desktop snapshot. Keyboard recovery starts with the active
+client; pointer recovery starts with the covering client. This remains useful
+when policy redacts titles because active state and opaque client identity are
+part of structural observation.
+
 When `text_transfer` is granted, the provider advertises the distinct
 `text_transfer` feature and accepts `text.insert` for a freshly observed target
 that already owns focus. One request may contain at most 32 KiB and 16,384
@@ -366,6 +372,12 @@ cannot be reconstructed and are outside the promise. `capture.region` applies
 the same checks and source boundary to one client-relative rectangle capped at
 1,024 pixels per side and 262,144 pixels total. See the
 [capture profile](protocol/profiles/x11-obscured-capture-v2.md).
+
+Because these operations intentionally read target-owned Composite storage,
+their pixels do not prove that the target is topmost, focused, or currently
+interactive. The MCP projection attaches that warning to every successful
+capture; callers must use fresh structural observation to detect an active or
+new dialog before further input.
 
 Events are monotonic diffs between bounded samples, not pushed window-manager
 transactions. An empty subscription filter selects every event class; a

@@ -2509,7 +2509,12 @@ fn pointer_hit_test_refuses_covering_and_over_bound_window_state() {
             y: 30,
         }),
     ) {
-        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
+        Outcome::Error(error)
+            if error.code == ErrorCode::InvalidArgument
+                && error.message.as_ref().is_some_and(|message| {
+                    message.as_str().contains("fresh desktop snapshot")
+                        && message.as_str().contains("covering client")
+                }) => {}
         other => panic!("covered pointer outcome: {other:?}"),
     }
 
@@ -2914,7 +2919,12 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
             text: BoundedText::new("aA\n").expect("keyboard text"),
         }),
     ) {
-        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
+        Outcome::Error(error)
+            if error.code == ErrorCode::InvalidArgument
+                && error.message.as_ref().is_some_and(|message| {
+                    message.as_str().contains("fresh desktop snapshot")
+                        && message.as_str().contains("active client")
+                }) => {}
         other => panic!("unfocused keyboard outcome: {other:?}"),
     }
     assert_no_input_events(&client.connection);
