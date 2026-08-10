@@ -1,3 +1,6 @@
 /target/
 *.swp
 *~
+
+# Atlas Scout local data
+.atlas/
