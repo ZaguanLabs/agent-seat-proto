@@ -358,6 +358,16 @@ selection-loss, timeout, and cleanup fixtures were written for this repository
 from public X11 behavior. No Nobox or third-party automation implementation,
 schema, test, fixture, comment, or prose was consulted or adapted.
 
+The `agent-seat-x11` 0.1.31 post-delivery selection window is original work
+from independently observed Brave/Suno behavior and the public Chromium X11
+clipboard implementation. Chromium's source documents that it observes
+selection-owner changes and prefetches available types and plain text:
+<https://chromium.googlesource.com/chromium/src/+/refs/heads/main/ui/ozone/platform/x11/x11_clipboard_ozone.cc>.
+That upstream file is BSD-licensed and was used only to identify public process
+behavior; no Chromium code, fixture, comment, or prose was copied or adapted.
+The implementation adds no dependency or authority and retains the existing
+ICCCM, target, seat, identity, time, request, and event bounds.
+
 The broker standard-stream descriptor layout is original integration work
 against the public systemd `StandardInput=file:`, `StandardOutput=socket`,
 socket-activation, and `OpenFile=` contracts. Local transient user-manager

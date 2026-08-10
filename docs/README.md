@@ -32,7 +32,9 @@ Technical material is grouped by purpose:
   participation contracts, including dual-era MCP compatibility and the
   [revision 8 input-diagnostics record](verification/revision8-input-diagnostics-verification.md).
   Revision 9 exact-text evidence is in the
-  [text-transfer record](verification/revision9-text-transfer-verification.md).
+  [text-transfer record](verification/revision9-text-transfer-verification.md),
+  with the real-browser follow-up in the
+  [Brave/Suno record](verification/x11-text-transfer-browser-verification.md).
 
 Documents describe only their stated assurance level. Experimental material is
 not a promise that the corresponding capability is safe or available.

@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus experimental obscured-capture, Tier 0.5 input, and
-target-scoped text-transfer profiles. `agent-seat-x11` 0.1.30 owns lifecycle, policy, local
+target-scoped text-transfer profiles. `agent-seat-x11` 0.1.31 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -329,6 +329,10 @@ Unicode scalars. The provider temporarily replaces `CLIPBOARD`, sends one
 balanced Control+V command, and serves only finite UTF-8 selection targets to a
 requestor proven by X-Resource 1.2 to belong to the scoped X11 client. It never
 reads or restores the old selection. A clipboard manager may retain the text.
+After the first complete response, the provider remains the owner for a
+bounded 250-millisecond quiet period and serves follow-up verified requests.
+This allows consumers that prefetch on clipboard-owner changes to process the
+queued paste before cleanup.
 
 The result distinguishes complete selection delivery, an offer that was never
 requested, and interruption. Even complete delivery does not prove the

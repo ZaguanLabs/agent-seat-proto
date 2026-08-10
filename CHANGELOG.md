@@ -6,6 +6,14 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `agent-seat-x11` 0.1.31 keeps its request-local selection owner alive for a
+  bounded 250 ms quiet period after the first complete text response. This
+  lets X11 consumers finish owner-change prefetch and process the already
+  queued paste before ownership is cleared, while retaining the existing
+  two-second, request-count, event-count, focus, target, seat, and X-Resource
+  bounds. A real Brave/Suno regression now inserts exact accented multiline
+  UTF-8 where 0.1.30 reported delivery but left the editor empty.
+
 - `agent-seat-x11` 0.1.29 now identifies the first unavailable direct-XKB
   scalar by one-based character position and Unicode code point before sending
   any prefix. A Norwegian-layout regression covers a 301-scalar long write

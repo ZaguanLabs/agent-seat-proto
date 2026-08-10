@@ -9,6 +9,7 @@
 - [Revision 8 interaction-efficiency verification](revision8-efficiency-verification.md)
 - [Revision 8 input-diagnostics verification](revision8-input-diagnostics-verification.md)
 - [Revision 9 text-transfer verification](revision9-text-transfer-verification.md)
+- [X11 text-transfer Brave/Suno verification](x11-text-transfer-browser-verification.md)
 - [MCP 2026-07-28 compatibility verification](mcp-2026-07-28-verification.md)
 - [T5 participant and full-system runner contract](t5-participation-contract.md)
 

@@ -65,9 +65,11 @@ The X11 implementation accepts only a requestor with the same X-Resource 1.2
 client identity as the scoped target. This admits toolkit-owned child/helper
 windows on the target's X connection but refuses a helper using a different
 connection; incomplete identity evidence stops the transfer. It handles only
-`TARGETS` and three finite UTF-8 text atoms, writes one complete property,
-sends `SelectionNotify`, and waits two seconds. A later selection owner is
-never cleared during cleanup.
+`TARGETS` and three finite UTF-8 text atoms, writes complete properties, and
+sends `SelectionNotify`. After the first text response, it remains available
+for a bounded 250-millisecond quiet period so an owner-change prefetch does not
+race cleanup; the existing two-second maximum still applies. A later selection
+owner is never cleared during cleanup.
 
 Isolated hostile evidence covers a displaced prior owner, an out-of-scope
 selection requestor, a normal `TARGETS` negotiation, exact accented multiline

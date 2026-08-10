@@ -23,6 +23,7 @@ use super::{Failure, Observer};
 use crate::seat::{SeatGate, SeatPermit};
 
 const TRANSFER_WAIT: Duration = Duration::from_secs(2);
+const TRANSFER_SETTLE_WAIT: Duration = Duration::from_millis(250);
 const EVIDENCE_INTERVAL: Duration = Duration::from_millis(50);
 const MAX_TRANSFER_EVENTS: usize = 256;
 const MAX_SELECTION_REQUESTS: usize = 32;
@@ -142,6 +143,10 @@ impl Observer {
             .ok_or_else(|| Failure::internal("text-transfer deadline overflowed"))?;
         let mut events_seen = 0_usize;
         let mut selection_requests = 0_usize;
+        // Chromium and other consumers may prefetch selection data when the
+        // owner changes. Keep serving briefly so that clearing ownership does
+        // not invalidate that data before the queued paste is processed.
+        let mut last_delivery = None;
         loop {
             while let Some(event) = self
                 .connection
@@ -185,25 +190,13 @@ impl Observer {
                             seat,
                             seat_permit,
                         )? {
-                            return Ok(TextTransferReply {
-                                target: target_request,
-                                requested_bytes,
-                                delivered_bytes: requested_bytes,
-                                terminal: TextTransferTerminal::Delivered,
-                            });
+                            last_delivery = Some(Instant::now());
                         }
                     }
                     _ => {}
                 }
             }
 
-            if Instant::now() >= deadline {
-                return Ok(transfer_reply(
-                    target_request,
-                    requested_bytes,
-                    TextTransferTerminal::Offered,
-                ));
-            }
             if !self.transfer_evidence_is_current(owner, target_request, seat, seat_permit) {
                 return Ok(transfer_reply(
                     target_request,
@@ -211,8 +204,31 @@ impl Observer {
                     TextTransferTerminal::Interrupted,
                 ));
             }
-            let remaining = deadline.saturating_duration_since(Instant::now());
+            let now = Instant::now();
+            if last_delivery
+                .is_some_and(|delivery| now.duration_since(delivery) >= TRANSFER_SETTLE_WAIT)
+                || (last_delivery.is_some() && now >= deadline)
+            {
+                return Ok(TextTransferReply {
+                    target: target_request,
+                    requested_bytes,
+                    delivered_bytes: requested_bytes,
+                    terminal: TextTransferTerminal::Delivered,
+                });
+            }
+            if now >= deadline {
+                return Ok(transfer_reply(
+                    target_request,
+                    requested_bytes,
+                    TextTransferTerminal::Offered,
+                ));
+            }
+            let remaining = deadline.saturating_duration_since(now);
+            let settle_remaining = last_delivery
+                .map(|delivery| TRANSFER_SETTLE_WAIT.saturating_sub(now.duration_since(delivery)))
+                .unwrap_or(EVIDENCE_INTERVAL);
             let wait = remaining.min(EVIDENCE_INTERVAL);
+            let wait = wait.min(settle_remaining);
             let timeout = Timespec {
                 tv_sec: i64::try_from(wait.as_secs()).unwrap_or(i64::MAX),
                 tv_nsec: i64::from(wait.subsec_nanos()),

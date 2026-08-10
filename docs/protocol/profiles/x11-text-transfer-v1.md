@@ -51,11 +51,13 @@ are admitted; a helper on another X connection is deliberately unsupported.
 
 A supported text request receives one complete property replacement followed
 by `SelectionNotify` and X synchronization. The provider performs no partial
-or incremental transfer. It handles at most 32 selection requests and 256 X11
-events for one transfer and waits no longer than two seconds. Bound excess,
-selection, seat, target, or focus loss stops the request. Cleanup clears
-`CLIPBOARD` only while the request-local owner still owns it, then destroys
-that owner window.
+or incremental transfer. After the first complete text response, the reference
+provider serves follow-up verified requests until 250 milliseconds pass
+without another text delivery. It handles at most 32 selection requests and
+256 X11 events for one transfer and waits no longer than two seconds. Bound
+excess, selection, seat, target, or focus loss stops the request. Cleanup
+clears `CLIPBOARD` only while the request-local owner still owns it, then
+destroys that owner window.
 
 ## Qualified result
 
@@ -83,6 +85,11 @@ A conforming implementation MUST provide public, reproducible evidence for:
 6. request byte/scalar/control bounds and all-or-nothing result validation;
 7. separate grant enforcement and disabled-seat/focus/freshness refusal; and
 8. absence of any wire or companion operation that reads a selection.
+
+The reference suite also requires the same requestor to read the complete text
+twice with a delay between requests. This guards the bounded post-delivery
+service window used by consumers that prefetch when selection ownership
+changes.
 
 ## Prohibited claims
 

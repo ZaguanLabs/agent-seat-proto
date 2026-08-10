@@ -1075,17 +1075,18 @@ impl TestClient {
         })
     }
 
-    fn accept_one_utf8_paste_after(
+    fn accept_two_utf8_pastes_after(
         self,
         release: mpsc::Receiver<()>,
-    ) -> thread::JoinHandle<Vec<u8>> {
-        self.accept_utf8_paste_after(Some(release))
+    ) -> thread::JoinHandle<Vec<Vec<u8>>> {
+        self.accept_utf8_pastes_after(Some(release), 2)
     }
 
-    fn accept_utf8_paste_after(
+    fn accept_utf8_pastes_after(
         self,
         release: Option<mpsc::Receiver<()>>,
-    ) -> thread::JoinHandle<Vec<u8>> {
+        expected_transfers: usize,
+    ) -> thread::JoinHandle<Vec<Vec<u8>>> {
         thread::spawn(move || {
             let clipboard = intern(&self.connection, b"CLIPBOARD");
             let targets = intern(&self.connection, b"TARGETS");
@@ -1093,6 +1094,7 @@ impl TestClient {
             let deadline = Instant::now() + Duration::from_secs(3);
             let mut key_presses = 0_u8;
             let mut release = release;
+            let mut transfers = Vec::with_capacity(expected_transfers);
             loop {
                 let event = self
                     .connection
@@ -1178,45 +1180,101 @@ impl TestClient {
                         assert_eq!(reply.format, 8);
                         assert_eq!(reply.type_, self.utf8);
                         assert_eq!(reply.bytes_after, 0);
-                        return reply.value;
+                        transfers.push(reply.value);
+                        if transfers.len() == expected_transfers {
+                            thread::sleep(Duration::from_millis(300));
+                            return transfers;
+                        }
+                        thread::sleep(Duration::from_millis(100));
+                        assert_ne!(
+                            self.connection
+                                .get_selection_owner(clipboard)
+                                .expect("follow-up clipboard owner request")
+                                .reply()
+                                .expect("follow-up clipboard owner reply")
+                                .owner,
+                            NONE,
+                            "text-transfer owner disappeared after the first delivery"
+                        );
+                        self.connection
+                            .convert_selection(
+                                self.window,
+                                clipboard,
+                                self.utf8,
+                                property,
+                                CURRENT_TIME,
+                            )
+                            .expect("follow-up UTF-8 selection request")
+                            .check()
+                            .expect("follow-up UTF-8 selection request accepted");
+                        self.connection
+                            .flush()
+                            .expect("follow-up selection request flush");
                     }
                     _ => {}
                 }
                 assert!(
                     Instant::now() < deadline,
-                    "target did not receive one UTF-8 paste transfer"
+                    "target did not receive the expected UTF-8 paste transfers"
                 );
             }
         })
     }
 
-    fn replace_clipboard_after_paste(self) -> thread::JoinHandle<Self> {
+    fn replace_clipboard_after_first_utf8_delivery(self) -> thread::JoinHandle<Self> {
         thread::spawn(move || {
             let clipboard = intern(&self.connection, b"CLIPBOARD");
+            let property = intern(&self.connection, b"_AGENT_SEAT_TEST_REPLACEMENT");
             let deadline = Instant::now() + Duration::from_secs(3);
             let mut key_presses = 0_u8;
             loop {
-                if let Some(x11rb::protocol::Event::KeyPress(_)) = self
+                if let Some(event) = self
                     .connection
                     .poll_for_event()
                     .expect("replacement owner event")
                 {
-                    key_presses = key_presses.saturating_add(1);
-                    if key_presses == 2 {
-                        self.connection
-                            .set_selection_owner(self.window, clipboard, CURRENT_TIME)
-                            .expect("replace clipboard owner request")
-                            .check()
-                            .expect("replace clipboard owner");
-                        self.connection
-                            .sync()
-                            .expect("replace clipboard owner sync");
-                        return self;
+                    match event {
+                        x11rb::protocol::Event::KeyPress(_) => {
+                            key_presses = key_presses.saturating_add(1);
+                            if key_presses == 2 {
+                                self.connection
+                                    .convert_selection(
+                                        self.window,
+                                        clipboard,
+                                        self.utf8,
+                                        property,
+                                        CURRENT_TIME,
+                                    )
+                                    .expect("replacement UTF-8 selection request")
+                                    .check()
+                                    .expect("replacement UTF-8 selection request accepted");
+                                self.connection
+                                    .flush()
+                                    .expect("replacement UTF-8 selection request flush");
+                            }
+                        }
+                        x11rb::protocol::Event::SelectionNotify(event)
+                            if event.requestor == self.window
+                                && event.selection == clipboard
+                                && event.target == self.utf8
+                                && event.property != NONE =>
+                        {
+                            self.connection
+                                .set_selection_owner(self.window, clipboard, CURRENT_TIME)
+                                .expect("replace clipboard owner request")
+                                .check()
+                                .expect("replace clipboard owner");
+                            self.connection
+                                .sync()
+                                .expect("replace clipboard owner sync");
+                            return self;
+                        }
+                        _ => {}
                     }
                 }
                 assert!(
                     Instant::now() < deadline,
-                    "replacement owner did not receive the paste shortcut"
+                    "replacement owner did not receive text before takeover"
                 );
                 thread::sleep(Duration::from_millis(5));
             }
@@ -2599,7 +2657,7 @@ fn text_transfer_delivers_exact_multiline_utf8_to_the_focused_x11_client() {
 
     let text = "Canción íntima\nMi vida es mía, señor.\nMañana será mejor.\n";
     let (release_tx, release_rx) = mpsc::channel();
-    let receiver = client.accept_one_utf8_paste_after(release_rx);
+    let receiver = client.accept_two_utf8_pastes_after(release_rx);
     let hostile = request_clipboard_from_other_client(xvfb.display.clone(), release_tx);
     let outcome = wire_call(
         &mut stream,
@@ -2622,7 +2680,7 @@ fn text_transfer_delivers_exact_multiline_utf8_to_the_focused_x11_client() {
     );
     assert_eq!(
         receiver.join().expect("paste target responder"),
-        text.as_bytes()
+        vec![text.as_bytes().to_vec(), text.as_bytes().to_vec()]
     );
     hostile.join().expect("hostile requestor fixture");
 
@@ -2685,7 +2743,7 @@ fn text_transfer_reports_selection_loss_and_preserves_the_replacement_owner() {
         .connection
         .sync()
         .expect("interrupted text-transfer focus sync");
-    let replacement = client.replace_clipboard_after_paste();
+    let replacement = client.replace_clipboard_after_first_utf8_delivery();
     let text = "Mañana será mejor.";
     let outcome = wire_call(
         &mut stream,

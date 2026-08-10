@@ -141,7 +141,7 @@ unique, canonical list of at most 32 atoms.
     "protocol": "agent-seat",
     "revision": 9,
     "session": 1,
-    "provider": {"name": "agent-seat-x11", "version": "0.1.30"},
+    "provider": {"name": "agent-seat-x11", "version": "0.1.31"},
     "backend": "x11_ewmh",
     "assurance": "tier0",
     "features": ["ewmh_observation"],
@@ -384,7 +384,10 @@ to the same X11 client as the scoped target. An out-of-scope requestor receives
 `SelectionNotify` with no property and no text. Incomplete identity evidence
 fails closed. A successful text response writes the complete byte string to
 one requestor property, sends `SelectionNotify`, and synchronizes; partial
-delivery is never reported.
+delivery is never reported. After the first complete text response, the
+reference provider continues serving verified requests until 250 milliseconds
+pass without another text delivery. This bounded quiet period lets consumers
+finish selection-owner prefetch before cleanup invalidates the offer.
 
 The owner handles at most 32 selection requests and 256 X11 events and waits at
 most two seconds. Bound excess or seat, target, focus, provider, or selection
