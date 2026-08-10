@@ -81,6 +81,11 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
 
     assert_eq!(responses.len(), 3);
     assert_eq!(responses[0]["result"]["protocolVersion"], "2025-11-25");
+    assert!(
+        responses[0]["result"]["instructions"]
+            .as_str()
+            .is_some_and(|instructions| instructions.contains("never mutate XKB"))
+    );
     assert!(responses[0]["result"]["resultType"].is_null());
     assert_eq!(
         responses[0]["result"]["capabilities"]["tools"]["listChanged"],
@@ -108,6 +113,17 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
     assert!(tool_names.contains(&"pointer_slots_list"));
     assert!(tool_names.contains(&"capture_obscured"));
     assert!(tool_names.contains(&"capture_region"));
+    let keyboard_write = responses[1]["result"]["tools"]
+        .as_array()
+        .expect("tool array")
+        .iter()
+        .find(|tool| tool["name"] == "keyboard_write")
+        .expect("keyboard_write tool");
+    assert!(
+        keyboard_write["description"]
+            .as_str()
+            .is_some_and(|description| description.contains("first unavailable scalar"))
+    );
     assert!(responses[1]["result"]["resultType"].is_null());
     assert!(responses[1]["result"]["ttlMs"].is_null());
     assert_eq!(responses[2]["result"]["isError"], true);
@@ -149,6 +165,11 @@ fn modern_discovery_and_tool_listing_are_stateless_cacheable_and_desktop_free() 
     );
     assert_eq!(discovery["ttlMs"], 3_600_000);
     assert_eq!(discovery["cacheScope"], "public");
+    assert!(
+        discovery["instructions"]
+            .as_str()
+            .is_some_and(|instructions| instructions.contains("never mutate XKB"))
+    );
     assert_eq!(
         discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],
         "agent-seat-mcp"

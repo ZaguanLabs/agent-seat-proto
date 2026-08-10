@@ -95,6 +95,9 @@ impl Observer {
         })?;
         let mut completed = 0_u16;
         for character in text.chars() {
+            let position = completed
+                .checked_add(1)
+                .ok_or_else(|| Failure::internal("keyboard action count overflowed"))?;
             let result = self.under_server_grab(|observer| {
                 observer.refresh()?;
                 let target = observer.target(target_request)?;
@@ -102,7 +105,7 @@ impl Observer {
                 if !seat.accepts(seat_permit) {
                     return Ok(false);
                 }
-                let stroke = resolve_character(&observer.connection, character)?;
+                let stroke = resolve_character(&observer.connection, character, position)?;
                 observer.type_key(&stroke)?;
                 Ok(true)
             });

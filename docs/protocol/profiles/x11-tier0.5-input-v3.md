@@ -36,6 +36,11 @@ refuses the entire request without typing its prefix. The provider MUST NOT
 substitute, normalize, transliterate, invoke a shell, use a clipboard, or
 change the keyboard layout.
 
+The reference provider's bounded English diagnostic identifies the first
+unavailable scalar by one-based character position and Unicode code point.
+That diagnostic is assistance for a person or agent, not protocol control
+data, and does not change revision 8 semantics.
+
 After preflight, each scalar remains an independently reportable action under
 the version-2 action-local server-grab contract. The provider refreshes the
 target and focus, rechecks the volatile seat, rereads live XKB evidence,

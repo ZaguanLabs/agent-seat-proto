@@ -78,6 +78,13 @@ text, Norwegian URL punctuation plus an installed-layout matrix, focus and
 covering-window refusals, the volatile-seat lifecycle, and the
 absence of a human-activity claim.
 
+Revision 8 keyboard input remains direct-XKB and therefore cannot promise
+layout-independent Unicode. The separately granted
+[Unicode text-transfer candidate](text-transfer.md) records the smaller
+write-only authority that could address long multilingual text without
+changing the user's keyboard layout. It remains unimplemented pending its
+wire, operator-warning, requestor-verification, and hostile-test gates.
+
 ## Goals
 
 - Define one strict, bounded Agent Seat wire contract.

@@ -337,7 +337,7 @@ impl Observer {
             return Err(Failure {
                 code: ErrorCode::NoSuchClient,
                 retry: Retry::Reobserve,
-                message: "the target is missing or outside the configured scope",
+                message: "the target is missing or outside the configured scope".into(),
                 current_generation: None,
                 current_sequence: Some(self.sequence()),
             });
@@ -346,7 +346,7 @@ impl Observer {
             return Err(Failure {
                 code: ErrorCode::Stale,
                 retry: Retry::Reobserve,
-                message: "the target generation changed before send",
+                message: "the target generation changed before send".into(),
                 current_generation: Some(record.descriptor.generation),
                 current_sequence: Some(self.sequence()),
             });
@@ -372,7 +372,7 @@ impl Observer {
             Err(Failure {
                 code: ErrorCode::InvalidArgument,
                 retry: Retry::Never,
-                message: "the workspace is outside the advertised range",
+                message: "the workspace is outside the advertised range".into(),
                 current_generation: None,
                 current_sequence: Some(self.sequence()),
             })
@@ -487,7 +487,7 @@ fn stale_sequence(sequence: agent_seat_proto::Sequence) -> Failure {
     Failure {
         code: ErrorCode::Stale,
         retry: Retry::Reobserve,
-        message: "the desktop sequence changed before send",
+        message: "the desktop sequence changed before send".into(),
         current_generation: None,
         current_sequence: Some(sequence),
     }
@@ -497,7 +497,9 @@ const fn invalid_geometry() -> Failure {
     Failure {
         code: ErrorCode::InvalidArgument,
         retry: Retry::Never,
-        message: "frame geometry cannot contain the target's decoration extents",
+        message: std::borrow::Cow::Borrowed(
+            "frame geometry cannot contain the target's decoration extents",
+        ),
         current_generation: None,
         current_sequence: None,
     }

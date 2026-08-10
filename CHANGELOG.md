@@ -6,6 +6,15 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `agent-seat-x11` 0.1.29 now identifies the first unavailable direct-XKB
+  scalar by one-based character position and Unicode code point before sending
+  any prefix. A Norwegian-layout regression covers a 301-scalar long write
+  ending in `í`. `agent-seat-mcp` 0.1.9 publishes compact guardrails in both
+  MCP eras: agents must not mutate the user's XKB layout or bypass a refusal
+  through a shell/browser clipboard. The separately granted Unicode
+  text-transfer path is documented as an unimplemented approval-gated
+  candidate; wire revision 8 and all capabilities remain unchanged.
+
 - `agent-seat-x11` 0.1.25 resolves text from the live XKB group, key types,
   levels, and bounded momentary modifiers instead of treating the first two
   columns of X11's compatibility map as base/Shift. This fixes URL punctuation

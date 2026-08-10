@@ -521,3 +521,17 @@ Pointer slots are bounded in-memory MCP bookkeeping that forwards an ordinary
 typed pointer call; they use only the Rust standard library and add no
 dependency, persistence, X11 access, privilege, raw device access, or provider
 authority.
+
+## Revision 8 input diagnostics and text-transfer candidate
+
+The unavailable-scalar diagnostic, MCP guardrails, Norwegian long-text
+regression, and candidate Unicode text-transfer design are original work from
+the maintainer's observed revision-8 behavior. The transcript was used only as
+public process evidence of calls, typed outcomes, and live XKB mutation; no
+text or implementation artifact from the separate project was copied.
+
+The candidate selection mechanism uses only the ICCCM selection-ownership
+contract already cited above. It adds no implementation, wire operation,
+capability, dependency, clipboard access, or provider authority. No Nobox or
+other product source, schema, test, fixture, comment, or prose was consulted or
+adapted.

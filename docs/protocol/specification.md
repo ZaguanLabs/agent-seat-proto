@@ -114,7 +114,7 @@ The first client message is `hello`. A provider answers with exactly one
     "revision": 8,
     "peer": {
       "name": "agent-seat-mcp",
-      "version": "0.1.8",
+      "version": "0.1.9",
       "purpose": "translate MCP desktop tools"
     },
     "requested": ["observe_structure", "observe_titles"]
@@ -133,7 +133,7 @@ unique, canonical list of at most 32 atoms.
     "protocol": "agent-seat",
     "revision": 8,
     "session": 1,
-    "provider": {"name": "agent-seat-x11", "version": "0.1.28"},
+    "provider": {"name": "agent-seat-x11", "version": "0.1.29"},
     "backend": "x11_ewmh",
     "assurance": "tier0",
     "features": ["ewmh_observation"],
@@ -316,6 +316,9 @@ action, so one unavailable scalar refuses the request without typing its
 prefix. After that preflight, focus, target, layout evidence, or the volatile
 seat may change between actions and produce an exact partial `interrupted`
 result. The call neither owns a clipboard nor promises arbitrary Unicode.
+Implementations may identify the first unavailable scalar by character
+position and Unicode code point in the bounded English diagnostic; peers MUST
+continue to branch only on typed error fields.
 
 `keyboard.key` has the same fresh-target, focus, XKB-state, server-grab, seat,
 and qualified-result requirements. One call is exactly one complete main-key

@@ -1,6 +1,6 @@
 # Generic MCP companion
 
-`agent-seat-mcp` 0.1.8 implements both MCP `2026-07-28` and `2025-11-25` over
+`agent-seat-mcp` 0.1.9 implements both MCP `2026-07-28` and `2025-11-25` over
 newline-delimited JSON-RPC stdio. A modern host should use `server/discover`;
 an existing host can continue using the legacy `initialize` lifecycle without
 registration changes or changes to any pre-existing tool schema.
@@ -127,6 +127,11 @@ first action. It still types one complete character action at a time, requires
 the target to retain focus, can be interrupted by seat or target changes, and
 reports exact completed/requested counts. It is not clipboard paste and cannot
 produce a character absent from the active layout.
+The refusal identifies the first unavailable one-based character position and
+Unicode code point. Do not change the user's XKB layout or mapping, and do not
+bypass the provider through a shell or browser clipboard workaround. The
+separately granted [Unicode text-transfer design](design/text-transfer.md)
+remains an unimplemented candidate.
 
 Use `capture_region` instead of `capture_obscured` when a small
 client-relative area is sufficient. Each side is at most 1,024 pixels and the

@@ -462,7 +462,7 @@ fn observation_error(error: ObservationFailure) -> Outcome {
         code: error.code,
         retry: error.retry,
         field: None,
-        message: Some(diagnostic(error.message)),
+        message: Some(diagnostic(error.message.as_ref())),
         current_generation: error.current_generation,
         current_sequence: error.current_sequence,
     })
@@ -507,7 +507,7 @@ fn text<const N: usize>(value: &str) -> Result<BoundedText<N>, String> {
 }
 
 fn diagnostic(value: &str) -> Diagnostic {
-    Diagnostic::new(value).expect("static provider diagnostics fit their public bound")
+    Diagnostic::new(value).expect("provider diagnostics fit their public bound")
 }
 
 #[cfg(test)]

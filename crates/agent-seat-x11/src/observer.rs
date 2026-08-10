@@ -5,6 +5,7 @@ mod input;
 mod keyboard;
 mod manager;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::num::NonZeroU64;
 use std::thread;
@@ -1081,7 +1082,7 @@ impl Atoms {
 pub(crate) struct Failure {
     pub(crate) code: ErrorCode,
     pub(crate) retry: Retry,
-    pub(crate) message: &'static str,
+    pub(crate) message: Cow<'static, str>,
     pub(crate) current_generation: Option<Generation>,
     pub(crate) current_sequence: Option<Sequence>,
 }
@@ -1091,7 +1092,7 @@ impl Failure {
         Self {
             code: ErrorCode::Unavailable,
             retry: Retry::Reconnect,
-            message,
+            message: Cow::Borrowed(message),
             current_generation: None,
             current_sequence: None,
         }
@@ -1101,7 +1102,7 @@ impl Failure {
         Self {
             code: ErrorCode::Unsupported,
             retry: Retry::Never,
-            message,
+            message: Cow::Borrowed(message),
             current_generation: None,
             current_sequence: None,
         }
@@ -1111,7 +1112,17 @@ impl Failure {
         Self {
             code: ErrorCode::InvalidArgument,
             retry: Retry::Never,
-            message,
+            message: Cow::Borrowed(message),
+            current_generation: None,
+            current_sequence: None,
+        }
+    }
+
+    pub(super) fn invalid_owned(message: String) -> Self {
+        Self {
+            code: ErrorCode::InvalidArgument,
+            retry: Retry::Never,
+            message: Cow::Owned(message),
             current_generation: None,
             current_sequence: None,
         }
@@ -1121,7 +1132,7 @@ impl Failure {
         Self {
             code: ErrorCode::Malformed,
             retry: Retry::Reobserve,
-            message,
+            message: Cow::Borrowed(message),
             current_generation: None,
             current_sequence: None,
         }
@@ -1131,7 +1142,7 @@ impl Failure {
         Self {
             code: ErrorCode::TooLarge,
             retry: Retry::Never,
-            message,
+            message: Cow::Borrowed(message),
             current_generation: None,
             current_sequence: None,
         }
@@ -1141,7 +1152,7 @@ impl Failure {
         Self {
             code: ErrorCode::Internal,
             retry: Retry::Never,
-            message,
+            message: Cow::Borrowed(message),
             current_generation: None,
             current_sequence: None,
         }
@@ -1151,7 +1162,7 @@ impl Failure {
         Self {
             code: ErrorCode::ResyncRequired,
             retry: Retry::Reobserve,
-            message: "event cursor is outside the retained observation history",
+            message: Cow::Borrowed("event cursor is outside the retained observation history"),
             current_generation: None,
             current_sequence: Some(Sequence::new(sequence)),
         }

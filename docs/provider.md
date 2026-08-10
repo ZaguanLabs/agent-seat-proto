@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
 Status: T3 Tier 0 core plus experimental obscured-capture and Tier 0.5 input profiles.
-`agent-seat-x11` 0.1.28 owns lifecycle, policy, local
+`agent-seat-x11` 0.1.29 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -308,6 +308,9 @@ text. It preflights the complete string against the live layout before typing,
 then preserves the same per-character focus, target, seat, XKB, server-grab,
 and exact-progress rules. It is intentionally not clipboard injection: text
 that the active layout cannot produce is refused without sending its prefix.
+The diagnostic identifies the first unavailable one-based character position
+and Unicode code point. It also tells agents not to mutate the user's XKB
+layout or mapping; the provider never performs that mutation itself.
 
 `keyboard.key` resolves one finite named key and optional canonical
 Control/Alt/Shift/Super modifiers from the same live XKB evidence. It is the

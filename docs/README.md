@@ -20,13 +20,15 @@ overview. These guides cover normal configuration and operation:
 Technical material is grouped by purpose:
 
 - [Design](design/README.md) — architecture, roadmap, UI design, and optional
-  profile decisions.
+  profile decisions, including the unimplemented
+  [Unicode text-transfer candidate](design/text-transfer.md).
 - [Protocol](protocol/README.md) — wire contract, information model, registries,
   profiles, conformance formats, and pre-RFC work.
 - [Security](security/README.md) — trust boundaries, threat models, and gated
   input/lock deployment studies.
 - [Verification](verification/README.md) — milestone evidence and full-system
-  participation contracts, including dual-era MCP compatibility.
+  participation contracts, including dual-era MCP compatibility and the
+  [revision 8 input-diagnostics record](verification/revision8-input-diagnostics-verification.md).
 
 Documents describe only their stated assurance level. Experimental material is
 not a promise that the corresponding capability is safe or available.

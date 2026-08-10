@@ -39,6 +39,8 @@ const XK_SUPER_R: u32 = 0xffec;
 const XK_ISO_LEVEL3_SHIFT: u32 = 0xfe03;
 const XK_ISO_LEVEL5_SHIFT: u32 = 0xfe11;
 const MAX_MOMENTARY_MODIFIERS: usize = 8;
+const SYMBOL_UNAVAILABLE: &str =
+    "keyboard symbol is unavailable in the current XKB layout and group";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct KeyStroke {
@@ -218,11 +220,7 @@ impl KeyboardMap {
                     .min_by_key(|stroke| stroke.modifiers.len())
             })
             .min_by_key(|stroke| stroke.modifiers.len())
-            .ok_or_else(|| {
-                Failure::invalid(
-                    "keyboard symbol is unavailable in the current XKB layout and group",
-                )
-            })
+            .ok_or_else(|| Failure::invalid(SYMBOL_UNAVAILABLE))
     }
 
     fn modifier_key(&self, modifier: KeyboardModifier) -> Result<ModifierKey, Failure> {
@@ -349,15 +347,33 @@ pub(super) fn resolve_text(
 ) -> Result<Vec<KeyStroke>, Failure> {
     let map = KeyboardMap::read(connection)?;
     text.chars()
-        .map(|character| map.resolve(keysym_for_character(character)))
+        .enumerate()
+        .map(|(index, character)| {
+            map.resolve(keysym_for_character(character))
+                .map_err(|error| character_failure(error, character, index + 1))
+        })
         .collect()
 }
 
 pub(super) fn resolve_character(
     connection: &RustConnection,
     character: char,
+    position: u16,
 ) -> Result<KeyStroke, Failure> {
-    KeyboardMap::read(connection)?.resolve(keysym_for_character(character))
+    KeyboardMap::read(connection)?
+        .resolve(keysym_for_character(character))
+        .map_err(|error| character_failure(error, character, usize::from(position)))
+}
+
+fn character_failure(error: Failure, character: char, position: usize) -> Failure {
+    if error.message == SYMBOL_UNAVAILABLE {
+        Failure::invalid_owned(format!(
+            "keyboard character {position} (U+{:04X}) is unavailable in the current XKB layout and group; do not change the user's XKB layout or mapping as a workaround",
+            u32::from(character)
+        ))
+    } else {
+        error
+    }
 }
 
 pub(super) fn resolve_key(

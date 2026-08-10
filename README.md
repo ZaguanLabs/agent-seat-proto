@@ -43,6 +43,13 @@ modifiers, and refuses before sending when a scalar cannot be produced exactly.
 It does not guess from compatibility-map columns, change the layout or group,
 run compose/IME sequences, or use clipboard paste.
 
+When direct resolution fails, the diagnostic names the first unavailable
+one-based character position and Unicode code point. Agents must not respond by
+changing the user's XKB layout or mapping or by routing text through an
+ungranted shell/browser clipboard path. Layout-independent Unicode transfer is
+an [explicitly separate candidate authority](docs/design/text-transfer.md), not
+part of revision 8.
+
 Revision 8 adds an explicit long-form text operation for up to 4,096
 preflighted scalar actions and 16 KiB, plus target-relative capture regions of
 at most 262,144 pixels. The MCP companion can also remember at most 32 named

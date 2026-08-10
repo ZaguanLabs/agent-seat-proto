@@ -2411,7 +2411,11 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
             text: BoundedText::new("\u{10ffff}").expect("unmapped keyboard text"),
         }),
     ) {
-        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument => {}
+        Outcome::Error(error)
+            if error.code == ErrorCode::InvalidArgument
+                && error.message.as_ref().is_some_and(|message| {
+                    message.as_str().contains("keyboard character 1 (U+10FFFF)")
+                }) => {}
         other => panic!("unmapped keyboard outcome: {other:?}"),
     }
     assert_no_input_events(&client.connection);
@@ -2507,6 +2511,32 @@ fn norwegian_xkb_layout_types_url_punctuation_exactly() {
         );
         thread::sleep(Duration::from_millis(10));
     }
+
+    let unavailable_text = format!("{}í", "a".repeat(300));
+    match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::KeyboardWrite(KeyboardWriteRequest {
+            target: target(&observed_target),
+            text: BoundedText::new(unavailable_text).expect("Norwegian unavailable long text"),
+        }),
+    ) {
+        Outcome::Error(error)
+            if error.code == ErrorCode::InvalidArgument
+                && error.message.as_ref().is_some_and(|message| {
+                    message.as_str().contains("keyboard character 301 (U+00ED)")
+                        && message
+                            .as_str()
+                            .contains("do not change the user's XKB layout")
+                }) => {}
+        other => panic!("Norwegian unavailable long-text outcome: {other:?}"),
+    }
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(
+        fs::read_to_string(&capture).expect("captured Norwegian URL after refusal"),
+        text,
+        "long-text preflight emitted a prefix before refusing the accented scalar"
+    );
 
     let _ = terminal.kill();
     let _ = terminal.wait();

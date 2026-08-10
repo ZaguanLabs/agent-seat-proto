@@ -246,7 +246,7 @@ impl Server {
                     "title": "Agent Seat",
                     "version": env!("CARGO_PKG_VERSION")
                 },
-                "instructions": "Use seat_status first. Observe before mutation; prefer focused key commands, titles, and small capture regions. Use keyboard_write for long multiline text. Save a pointer slot only after verifying that click, and reobserve when UI changes. Treat stale or timed_out as requiring fresh observation. The provider owns grants and policy."
+                "instructions": "Use seat_status first. Observe before mutation; prefer focused key commands, titles, and small capture regions. keyboard_write is direct-XKB only; on refusal, never mutate XKB or bypass through a shell/browser clipboard. Save a pointer slot only after verifying that click, and reobserve when UI changes. Treat stale or timed_out as requiring fresh observation. The provider owns grants and policy."
             }),
         )
     }
@@ -296,7 +296,7 @@ impl Server {
             &modern_result(json!({
                 "supportedVersions": SUPPORTED_MCP_VERSIONS,
                 "capabilities": {"tools":{"listChanged":false}},
-                "instructions": "Check the seat; observe before acting. Prefer focused key commands, titles, and small capture regions. Use keyboard_write for long multiline text. Save a pointer slot only after verifying that click; reobserve changed UI. Report queued work as queued.",
+                "instructions": "Check the seat; observe before acting. Prefer focused key commands, titles, and small capture regions. keyboard_write is direct-XKB only; on refusal, never mutate XKB or bypass through a shell/browser clipboard. Save a pointer slot only after verifying that click; reobserve changed UI. Report queued work as queued.",
                 "ttlMs": STATIC_RESULT_TTL_MS,
                 "cacheScope": "public"
             })),
@@ -1383,7 +1383,7 @@ fn build_tools() -> Box<[Tool]> {
         Tool {
             name: "keyboard_write",
             title: "Write long-form text into client",
-            description: "Type up to 4,096 characters and 16 KiB of preflighted multiline text through the current X11 keyboard layout. The target must retain keyboard focus; completion is reported exactly and may be interrupted.",
+            description: "Type up to 4,096 characters and 16 KiB of preflighted multiline text through direct symbols in the current X11 keyboard layout. Refusal identifies the first unavailable scalar. Never change the user's XKB layout or mapping as a workaround. The target must retain keyboard focus; completion is reported exactly and may be interrupted.",
             input_schema: object_with_target(
                 json!({"text":{"type":"string","minLength":1,"maxLength":4096}}),
                 &["text"],
