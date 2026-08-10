@@ -1,4 +1,4 @@
-//! Strict revision-8 messages and bounded Tier 0 profile values.
+//! Strict revision-9 messages and bounded Tier 0 profile values.
 
 use serde::{Deserialize, Serialize};
 
@@ -42,6 +42,10 @@ pub const MAX_INPUT_ACTIONS: usize = 256;
 pub const MAX_LONG_INPUT_TEXT_BYTES: usize = 16 * 1024;
 /// Maximum independently reportable actions in one long-form input request.
 pub const MAX_LONG_INPUT_ACTIONS: usize = 4096;
+/// Maximum UTF-8 bytes in one target-scoped text-transfer request.
+pub const MAX_TEXT_TRANSFER_BYTES: usize = 32 * 1024;
+/// Maximum Unicode scalars in one target-scoped text-transfer request.
+pub const MAX_TEXT_TRANSFER_SCALARS: usize = 16 * 1024;
 /// Maximum logical modifiers on one keyboard-key action.
 pub const MAX_KEYBOARD_MODIFIERS: usize = 4;
 /// Maximum width of one obscured-client capture.
@@ -79,6 +83,8 @@ pub type ApplicationId = BoundedText<MAX_APPLICATION_ID_BYTES>;
 pub type InputText = BoundedText<MAX_INPUT_TEXT_BYTES>;
 /// Long-form text to type through the live keyboard map.
 pub type LongInputText = BoundedText<MAX_LONG_INPUT_TEXT_BYTES>;
+/// UTF-8 content offered through one target-scoped text transfer.
+pub type TransferText = BoundedText<MAX_TEXT_TRANSFER_BYTES>;
 /// Base64-encoded PNG data for one bounded capture.
 pub type CaptureData = BoundedText<MAX_CAPTURE_DATA_BYTES>;
 /// A workspace name.
@@ -261,6 +267,8 @@ pub enum Capability {
     InputPointer,
     /// Type bounded text or send one bounded key action to a focused target.
     InputKeyboard,
+    /// Offer bounded UTF-8 text to one focused target without reading selections.
+    TextTransfer,
     /// Capture the pixels owned by one freshly scoped client.
     CaptureObscured,
 }
@@ -283,6 +291,8 @@ pub enum Feature {
     OutputCapture,
     /// Optional X11 input injection.
     InputInjection,
+    /// Optional target-scoped write-only text transfer.
+    TextTransfer,
     /// Optional human-activity observation.
     HumanActivity,
     /// Optional accessibility projection.
@@ -457,6 +467,9 @@ pub enum Call {
     /// Send one bounded key or shortcut to the currently focused target.
     #[serde(rename = "keyboard.key")]
     KeyboardKey(KeyboardKeyRequest),
+    /// Offer bounded UTF-8 text to the currently focused target.
+    #[serde(rename = "text.insert")]
+    TextInsert(TextInsertRequest),
     /// Capture one freshly scoped client, including obscured pixels.
     #[serde(rename = "capture.obscured")]
     CaptureObscured(TargetRequest),
@@ -483,6 +496,7 @@ impl Call {
             Self::KeyboardType(_) | Self::KeyboardWrite(_) | Self::KeyboardKey(_) => {
                 Capability::InputKeyboard
             }
+            Self::TextInsert(_) => Capability::TextTransfer,
             Self::CaptureObscured(_) | Self::CaptureRegion(_) => Capability::CaptureObscured,
         }
     }
@@ -506,6 +520,7 @@ impl Validate for Call {
             Self::KeyboardType(value) => value.validate(),
             Self::KeyboardWrite(value) => value.validate(),
             Self::KeyboardKey(value) => value.validate(),
+            Self::TextInsert(value) => value.validate(),
             Self::CaptureObscured(value) => value.validate(),
             Self::CaptureRegion(value) => value.validate(),
         }
@@ -837,6 +852,28 @@ pub struct KeyboardWriteRequest {
     pub text: LongInputText,
 }
 
+/// Bounded UTF-8 content for one write-only target-scoped transfer.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TextInsertRequest {
+    /// Fresh target that must own X11 input focus throughout the transfer.
+    #[serde(flatten)]
+    pub target: TargetRequest,
+    /// Nonempty UTF-8 text; newline and tab are the only accepted controls.
+    pub text: TransferText,
+}
+
+impl Validate for TextInsertRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()?;
+        validate_text_content(
+            self.text.as_str(),
+            MAX_TEXT_TRANSFER_SCALARS,
+            TextValidationErrors::TRANSFER,
+        )
+    }
+}
+
 impl Validate for KeyboardWriteRequest {
     fn validate(&self) -> Result<(), &'static str> {
         self.target.validate()?;
@@ -845,20 +882,48 @@ impl Validate for KeyboardWriteRequest {
 }
 
 fn validate_keyboard_text(text: &str, maximum_actions: usize) -> Result<(), &'static str> {
+    validate_text_content(text, maximum_actions, TextValidationErrors::KEYBOARD)
+}
+
+#[derive(Clone, Copy)]
+struct TextValidationErrors {
+    empty: &'static str,
+    control: &'static str,
+    bound: &'static str,
+}
+
+impl TextValidationErrors {
+    const KEYBOARD: Self = Self {
+        empty: "keyboard text is empty",
+        control: "keyboard text contains an unsupported control character",
+        bound: "keyboard text exceeds the action bound",
+    };
+    const TRANSFER: Self = Self {
+        empty: "transfer text is empty",
+        control: "transfer text contains an unsupported control character",
+        bound: "transfer text exceeds the scalar bound",
+    };
+}
+
+fn validate_text_content(
+    text: &str,
+    maximum_scalars: usize,
+    errors: TextValidationErrors,
+) -> Result<(), &'static str> {
     if text.is_empty() {
-        return Err("keyboard text is empty");
+        return Err(errors.empty);
     }
-    let mut actions = 0_usize;
+    let mut scalars = 0_usize;
     for character in text.chars() {
         if character.is_control() && !matches!(character, '\n' | '\t') {
-            return Err("keyboard text contains an unsupported control character");
+            return Err(errors.control);
         }
-        actions = actions
+        scalars = scalars
             .checked_add(1)
-            .ok_or("keyboard action count overflowed")?;
+            .ok_or("text scalar count overflowed")?;
     }
-    if actions > maximum_actions {
-        return Err("keyboard text exceeds the action bound");
+    if scalars > maximum_scalars {
+        return Err(errors.bound);
     }
     Ok(())
 }
@@ -1225,6 +1290,8 @@ pub enum Reply {
     Launched(LaunchReply),
     /// Bounded input realization result.
     Input(InputReply),
+    /// Qualified result for one target-scoped text transfer.
+    TextTransfer(TextTransferReply),
     /// Bounded target-owned client image.
     Capture(CaptureReply),
     /// Bounded target-owned client-region image.
@@ -1242,6 +1309,7 @@ impl Validate for Reply {
             Self::Applications(value) => value.validate(),
             Self::Launched(value) => value.validate(),
             Self::Input(value) => value.validate(),
+            Self::TextTransfer(value) => value.validate(),
             Self::Capture(value) => value.validate(),
             Self::CaptureRegion(value) => value.validate(),
         }
@@ -1441,6 +1509,55 @@ pub struct InputReply {
     pub requested: u16,
     /// What the provider knows at the request boundary.
     pub terminal: InputTerminal,
+}
+
+/// Terminal knowledge after one bounded text-transfer request.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextTransferTerminal {
+    /// The target requested the offered UTF-8 and the provider delivered it.
+    Delivered,
+    /// The provider offered text and queued paste, but the target never requested it.
+    Offered,
+    /// Seat, focus, target, or selection evidence was lost before delivery.
+    Interrupted,
+}
+
+/// Qualified all-or-nothing result for one target-scoped UTF-8 transfer.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TextTransferReply {
+    /// Exact target generation used for the transfer.
+    pub target: TargetRequest,
+    /// UTF-8 bytes offered to the target.
+    pub requested_bytes: u32,
+    /// UTF-8 bytes placed on the verified requestor property.
+    pub delivered_bytes: u32,
+    /// What the provider knows at the request boundary.
+    pub terminal: TextTransferTerminal,
+}
+
+impl Validate for TextTransferReply {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()?;
+        if self.requested_bytes == 0
+            || self.requested_bytes as usize > MAX_TEXT_TRANSFER_BYTES
+            || self.delivered_bytes > self.requested_bytes
+        {
+            return Err("text-transfer byte counts are invalid");
+        }
+        match self.terminal {
+            TextTransferTerminal::Delivered if self.delivered_bytes == self.requested_bytes => {
+                Ok(())
+            }
+            TextTransferTerminal::Offered | TextTransferTerminal::Interrupted
+                if self.delivered_bytes == 0 =>
+            {
+                Ok(())
+            }
+            _ => Err("text-transfer terminal state contradicts its byte counts"),
+        }
+    }
 }
 
 impl Validate for InputReply {
@@ -2037,7 +2154,7 @@ mod tests {
     }
 
     #[test]
-    fn input_calls_keep_pointer_and_keyboard_grants_separate() {
+    fn input_and_text_calls_keep_grants_separate() {
         let target = TargetRequest {
             client: ClientId::new(NonZeroU64::MIN),
             generation: Generation::new(0),
@@ -2078,6 +2195,14 @@ mod tests {
             Capability::InputKeyboard
         );
         assert_eq!(
+            Call::TextInsert(TextInsertRequest {
+                target,
+                text: TransferText::new("Mañana").expect("text-transfer fixture"),
+            })
+            .required_capability(),
+            Capability::TextTransfer
+        );
+        assert_eq!(
             Call::CaptureObscured(target).required_capability(),
             Capability::CaptureObscured
         );
@@ -2093,6 +2218,67 @@ mod tests {
             })
             .required_capability(),
             Capability::CaptureObscured
+        );
+    }
+
+    #[test]
+    fn text_transfer_is_utf8_bounded_control_safe_and_all_or_nothing() {
+        let target = TargetRequest {
+            client: ClientId::new(NonZeroU64::MIN),
+            generation: Generation::new(0),
+        };
+        let request = |value: &str| TextInsertRequest {
+            target,
+            text: TransferText::new(value).expect("bounded text-transfer fixture"),
+        };
+        assert!(
+            request("Canción íntima\nMañana será mejor.\n")
+                .validate()
+                .is_ok()
+        );
+        assert!(request("").validate().is_err());
+        assert!(request("unsafe\0text").validate().is_err());
+        assert!(
+            request(&"ñ".repeat(MAX_TEXT_TRANSFER_SCALARS))
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            request(&"a".repeat(MAX_TEXT_TRANSFER_SCALARS + 1))
+                .validate()
+                .is_err()
+        );
+        assert!(TransferText::new("ñ".repeat(MAX_TEXT_TRANSFER_SCALARS + 1)).is_err());
+
+        assert!(
+            TextTransferReply {
+                target,
+                requested_bytes: 8,
+                delivered_bytes: 8,
+                terminal: TextTransferTerminal::Delivered,
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            TextTransferReply {
+                target,
+                requested_bytes: 8,
+                delivered_bytes: 0,
+                terminal: TextTransferTerminal::Offered,
+            }
+            .validate()
+            .is_ok()
+        );
+        assert!(
+            TextTransferReply {
+                target,
+                requested_bytes: 8,
+                delivered_bytes: 4,
+                terminal: TextTransferTerminal::Delivered,
+            }
+            .validate()
+            .is_err()
         );
     }
 

@@ -80,10 +80,12 @@ The pages divide one policy into bounded tasks:
 
 - **Overview** explicitly enables or disables the policy and exposes the exact
   saved and recovery paths.
-- **Access** manages observation, management, launch, pointer, keyboard, and
-  obscured-client capture capability atoms. Dependencies are stated beside
-  each control and are never enabled silently. Capture is separate because it
-  can reveal target-owned pixels hidden behind another window.
+- **Access** manages observation, management, launch, pointer, keyboard,
+  exact-text transfer, and obscured-client capture capability atoms.
+  Dependencies are stated beside each control and are never enabled silently.
+  Text transfer warns that it displaces the current X11 clipboard owner and
+  that a clipboard manager may retain the offered text. Capture is separate
+  because it can reveal target-owned pixels hidden behind another window.
 - **Visible windows** selects no clients, the current workspace, or all
   workspaces and independently gates title text.
 - **Applications** selects deny, allow-list, or allow-installed mode and shows
@@ -128,6 +130,8 @@ Agent Seat Tier 0 can observe scoped EWMH state, request supported EWMH window
 management, and launch admitted desktop entries. The separately granted Tier
 0.5 profile can also move or click inside a freshly observed visible target,
 type bounded text, or send one finite key command when that target already owns
-keyboard focus. These actions require the current volatile seat to be enabled
-and do not claim physical-user priority or application acceptance. Agent Seat
+keyboard focus. A separately granted text-transfer profile can offer exact
+UTF-8 to that focused target, at the visible cost of replacing clipboard
+ownership. These actions require the current volatile seat to be enabled and
+do not claim physical-user priority or application acceptance. Agent Seat
 still cannot capture an output or use an accessibility tree.

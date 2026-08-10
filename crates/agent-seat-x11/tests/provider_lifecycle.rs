@@ -20,11 +20,11 @@ use agent_seat_proto::{
     ClientMessage, ClientState, ClientStateRequest, ClientWorkspaceRequest, DesktopSnapshot, Empty,
     ErrorCode, Event, EventBatch, EventKind, Hello, InputTerminal, KeyboardKey, KeyboardKeyRequest,
     KeyboardModifier, KeyboardTypeRequest, KeyboardWriteRequest, MAX_REQUEST_FRAME_BYTES,
-    MAX_RESPONSE_FRAME_BYTES, ManagementReply, Observation as ManagementObservation, Outcome,
-    PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo, PointerButton, PointerClickRequest,
-    PointerMoveRequest, PollRequest, ReadFrame, Rect, Reply, Request, RequestId, Sequence,
-    ServerMessage, StateAction, SubscribeRequest, TargetRequest, WorkspaceRequest, read_frame,
-    write_frame,
+    MAX_RESPONSE_FRAME_BYTES, MAX_TEXT_TRANSFER_BYTES, ManagementReply,
+    Observation as ManagementObservation, Outcome, PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo,
+    PointerButton, PointerClickRequest, PointerMoveRequest, PollRequest, ReadFrame, Rect, Reply,
+    Request, RequestId, Sequence, ServerMessage, StateAction, SubscribeRequest, TargetRequest,
+    TextInsertRequest, TextTransferTerminal, WorkspaceRequest, read_frame, write_frame,
 };
 use agent_seat_x11::{
     ActivePolicyStatus, RuntimeSeatCommand, active_policy_status, control_runtime_seat,
@@ -598,6 +598,22 @@ fn write_input_config(directory: &Path) -> PathBuf {
     path
 }
 
+fn write_text_transfer_config(directory: &Path) -> PathBuf {
+    let path = write_config(
+        directory,
+        &["observe_structure", "observe_titles", "text_transfer"],
+        4,
+        3_000,
+    );
+    let source = fs::read_to_string(&path).expect("read text-transfer config");
+    fs::write(
+        &path,
+        format!("{source}\n[observation]\nclients = \"all_workspaces\"\ntitles = true\n"),
+    )
+    .expect("write text-transfer config");
+    path
+}
+
 fn write_capture_config(directory: &Path) -> PathBuf {
     let path = write_config(
         directory,
@@ -1058,6 +1074,215 @@ impl TestClient {
             self.destroy();
         })
     }
+
+    fn accept_one_utf8_paste_after(
+        self,
+        release: mpsc::Receiver<()>,
+    ) -> thread::JoinHandle<Vec<u8>> {
+        self.accept_utf8_paste_after(Some(release))
+    }
+
+    fn accept_utf8_paste_after(
+        self,
+        release: Option<mpsc::Receiver<()>>,
+    ) -> thread::JoinHandle<Vec<u8>> {
+        thread::spawn(move || {
+            let clipboard = intern(&self.connection, b"CLIPBOARD");
+            let targets = intern(&self.connection, b"TARGETS");
+            let property = intern(&self.connection, b"_AGENT_SEAT_TEST_TRANSFER");
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let mut key_presses = 0_u8;
+            let mut release = release;
+            loop {
+                let event = self
+                    .connection
+                    .wait_for_event()
+                    .expect("paste target event");
+                match event {
+                    x11rb::protocol::Event::KeyPress(_) => {
+                        key_presses = key_presses.saturating_add(1);
+                        if key_presses == 2 {
+                            if let Some(release) = release.take() {
+                                release
+                                    .recv_timeout(Duration::from_secs(2))
+                                    .expect("release delayed paste request");
+                            }
+                            self.connection
+                                .convert_selection(
+                                    self.window,
+                                    clipboard,
+                                    targets,
+                                    property,
+                                    CURRENT_TIME,
+                                )
+                                .expect("UTF-8 selection request")
+                                .check()
+                                .expect("UTF-8 selection request accepted");
+                            self.connection.flush().expect("selection request flush");
+                        }
+                    }
+                    x11rb::protocol::Event::SelectionNotify(event)
+                        if event.requestor == self.window
+                            && event.selection == clipboard
+                            && event.target == targets =>
+                    {
+                        assert_ne!(event.property, NONE, "TARGETS request was refused");
+                        let reply = self
+                            .connection
+                            .get_property(true, self.window, event.property, AtomEnum::ATOM, 0, 16)
+                            .expect("read text targets request")
+                            .reply()
+                            .expect("read text targets reply");
+                        assert_eq!(reply.format, 32);
+                        assert_eq!(reply.type_, u32::from(AtomEnum::ATOM));
+                        assert_eq!(reply.bytes_after, 0);
+                        assert!(
+                            reply
+                                .value32()
+                                .is_some_and(|mut values| values.any(|atom| atom == self.utf8)),
+                            "UTF8_STRING was not advertised"
+                        );
+                        self.connection
+                            .convert_selection(
+                                self.window,
+                                clipboard,
+                                self.utf8,
+                                property,
+                                CURRENT_TIME,
+                            )
+                            .expect("UTF-8 selection request")
+                            .check()
+                            .expect("UTF-8 selection request accepted");
+                        self.connection.flush().expect("selection request flush");
+                    }
+                    x11rb::protocol::Event::SelectionNotify(event)
+                        if event.requestor == self.window
+                            && event.selection == clipboard
+                            && event.target == self.utf8 =>
+                    {
+                        assert_ne!(event.property, NONE, "UTF-8 transfer was refused");
+                        let reply = self
+                            .connection
+                            .get_property(
+                                true,
+                                self.window,
+                                event.property,
+                                self.utf8,
+                                0,
+                                u32::try_from(MAX_TEXT_TRANSFER_BYTES / 4 + 1)
+                                    .expect("transfer property length"),
+                            )
+                            .expect("read transferred text request")
+                            .reply()
+                            .expect("read transferred text reply");
+                        assert_eq!(reply.format, 8);
+                        assert_eq!(reply.type_, self.utf8);
+                        assert_eq!(reply.bytes_after, 0);
+                        return reply.value;
+                    }
+                    _ => {}
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "target did not receive one UTF-8 paste transfer"
+                );
+            }
+        })
+    }
+
+    fn replace_clipboard_after_paste(self) -> thread::JoinHandle<Self> {
+        thread::spawn(move || {
+            let clipboard = intern(&self.connection, b"CLIPBOARD");
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let mut key_presses = 0_u8;
+            loop {
+                if let Some(x11rb::protocol::Event::KeyPress(_)) = self
+                    .connection
+                    .poll_for_event()
+                    .expect("replacement owner event")
+                {
+                    key_presses = key_presses.saturating_add(1);
+                    if key_presses == 2 {
+                        self.connection
+                            .set_selection_owner(self.window, clipboard, CURRENT_TIME)
+                            .expect("replace clipboard owner request")
+                            .check()
+                            .expect("replace clipboard owner");
+                        self.connection
+                            .sync()
+                            .expect("replace clipboard owner sync");
+                        return self;
+                    }
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "replacement owner did not receive the paste shortcut"
+                );
+                thread::sleep(Duration::from_millis(5));
+            }
+        })
+    }
+}
+
+fn request_clipboard_from_other_client(
+    display: String,
+    release_target: mpsc::Sender<()>,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        let requestor = OverrideWindow::create(&display, 0, 0, 1, 1);
+        let clipboard = intern(&requestor.connection, b"CLIPBOARD");
+        let utf8 = intern(&requestor.connection, b"UTF8_STRING");
+        let property = intern(&requestor.connection, b"_AGENT_SEAT_HOSTILE_TRANSFER");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            let owner = requestor
+                .connection
+                .get_selection_owner(clipboard)
+                .expect("hostile owner probe request")
+                .reply()
+                .expect("hostile owner probe reply")
+                .owner;
+            if owner != NONE && owner != requestor.window {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "text-transfer provider never claimed the clipboard"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+        requestor
+            .connection
+            .convert_selection(requestor.window, clipboard, utf8, property, CURRENT_TIME)
+            .expect("hostile selection request")
+            .check()
+            .expect("hostile selection request accepted");
+        requestor
+            .connection
+            .flush()
+            .expect("hostile selection request flush");
+        loop {
+            if let Some(x11rb::protocol::Event::SelectionNotify(event)) = requestor
+                .connection
+                .poll_for_event()
+                .expect("hostile selection response")
+            {
+                assert_eq!(event.requestor, requestor.window);
+                assert_eq!(event.selection, clipboard);
+                assert_eq!(event.target, utf8);
+                assert_eq!(event.property, NONE);
+                release_target
+                    .send(())
+                    .expect("release legitimate paste request");
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "out-of-scope selection requestor was not refused"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    })
 }
 
 fn fill_window(connection: &RustConnection, window: u32, pixel: u32, width: u16, height: u16) {
@@ -2261,6 +2486,324 @@ fn pointer_hit_test_refuses_covering_and_over_bound_window_state() {
     }
 
     client.destroy();
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn text_transfer_delivers_exact_multiline_utf8_to_the_focused_x11_client() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("text-transfer");
+    let config = write_text_transfer_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("text-transfer peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::TextTransfer,
+            ],
+        ),
+        ServerMessage::Welcome(welcome)
+            if welcome.features.contains(&agent_seat_proto::Feature::TextTransfer)
+                && welcome.features.contains(&agent_seat_proto::Feature::InputInjection)
+                && welcome.granted.contains(&Capability::TextTransfer)
+                && !welcome.granted.contains(&Capability::InputKeyboard)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "text-transfer-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "text-transfer-target")
+        })
+    });
+    let observed_target = client_named(&observed, "text-transfer-target");
+    let other = TestClient::create(&xvfb.display, "other-focus-target");
+    let _ = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "other-focus-target")
+        })
+    });
+    other
+        .connection
+        .set_input_focus(InputFocus::PARENT, other.window, CURRENT_TIME)
+        .expect("unfocused text-transfer request")
+        .check()
+        .expect("unfocused text-transfer focus");
+    other
+        .connection
+        .sync()
+        .expect("unfocused text-transfer sync");
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::TextInsert(TextInsertRequest {
+                target: target(&observed_target),
+                text: BoundedText::new("Mañana").expect("unfocused transfer text"),
+            }),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument
+    ));
+    let clipboard = intern(&client.connection, b"CLIPBOARD");
+    assert_eq!(
+        client
+            .connection
+            .get_selection_owner(clipboard)
+            .expect("unfocused clipboard owner probe request")
+            .reply()
+            .expect("unfocused clipboard owner probe reply")
+            .owner,
+        NONE,
+        "unfocused transfer acquired clipboard ownership"
+    );
+    client
+        .connection
+        .set_input_focus(InputFocus::PARENT, client.window, CURRENT_TIME)
+        .expect("text-transfer focus request")
+        .check()
+        .expect("text-transfer focus");
+    client.connection.sync().expect("text-transfer focus sync");
+    other.destroy();
+    client
+        .connection
+        .set_selection_owner(client.window, clipboard, CURRENT_TIME)
+        .expect("competing clipboard owner request")
+        .check()
+        .expect("competing clipboard owner");
+    client
+        .connection
+        .sync()
+        .expect("competing clipboard owner sync");
+    assert_eq!(
+        client
+            .connection
+            .get_selection_owner(clipboard)
+            .expect("competing clipboard owner probe request")
+            .reply()
+            .expect("competing clipboard owner probe reply")
+            .owner,
+        client.window
+    );
+
+    let text = "Canción íntima\nMi vida es mía, señor.\nMañana será mejor.\n";
+    let (release_tx, release_rx) = mpsc::channel();
+    let receiver = client.accept_one_utf8_paste_after(release_rx);
+    let hostile = request_clipboard_from_other_client(xvfb.display.clone(), release_tx);
+    let outcome = wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::TextInsert(TextInsertRequest {
+            target: target(&observed_target),
+            text: BoundedText::new(text).expect("multiline Spanish transfer text"),
+        }),
+    );
+    assert!(
+        matches!(
+            outcome,
+            Outcome::Ok(Reply::TextTransfer(reply))
+                if reply.target == target(&observed_target)
+                    && reply.requested_bytes == u32::try_from(text.len()).expect("text byte count")
+                    && reply.delivered_bytes == reply.requested_bytes
+                    && reply.terminal == TextTransferTerminal::Delivered
+        ),
+        "unexpected text-transfer outcome: {outcome:?}"
+    );
+    assert_eq!(
+        receiver.join().expect("paste target responder"),
+        text.as_bytes()
+    );
+    hostile.join().expect("hostile requestor fixture");
+
+    let (probe, _) = x11rb::connect(Some(&xvfb.display)).expect("clipboard cleanup probe");
+    let clipboard = intern(&probe, b"CLIPBOARD");
+    assert_eq!(
+        probe
+            .get_selection_owner(clipboard)
+            .expect("clipboard owner probe request")
+            .reply()
+            .expect("clipboard owner probe reply")
+            .owner,
+        NONE,
+        "request-local transfer retained clipboard ownership"
+    );
+
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn text_transfer_reports_selection_loss_and_preserves_the_replacement_owner() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("text-transfer-loss");
+    let config = write_text_transfer_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("interrupted text-transfer peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::TextTransfer,
+            ],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "text-transfer-loss-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "text-transfer-loss-target")
+        })
+    });
+    let observed_target = client_named(&observed, "text-transfer-loss-target");
+    client
+        .connection
+        .set_input_focus(InputFocus::PARENT, client.window, CURRENT_TIME)
+        .expect("interrupted text-transfer focus request")
+        .check()
+        .expect("interrupted text-transfer focus");
+    client
+        .connection
+        .sync()
+        .expect("interrupted text-transfer focus sync");
+    let replacement = client.replace_clipboard_after_paste();
+    let text = "Mañana será mejor.";
+    let outcome = wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::TextInsert(TextInsertRequest {
+            target: target(&observed_target),
+            text: BoundedText::new(text).expect("interrupted transfer text"),
+        }),
+    );
+    assert!(
+        matches!(
+            outcome,
+            Outcome::Ok(Reply::TextTransfer(reply))
+                if reply.requested_bytes == u32::try_from(text.len()).expect("text byte count")
+                    && reply.delivered_bytes == 0
+                    && reply.terminal == TextTransferTerminal::Interrupted
+        ),
+        "unexpected interrupted text-transfer outcome: {outcome:?}"
+    );
+    let replacement = replacement.join().expect("replacement clipboard owner");
+    let clipboard = intern(&replacement.connection, b"CLIPBOARD");
+    assert_eq!(
+        replacement
+            .connection
+            .get_selection_owner(clipboard)
+            .expect("replacement clipboard owner probe request")
+            .reply()
+            .expect("replacement clipboard owner probe reply")
+            .owner,
+        replacement.window,
+        "provider cleanup cleared a later clipboard owner"
+    );
+    replacement
+        .connection
+        .set_selection_owner(NONE, clipboard, CURRENT_TIME)
+        .expect("replacement clipboard cleanup request")
+        .check()
+        .expect("replacement clipboard cleanup");
+    replacement.destroy();
+
+    let _ = openbox.kill();
+    let _ = openbox.wait();
+}
+
+#[test]
+fn text_transfer_reports_offered_when_the_target_never_requests_the_selection() {
+    let xvfb = Xvfb::start();
+    let mut openbox = start_openbox(&xvfb.display);
+    let directory = FixtureDir::new("text-transfer-timeout");
+    let config = write_text_transfer_config(&directory.0);
+    let socket = directory.0.join("seat.sock");
+    let _provider = Provider::start(&xvfb.display, &config, &socket);
+    let mut stream = UnixStream::connect(&socket).expect("unresponsive text-transfer peer");
+    assert!(matches!(
+        hello_with(
+            &mut stream,
+            vec![
+                Capability::ObserveStructure,
+                Capability::ObserveTitles,
+                Capability::TextTransfer,
+            ],
+        ),
+        ServerMessage::Welcome(_)
+    ));
+
+    let client = TestClient::create(&xvfb.display, "text-transfer-timeout-target");
+    let mut next_id = 1;
+    let observed = wait_snapshot(&mut stream, &mut next_id, |snapshot| {
+        snapshot.clients.iter().any(|candidate| {
+            candidate
+                .title
+                .as_ref()
+                .is_some_and(|title| title.as_str() == "text-transfer-timeout-target")
+        })
+    });
+    let observed_target = client_named(&observed, "text-transfer-timeout-target");
+    client
+        .connection
+        .set_input_focus(InputFocus::PARENT, client.window, CURRENT_TIME)
+        .expect("unresponsive text-transfer focus request")
+        .check()
+        .expect("unresponsive text-transfer focus");
+    client
+        .connection
+        .sync()
+        .expect("unresponsive text-transfer focus sync");
+    let text = "No selection request";
+    let outcome = wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::TextInsert(TextInsertRequest {
+            target: target(&observed_target),
+            text: BoundedText::new(text).expect("unresponsive transfer text"),
+        }),
+    );
+    assert!(
+        matches!(
+            outcome,
+            Outcome::Ok(Reply::TextTransfer(reply))
+                if reply.requested_bytes == u32::try_from(text.len()).expect("text byte count")
+                    && reply.delivered_bytes == 0
+                    && reply.terminal == TextTransferTerminal::Offered
+        ),
+        "unexpected unresponsive text-transfer outcome: {outcome:?}"
+    );
+    let clipboard = intern(&client.connection, b"CLIPBOARD");
+    assert_eq!(
+        client
+            .connection
+            .get_selection_owner(clipboard)
+            .expect("timeout clipboard owner probe request")
+            .reply()
+            .expect("timeout clipboard owner probe reply")
+            .owner,
+        NONE
+    );
+    client.destroy();
+
     let _ = openbox.kill();
     let _ = openbox.wait();
 }

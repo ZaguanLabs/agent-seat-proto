@@ -1,6 +1,8 @@
-# Candidate Unicode text transfer
+# Unicode text-transfer decision
 
-Status: candidate design, unimplemented and unadvertised.
+Status: approved and implemented experimentally in wire revision 9. The
+normative behavior is in the [wire specification](../protocol/specification.md)
+and [X11 profile](../protocol/profiles/x11-text-transfer-v1.md).
 
 `keyboard.type` and `keyboard.write` describe keyboard actions. They resolve
 each scalar through direct symbols in the current effective XKB layout and
@@ -13,11 +15,11 @@ mapping, guessing compose or input-method sequences, invoking another program,
 or granting an agent general clipboard access. Those choices either mutate
 shared desktop state or depend on application-specific acceptance.
 
-## Candidate boundary
+## Approved boundary
 
-A future protocol revision may add a separately named text-transfer operation.
-It would transfer bounded UTF-8 content to one freshly scoped, already focused
-target. It would not be another spelling of `keyboard.write`, and the existing
+Wire revision 9 adds a separately named text-transfer operation. It transfers
+bounded UTF-8 content to one freshly scoped, already focused target. It is not
+another spelling of `keyboard.write`, and the existing
 `input_keyboard` capability would not authorize it.
 
 The corresponding provider authority would be write-only and request-local:
@@ -31,7 +33,7 @@ The corresponding provider authority would be write-only and request-local:
 - the result distinguishes text offered, selection delivered, interrupted,
   and failed. It never claims that an application inserted or retained text.
 
-The candidate may use ICCCM selection ownership internally on X11. That is an
+The X11 profile uses ICCCM selection ownership internally. That is an
 implementation mechanism, not a portable protocol promise. Other display
 servers or participating applications may realize the same information-model
 operation through a native, target-scoped text-transfer facility.
@@ -51,22 +53,30 @@ focus, and balanced-key rules. Selection delivery must additionally verify the
 requestor belongs to the scoped client. A paste command alone is not evidence
 that the selection was requested or inserted.
 
-## Approval gates
+## Approval resolution
 
-Implementation remains stopped until all of the following are settled:
+The maintainer approved the new authority on 2026-08-10. Revision 9 allocates
+the separate `text_transfer` grant and feature, `text.insert`, 32 KiB/16,384
+scalar bounds, and delivered/offered/interrupted results. The Settings and
+first-run surfaces state the clipboard displacement and possible retention
+effect before the grant is saved.
 
-1. Allocate a new wire revision, capability, operation, result states, bounds,
-   and conformance-profile revision.
-2. Approve the operator-facing clipboard-displacement and retention warning.
-3. Define requestor ancestry checks for reparented and helper windows without
-   accepting arbitrary same-display requestors.
-4. Define bounded handling for `TARGETS`, UTF-8 text targets, property writes,
-   `SelectionNotify`, selection loss, and an unresponsive target.
-5. Add hostile tests for a competing selection owner, clipboard manager,
-   requestor substitution, focus/seat loss at every transition, oversized
-   requests, provider death, and a target that never requests the selection.
-6. Prove negative authority: the MCP companion cannot read selections and the
-   provider exposes no clipboard-read operation.
+The X11 implementation accepts only a requestor with the same X-Resource 1.2
+client identity as the scoped target. This admits toolkit-owned child/helper
+windows on the target's X connection but refuses a helper using a different
+connection; incomplete identity evidence stops the transfer. It handles only
+`TARGETS` and three finite UTF-8 text atoms, writes one complete property,
+sends `SelectionNotify`, and waits two seconds. A later selection owner is
+never cleared during cleanup.
 
-Until those gates pass, accented or otherwise unavailable scalars remain a
-precise pre-send refusal from the keyboard operations.
+Isolated hostile evidence covers a displaced prior owner, an out-of-scope
+selection requestor, a normal `TARGETS` negotiation, exact accented multiline
+bytes, selection loss, later-owner preservation, an unresponsive target,
+wire bounds, and request-local cleanup. The wire exposes no read call, the MCP
+companion has no selection API or X11 text authority, and the provider never
+requests prior selection contents. The exact evidence and remaining limits are
+recorded in [revision 9 verification](../verification/revision9-text-transfer-verification.md).
+
+Keyboard operations remain unchanged. They still refuse an accented or other
+scalar absent from the live layout before sending; agents use `text_insert`
+only when its distinct operator grant is present.

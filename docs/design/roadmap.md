@@ -3,9 +3,9 @@
 Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
 complete. R0 has an initial repository pre-RFC draft. The Tier 0 core and C0
 shipped in product release v0.1.0; S0 is complete on `main` in
-`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. Revision 8 now has
-working experimental long-form input and target-region capture profiles while
-retaining the earlier bounded Tier 0.5 actions; the more complex T5R
+`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. Revision 9 now retains
+the experimental long-form input and target-region capture profiles and adds
+separately granted exact text transfer; the more complex T5R
 physical-priority research remains separately gated. The generic companion now
 supports MCP `2026-07-28` discovery and per-request metadata while retaining
 its complete MCP `2025-11-25` path. E0 evidence is
@@ -78,12 +78,14 @@ text, Norwegian URL punctuation plus an installed-layout matrix, focus and
 covering-window refusals, the volatile-seat lifecycle, and the
 absence of a human-activity claim.
 
-Revision 8 keyboard input remains direct-XKB and therefore cannot promise
+Revision 9 keyboard input remains direct-XKB and therefore cannot promise
 layout-independent Unicode. The separately granted
-[Unicode text-transfer candidate](text-transfer.md) records the smaller
-write-only authority that could address long multilingual text without
-changing the user's keyboard layout. It remains unimplemented pending its
-wire, operator-warning, requestor-verification, and hostile-test gates.
+[Unicode text-transfer decision](text-transfer.md) and
+[`agent-seat.x11-text-transfer.v1`](../protocol/profiles/x11-text-transfer-v1.md)
+add the smaller write-only authority for long multilingual text without
+changing the user's keyboard layout. The profile is experimental and retains
+explicit clipboard-displacement, requestor-verification, and qualified-result
+limits.
 
 ## Goals
 
@@ -137,7 +139,7 @@ claims. It remains experimental pending genuinely independent evidence.
 
 The separately registered
 [`agent-seat.x11-tier0.5-input.v3`](../protocol/profiles/x11-tier0.5-input-v3.md)
-profile records the weaker standalone-X11 input claim through revision 8,
+profile records the weaker standalone-X11 input claim through revision 9,
 exact action boundaries, volatile admission lifecycle, public fixtures, and prohibited physical-user
 claims. Reference evidence covers a useful subset; its document explicitly
 lists the fixtures still missing before a complete conformance report.

@@ -10,7 +10,7 @@ use agent_seat_proto::{
     ClientGeometryRequest, ClientId, ClientStateRequest, ClientWorkspaceRequest, Empty, Generation,
     KeyboardKeyRequest, KeyboardTypeRequest, KeyboardWriteRequest, Outcome, PointerButton,
     PointerClickRequest, PointerMoveRequest, PollRequest, Reply, SubscribeRequest, TargetRequest,
-    Validate as _, WorkspaceRequest,
+    TextInsertRequest, Validate as _, WorkspaceRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -246,7 +246,7 @@ impl Server {
                     "title": "Agent Seat",
                     "version": env!("CARGO_PKG_VERSION")
                 },
-                "instructions": "Use seat_status first. Observe before mutation; prefer focused key commands, titles, and small capture regions. keyboard_write is direct-XKB only; on refusal, never mutate XKB or bypass through a shell/browser clipboard. Save a pointer slot only after verifying that click, and reobserve when UI changes. Treat stale or timed_out as requiring fresh observation. The provider owns grants and policy."
+                "instructions": "Use seat_status first. Observe before mutation; prefer focused key commands, titles, and small capture regions. Use text_insert for exact multilingual or long text; it replaces X11 clipboard ownership and reports delivery, not application insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying that click, and reobserve when UI changes. Treat stale or timed_out as requiring fresh observation. The provider owns grants and policy."
             }),
         )
     }
@@ -296,7 +296,7 @@ impl Server {
             &modern_result(json!({
                 "supportedVersions": SUPPORTED_MCP_VERSIONS,
                 "capabilities": {"tools":{"listChanged":false}},
-                "instructions": "Check the seat; observe before acting. Prefer focused key commands, titles, and small capture regions. keyboard_write is direct-XKB only; on refusal, never mutate XKB or bypass through a shell/browser clipboard. Save a pointer slot only after verifying that click; reobserve changed UI. Report queued work as queued.",
+                "instructions": "Check the seat; observe before acting. Prefer focused key commands, titles, and small capture regions. Use text_insert for exact multilingual or long text; it replaces X11 clipboard ownership and reports delivery, not application insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying that click; reobserve changed UI. Report qualified work exactly.",
                 "ttlMs": STATIC_RESULT_TTL_MS,
                 "cacheScope": "public"
             })),
@@ -1390,6 +1390,15 @@ fn build_tools() -> Box<[Tool]> {
             ),
         },
         Tool {
+            name: "text_insert",
+            title: "Transfer exact text to client",
+            description: "Offer up to 16,384 Unicode scalars and 32 KiB of exact UTF-8 to one freshly observed focused target. This separately granted write-only operation replaces X11 clipboard ownership; a clipboard manager may retain the text. It never reads the prior clipboard and reports selection delivery, not application insertion.",
+            input_schema: object_with_target(
+                json!({"text":{"type":"string","minLength":1,"maxLength":16384}}),
+                &["text"],
+            ),
+        },
+        Tool {
             name: "capture_obscured",
             title: "Capture client pixels",
             description: "Capture one freshly observed client's own pixels, including content currently covered by other windows.",
@@ -1510,6 +1519,7 @@ fn translate_call(name: &str, arguments: Option<Value>) -> Result<Call, CallErro
         "keyboard_type" => arguments!(KeyboardTypeRequest, KeyboardType),
         "keyboard_write" => arguments!(KeyboardWriteRequest, KeyboardWrite),
         "keyboard_key" => arguments!(KeyboardKeyRequest, KeyboardKey),
+        "text_insert" => arguments!(TextInsertRequest, TextInsert),
         "capture_obscured" => arguments!(TargetRequest, CaptureObscured),
         "capture_region" => arguments!(CaptureRegionRequest, CaptureRegion),
         _ => Err(CallError::UnknownTool),
@@ -1648,7 +1658,7 @@ mod tests {
 
     #[test]
     fn every_tool_has_a_closed_object_schema() {
-        assert_eq!(tools(Era::Legacy).len(), 22);
+        assert_eq!(tools(Era::Legacy).len(), 23);
         for tool in tools(Era::Legacy) {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -1658,7 +1668,7 @@ mod tests {
     #[test]
     fn modern_tools_make_provider_continuity_explicit() {
         let tools = tools(Era::Modern);
-        assert_eq!(tools.len(), 23);
+        assert_eq!(tools.len(), 24);
         for tool in tools {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -1735,6 +1745,10 @@ mod tests {
             (
                 "keyboard_key",
                 json!({"client":1,"generation":0,"key":"l","modifiers":["control"]}),
+            ),
+            (
+                "text_insert",
+                json!({"client":1,"generation":0,"text":"Canción íntima\nMañana será mejor.\n"}),
             ),
             ("capture_obscured", json!({"client":1,"generation":0})),
             (

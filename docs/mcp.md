@@ -1,6 +1,6 @@
 # Generic MCP companion
 
-`agent-seat-mcp` 0.1.9 implements both MCP `2026-07-28` and `2025-11-25` over
+`agent-seat-mcp` 0.1.10 implements both MCP `2026-07-28` and `2025-11-25` over
 newline-delimited JSON-RPC stdio. A modern host should use `server/discover`;
 an existing host can continue using the legacy `initialize` lifecycle without
 registration changes or changes to any pre-existing tool schema.
@@ -39,10 +39,11 @@ returns `2025-11-25` when that revision is requested; for another requested
 revision it returns its legacy revision so the host can accept it or disconnect. Legacy clients keep
 the original 16 tool names and schemas, implicit provider connection, and
 result shapes. Revision 7 added `keyboard_key` as a seventeenth closed-schema
-tool. Revision 8 adds two wire-backed tools and three session-local pointer
+tool. Revision 8 added two wire-backed tools and three session-local pointer
 tools without changing an earlier name or schema; no modern `resultType`,
 cache field, context argument, or `seat_release` is inserted into legacy
-results.
+results. Revision 9 adds only the closed `text_insert` tool and leaves every
+earlier schema and result unchanged.
 
 This path follows the official legacy
 [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle)
@@ -59,7 +60,7 @@ execution errors so a model can act on their structured fields.
 
 ## Tools
 
-The legacy companion publishes twenty-two closed-object schemas:
+The legacy companion publishes twenty-three closed-object schemas:
 
 - `seat_status`
 - `desktop_snapshot`
@@ -81,10 +82,11 @@ The legacy companion publishes twenty-two closed-object schemas:
 - `keyboard_type`
 - `keyboard_key`
 - `keyboard_write`
+- `text_insert`
 - `capture_obscured`
 - `capture_region`
 
-The modern list has the same twenty-two tools plus `seat_release`. `seat_status`
+The modern list has the same twenty-three tools plus `seat_release`. `seat_status`
 opens one of at most eight provider contexts and returns its positive integer `context`.
 Pass that context to every later modern tool call and call `seat_release` when
 finished. A context lasts until explicit release, provider transport failure,
@@ -94,7 +96,7 @@ authenticates the companion peer, owns grants and scope, and rechecks each wire
 call. A private-profile companion has only its one inherited provider
 connection, so only the first modern context can consume it.
 
-Every provider-backed desktop tool maps one-to-one to a typed revision-8 call.
+Every provider-backed desktop tool maps one-to-one to a typed revision-9 call.
 The three pointer-slot tools are the only exceptions. They keep at most 32
 named `pointer_click` argument sets inside the current provider session. Slots
 disappear on context release, provider failure, or companion exit. They confer
@@ -129,9 +131,18 @@ reports exact completed/requested counts. It is not clipboard paste and cannot
 produce a character absent from the active layout.
 The refusal identifies the first unavailable one-based character position and
 Unicode code point. Do not change the user's XKB layout or mapping, and do not
-bypass the provider through a shell or browser clipboard workaround. The
-separately granted [Unicode text-transfer design](design/text-transfer.md)
-remains an unimplemented candidate.
+bypass the provider through a shell or browser clipboard workaround.
+
+Use `text_insert` for exact accented, multilingual, or long text when the
+provider separately grants `text_transfer`. It accepts at most 16,384 Unicode
+scalars and 32 KiB, requires the freshly observed target to retain focus, and
+temporarily replaces X11 `CLIPBOARD` ownership. The old selection is neither
+read nor restored, and a clipboard manager may retain the offered text. A
+`delivered` result proves only that the verified target X11 client requested
+and received the complete selection property; it does not prove application
+insertion. `offered` means no supported request arrived by the deadline, and
+`interrupted` means required evidence was lost. See the
+[text-transfer profile](protocol/profiles/x11-text-transfer-v1.md).
 
 Use `capture_region` instead of `capture_obscured` when a small
 client-relative area is sufficient. Each side is at most 1,024 pixels and the
@@ -150,8 +161,9 @@ again. A modern provider failure discards its context and a new `seat_status`
 call is required. The companion does not retain a stale automatically
 discovered path. Read and write operations have a fixed ten-second transport
 deadline in addition to provider operation deadlines. Only `keyboard_write`
-extends the response-read deadline to a bounded 120 seconds; the ordinary
-deadline is restored after the response.
+extends the response-read deadline to a bounded 120 seconds; `text_insert`
+uses the ordinary ten-second deadline around its provider-bounded two-second
+selection wait. The ordinary deadline is restored after a long write.
 
 Register it with an MCP host using the equivalent of:
 

@@ -50,7 +50,7 @@ pub(crate) fn run(
         return close(
             &mut stream,
             ErrorCode::IncompatibleRevision,
-            "exact Agent Seat revision 8 is required",
+            "exact Agent Seat revision 9 is required",
         );
     }
     let Some(seat_permit) = seat.permit() else {
@@ -88,9 +88,13 @@ pub(crate) fn run(
             capability,
             agent_seat_proto::Capability::InputPointer
                 | agent_seat_proto::Capability::InputKeyboard
+                | agent_seat_proto::Capability::TextTransfer
         )
     }) {
         features.push(Feature::InputInjection);
+    }
+    if granted.contains(&agent_seat_proto::Capability::TextTransfer) {
+        features.push(Feature::TextTransfer);
     }
     let welcome = Welcome {
         protocol: text::<128>(PROTOCOL_NAME)?,
@@ -280,6 +284,7 @@ fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
                 | Call::KeyboardType(_)
                 | Call::KeyboardWrite(_)
                 | Call::KeyboardKey(_)
+                | Call::TextInsert(_)
                 | Call::CaptureObscured(_)
                 | Call::CaptureRegion(_)
         ) || granted.contains(&agent_seat_proto::Capability::ObserveStructure))
@@ -381,6 +386,10 @@ fn provider_call(
                 observer.keyboard_key(arguments, context.seat, context.seat_permit)
             })
             .map(Reply::Input)
+            .map_err(CallFailure::Observation),
+        Call::TextInsert(arguments) => observer_for(observer, context.granted, context.config)
+            .and_then(|observer| observer.text_insert(arguments, context.seat, context.seat_permit))
+            .map(Reply::TextTransfer)
             .map_err(CallFailure::Observation),
         Call::CaptureObscured(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.capture_obscured(arguments))

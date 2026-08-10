@@ -343,6 +343,21 @@ standard library and existing Rustix dependency only. No external manifest,
 enrollment format, parser, fixture, service definition, comments, or prose was
 consulted or adapted.
 
+The revision-9 target-scoped text-transfer profile, wire types, provider,
+companion projection, Settings warning, and hostile fixtures are original work
+from this repository's approved design. Selection ownership, `TARGETS`, text
+properties, and `SelectionNotify` follow the public ICCCM selection contract
+already cited above. Same-X-client requestor verification follows the public
+X-Resource 1.2 `QueryClientIds`/`ClientXID` contract in X.Org's xorgproto and
+xcbproto protocol definitions:
+<https://gitlab.freedesktop.org/xorg/proto/xorgproto> and
+<https://gitlab.freedesktop.org/xorg/proto/xcbproto>. The implementation enables
+the existing safe `x11rb` dependency's `res` bindings and adds no runtime
+dependency. The exact multiline target, competing-owner, substituted-requestor,
+selection-loss, timeout, and cleanup fixtures were written for this repository
+from public X11 behavior. No Nobox or third-party automation implementation,
+schema, test, fixture, comment, or prose was consulted or adapted.
+
 The broker standard-stream descriptor layout is original integration work
 against the public systemd `StandardInput=file:`, `StandardOutput=socket`,
 socket-activation, and `OpenFile=` contracts. Local transient user-manager

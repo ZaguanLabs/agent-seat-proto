@@ -1,13 +1,13 @@
-# Agent Seat local JSON binding, wire revision 8
+# Agent Seat local JSON binding, wire revision 9
 
 Status: experimental obscured-capture and Tier 0.5 input profiles over the
-released E1 core contract. Revision 8 is intentionally incompatible with Agent
-Seat revisions 3, 4, 5, and 6 and Nobox revision 2.
+released E1 core contract. Revision 9 is intentionally incompatible with every
+earlier Agent Seat revision and Nobox revision 2.
 
 This document is the concrete pathname-Unix-stream and strict-JSON binding for
 the portable semantics in the pre-RFC
 [`information model`](information-model.md). Its JSON field names, framing,
-socket discovery, and byte limits belong to revision 8, not to the abstract
+socket discovery, and byte limits belong to revision 9, not to the abstract
 model. This binding remains the repository's normative implemented wire
 contract if the pre-RFC documents differ.
 
@@ -65,6 +65,14 @@ and retain the existing focus, seat, target, XKB, Composite, and result
 qualification. Strict revision-7 peers cannot interpret either call or the
 region result, so revision 8 allocates a new exact language.
 
+Revision 9 adds the separately granted `text_transfer` capability,
+`text.insert` call, `text_transfer` feature, and qualified text-transfer
+result. It permits a provider to offer bounded UTF-8 to one freshly scoped,
+already focused target without claiming that the target inserted it. This is
+new selection and paste-command authority rather than an expansion of
+`input_keyboard`, so strict revision-8 peers cannot interpret it and revision
+9 allocates a new exact language.
+
 An advertisement and opening message name one exact revision. There is no
 range negotiation. A mismatched pair closes with `incompatible_revision` and
 does not guess from JSON fields.
@@ -94,7 +102,7 @@ exactly that many UTF-8 JSON bytes:
 - The JSON value is one complete object. Trailing bytes, duplicate known
   fields, unknown fields, unknown enum values, and wrong JSON types are
   malformed.
-- Serde's finite JSON recursion limit applies; revision 8 defines no recursive
+- Serde's finite JSON recursion limit applies; revision 9 defines no recursive
   message value.
 
 Lengths constrain encoded bytes, not Unicode scalar counts. Bounded lists stop
@@ -111,10 +119,10 @@ The first client message is `hello`. A provider answers with exactly one
   "type": "hello",
   "body": {
     "protocol": "agent-seat",
-    "revision": 8,
+    "revision": 9,
     "peer": {
       "name": "agent-seat-mcp",
-      "version": "0.1.9",
+      "version": "0.1.10",
       "purpose": "translate MCP desktop tools"
     },
     "requested": ["observe_structure", "observe_titles"]
@@ -131,9 +139,9 @@ unique, canonical list of at most 32 atoms.
   "type": "welcome",
   "body": {
     "protocol": "agent-seat",
-    "revision": 8,
+    "revision": 9,
     "session": 1,
-    "provider": {"name": "agent-seat-x11", "version": "0.1.29"},
+    "provider": {"name": "agent-seat-x11", "version": "0.1.30"},
     "backend": "x11_ewmh",
     "assurance": "tier0",
     "features": ["ewmh_observation"],
@@ -173,16 +181,17 @@ Canonical capability order is:
 10. `launch_execute`
 11. `input_pointer`
 12. `input_keyboard`
-13. `capture_obscured`
+13. `text_transfer`
+14. `capture_obscured`
 
 Core features are `ewmh_observation`, `ewmh_management`, and
-`desktop_launch`. Revision 8 implements the optional `obscured_capture` feature
-only when its separate capability is granted. Other reserved optional feature
-names are `client_visible_capture`, `output_capture`, `input_injection`,
-`human_activity`, and `accessibility`; the Tier 0.5 input profile may advertise
-`input_injection`. Advertising a feature is an implementation claim governed
-by its profile threat model; absent features remain typed `unsupported`
-behavior.
+`desktop_launch`. Revision 9 implements the optional `obscured_capture` and
+`text_transfer` features only when their separate capabilities are granted.
+Other reserved optional feature names are `client_visible_capture`,
+`output_capture`, `input_injection`, `human_activity`, and `accessibility`; the
+Tier 0.5 input profile may advertise `input_injection`. Advertising a feature
+is an implementation claim governed by its profile threat model; absent
+features remain typed `unsupported` behavior.
 
 ## Requests and responses
 
@@ -240,6 +249,7 @@ The core call names and arguments are:
 | `keyboard.type` | `input_keyboard` | fresh client and bounded nonempty `text` |
 | `keyboard.key` | `input_keyboard` | fresh client, typed `key`, and optional canonical `modifiers` |
 | `keyboard.write` | `input_keyboard` | fresh client and bounded nonempty long-form `text` |
+| `text.insert` | `text_transfer` | fresh client and bounded nonempty UTF-8 `text` |
 | `capture.obscured` | `capture_obscured` | fresh client |
 | `capture.region` | `capture_obscured` | fresh client and client-relative `x`, `y`, `width`, `height` |
 
@@ -349,6 +359,52 @@ cannot distinguish XTEST from physical input or guarantee that physical input
 will always win a race. A person and the agent can therefore overlap. Stop the
 provider or disable its volatile seat to revoke later Agent Seat requests.
 
+## Text-transfer result
+
+Text transfer is an optional target-scoped profile, not Tier 0 core and not
+keyboard input. `input_keyboard` does not authorize it. `text.insert` accepts
+nonempty UTF-8 containing at most 32,768 bytes and 16,384 Unicode scalars;
+newline and tab are its only accepted control characters. The operation
+requires `observe_structure`, `text_transfer`, the same enabled volatile-seat
+generation that admitted the session, an exact current target generation, and
+actual X11 input focus owned by that target or its descendant.
+
+On X11, the provider creates one request-local selection-owner window, claims
+`CLIPBOARD`, and sends one balanced layout-aware Control+V command while those
+facts are current under an X server grab. Claiming `CLIPBOARD` necessarily
+displaces its prior owner. The provider does not read the prior selection and
+cannot restore it. A clipboard manager may request and retain the new text.
+Those are operator-visible authority effects of the separate grant.
+
+The owner handles only bounded `TARGETS`, `UTF8_STRING`,
+`text/plain;charset=utf-8`, and `text/plain` requests. Before each response it
+refreshes target generation and focus, rechecks the seat and selection owner,
+and uses X-Resource 1.2 client identity to require that the requestor belongs
+to the same X11 client as the scoped target. An out-of-scope requestor receives
+`SelectionNotify` with no property and no text. Incomplete identity evidence
+fails closed. A successful text response writes the complete byte string to
+one requestor property, sends `SelectionNotify`, and synchronizes; partial
+delivery is never reported.
+
+The owner handles at most 32 selection requests and 256 X11 events and waits at
+most two seconds. Bound excess or seat, target, focus, provider, or selection
+loss ends the request. Cleanup clears `CLIPBOARD` only if the provider still
+owns it, so it never clears a later owner. It does not restore the displaced
+owner or expose any selection-read operation.
+
+The `text_transfer` reply repeats the exact target and carries
+`requested_bytes`, `delivered_bytes`, and one terminal value:
+
+- `delivered`: the verified target client requested a supported UTF-8 target,
+  and the provider wrote and notified all requested bytes;
+- `offered`: ownership and the paste command occurred, but the target did not
+  request supported text before the deadline; or
+- `interrupted`: required seat, target, focus, or selection evidence was lost.
+
+Only `delivered` has equal nonzero requested and delivered byte counts. The
+other states have zero delivered bytes. No state proves that the application
+inserted, rendered, retained, or semantically accepted the text.
+
 ## Obscured-capture result
 
 Capture is an optional X11 profile and not a Tier 0 core observation. The call
@@ -434,7 +490,7 @@ Retry is one of `never`, `reobserve`, or `reconnect`.
 three NUL-separated UTF-8 fields and no trailing NUL:
 
 ```text
-agent-seat NUL 8 NUL /absolute/pathname/socket
+agent-seat NUL 9 NUL /absolute/pathname/socket
 ```
 
 The revision uses canonical decimal. The socket is nonempty, absolute, has no
@@ -453,9 +509,10 @@ filesystem or product-specific fallback.
 
 ## End result
 
-Revision 8 retains the bounded T0--T3 contract, explicitly operator-gated Tier
-0.5 input, and separately granted target-owned image operation. It adds bounded
-long-form text and smaller target-relative images without adding authority. It
-gives the MCP translator no policy authority and keeps every core outcome
-externally testable. A later incompatible field, enum, or semantic change
-allocates another revision instead of weakening strict decoding.
+Revision 9 retains the bounded T0--T3 contract, explicitly operator-gated Tier
+0.5 input, and separately granted target-owned image operation. It adds a
+distinct write-only, request-local text-transfer authority with explicit
+clipboard displacement and qualified delivery states. It gives the MCP
+translator no selection-reading or policy authority and keeps every core
+outcome externally testable. A later incompatible field, enum, or semantic
+change allocates another revision instead of weakening strict decoding.

@@ -19,7 +19,7 @@ use toml_edit::{Array, DocumentMut, Item, Table, Value, value};
 
 pub(crate) const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 /// Maximum number of capability atoms in the provider policy grant.
-pub const MAX_POLICY_CAPABILITIES: usize = 13;
+pub const MAX_POLICY_CAPABILITIES: usize = 14;
 const DEFAULT_MAX_SESSIONS: u8 = 4;
 const MAX_SESSIONS: u8 = 32;
 const DEFAULT_MAX_REQUESTS: u16 = 1024;
@@ -76,8 +76,10 @@ const FIRST_RUN_TEMPLATE_SUFFIX: &str = r#"
 # Uncomment capabilities deliberately. `observe_titles`, `observe_events`,
 # and all `manage_*` capabilities require `observe_structure`.
 # `launch_execute` requires `launch_list`.
-# Pointer and keyboard input require `observe_structure`. They are additionally
-# denied unless the running provider's volatile seat has been enabled locally.
+# Pointer, keyboard, and text transfer require `observe_structure`. They are
+# additionally denied unless the running provider's volatile seat has been
+# enabled locally. Text transfer replaces clipboard ownership and a clipboard
+# manager may retain the transferred text; it never reads the old clipboard.
 # Obscured capture requires `observe_structure` and can reveal target-owned
 # pixels even while another window covers the target.
 capabilities = [
@@ -93,6 +95,7 @@ capabilities = [
   # "launch_execute",     # Start an admitted desktop entry without a shell.
   # "input_pointer",      # Move or click only inside the unobscured target.
   # "input_keyboard",     # Type bounded text or send one key action to a focused target.
+  # "text_transfer",      # Offer exact UTF-8 to one focused target; replaces clipboard ownership.
   # "capture_obscured",   # Capture one scoped client's own pixels.
 ]
 
@@ -529,6 +532,7 @@ const fn capability_name(capability: Capability) -> &'static str {
         Capability::LaunchExecute => "launch_execute",
         Capability::InputPointer => "input_pointer",
         Capability::InputKeyboard => "input_keyboard",
+        Capability::TextTransfer => "text_transfer",
         Capability::CaptureObscured => "capture_obscured",
     }
 }
@@ -1158,11 +1162,13 @@ impl RawGrant {
         if self.capabilities.iter().any(|capability| {
             matches!(
                 capability,
-                Capability::InputPointer | Capability::InputKeyboard
+                Capability::InputPointer | Capability::InputKeyboard | Capability::TextTransfer
             )
         }) && !self.capabilities.contains(&Capability::ObserveStructure)
         {
-            return Err("input capabilities require observe_structure".to_owned());
+            return Err(
+                "input and text-transfer capabilities require observe_structure".to_owned(),
+            );
         }
         if self.capabilities.contains(&Capability::CaptureObscured)
             && !self.capabilities.contains(&Capability::ObserveStructure)
@@ -1357,6 +1363,7 @@ mod tests {
             ("launch_execute", "launch_list"),
             ("input_pointer", "observe_structure"),
             ("input_keyboard", "observe_structure"),
+            ("text_transfer", "observe_structure"),
             ("capture_obscured", "observe_structure"),
         ] {
             let source =
@@ -1482,6 +1489,7 @@ mod tests {
             Capability::LaunchExecute,
             Capability::InputPointer,
             Capability::InputKeyboard,
+            Capability::TextTransfer,
             Capability::CaptureObscured,
         ];
         assert_eq!(capabilities.len(), MAX_POLICY_CAPABILITIES);

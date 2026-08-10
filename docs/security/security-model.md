@@ -70,6 +70,17 @@ pixels and does not claim that the person saw the image. Composite cannot
 recover pixels already obscured before enrollment, so the promise begins with
 target painting after enrollment.
 
+Revision 9 adds an experimental text-transfer authority separately from
+keyboard input. It temporarily owns X11 `CLIPBOARD`, necessarily displaces the
+prior owner, and sends one paste command to a freshly scoped focused target.
+It never reads or pretends to restore prior selection contents. Only a
+selection requestor with the same X-Resource 1.2 client identity as the target
+receives bounded UTF-8; another client receives no property. A clipboard
+manager may still retain text it legitimately obtains under X11 selection
+rules. Delivery means a verified property write and notification, not
+application insertion. Missing identity, focus, target, seat, or ownership
+evidence fails closed, and cleanup never clears a later owner.
+
 The standalone provider is a policy boundary against accidental overreach,
 malformed peers, and a compromised translator. It is not an isolation boundary
 against another process that already has the same user's X11 authority.
@@ -145,6 +156,9 @@ PID inference, establish companion confinement.
 - Capture is never implicit in structure observation: `capture_obscured` is a
   separate grant, and absent or incomplete Composite evidence fails without a
   root, output, or core-GetImage fallback.
+- Text transfer is never implicit in keyboard input: `text_transfer` is a
+  separate grant with visible clipboard displacement and retention effects,
+  and the provider exposes no selection-read operation.
 - Missing, hidden, and out-of-scope direct client lookups are indistinguishable.
 - Optional malformed client metadata is omitted; malformed or absent required
   desktop structure fails the observation instead of inventing state.

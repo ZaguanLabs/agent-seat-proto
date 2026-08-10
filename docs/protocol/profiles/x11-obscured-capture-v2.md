@@ -1,6 +1,6 @@
 # X11 obscured-client capture profile v2
 
-Status: experimental implementation in Agent Seat wire revision 8.
+Status: experimental implementation in Agent Seat wire revisions 8 and 9.
 
 This profile incorporates every authority boundary, source restriction,
 lifecycle rule, image bound, security meaning, failure condition, and

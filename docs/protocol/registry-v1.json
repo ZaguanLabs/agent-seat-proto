@@ -30,6 +30,10 @@
       {
         "id": 8,
         "status": "experimental"
+      },
+      {
+        "id": 9,
+        "status": "experimental"
       }
     ]
   },
@@ -48,7 +52,7 @@
       "schema": "conformance-report-v1.schema.json"
     }
   ],
-  "revision_8": {
+  "revision_9": {
     "client_messages": [
       "hello",
       "request",
@@ -80,6 +84,7 @@
         "launch_execute",
         "input_pointer",
         "input_keyboard",
+        "text_transfer",
         "capture_obscured"
       ]
     },
@@ -93,6 +98,7 @@
         "obscured_capture",
         "output_capture",
         "input_injection",
+        "text_transfer",
         "human_activity",
         "accessibility"
       ]
@@ -167,6 +173,10 @@
         "capability": "input_keyboard"
       },
       {
+        "name": "text.insert",
+        "capability": "text_transfer"
+      },
+      {
         "name": "capture.obscured",
         "capability": "capture_obscured"
       },
@@ -203,6 +213,7 @@
       "applications",
       "launched",
       "input",
+      "text_transfer",
       "capture",
       "capture_region"
     ],
@@ -246,6 +257,11 @@
     ],
     "input_terminals": [
       "queued",
+      "interrupted"
+    ],
+    "text_transfer_terminals": [
+      "delivered",
+      "offered",
       "interrupted"
     ],
     "keyboard_keys": [
@@ -353,7 +369,8 @@
         5,
         6,
         7,
-        8
+        8,
+        9
       ],
       "backend": "x11_ewmh",
       "assurance": "tier0"
@@ -395,7 +412,8 @@
       "status": "experimental",
       "specification": "profiles/x11-tier0.5-input-v3.md",
       "wire_revisions": [
-        8
+        8,
+        9
       ],
       "backend": "x11_ewmh",
       "assurance": "tier0"
@@ -405,7 +423,18 @@
       "status": "experimental",
       "specification": "profiles/x11-obscured-capture-v2.md",
       "wire_revisions": [
-        8
+        8,
+        9
+      ],
+      "backend": "x11_ewmh",
+      "assurance": "tier0"
+    },
+    {
+      "identifier": "agent-seat.x11-text-transfer.v1",
+      "status": "experimental",
+      "specification": "profiles/x11-text-transfer-v1.md",
+      "wire_revisions": [
+        9
       ],
       "backend": "x11_ewmh",
       "assurance": "tier0"

@@ -3,7 +3,7 @@
 Identifier: `agent-seat.x11-tier0.5-input.v3`
 
 Status: experimental repository profile, 2026-08-10. Supported binding: local
-JSON wire revision 8. Backend atom: `x11_ewmh`. Assurance atom: `tier0`.
+JSON wire revisions 8 and 9. Backend atom: `x11_ewmh`. Assurance atom: `tier0`.
 Required base profile: `agent-seat.x11-ewmh-core.v1` with
 `observe_structure`.
 
@@ -39,7 +39,7 @@ change the keyboard layout.
 The reference provider's bounded English diagnostic identifies the first
 unavailable scalar by one-based character position and Unicode code point.
 That diagnostic is assistance for a person or agent, not protocol control
-data, and does not change revision 8 semantics.
+data, and does not change the keyboard semantics retained in revision 9.
 
 After preflight, each scalar remains an independently reportable action under
 the version-2 action-local server-grab contract. The provider refreshes the
@@ -69,10 +69,14 @@ observed and should reobserve after UI or layout changes.
 
 ## Explicit exclusions
 
-Version 3 adds no clipboard or selection ownership, paste, compose/IME,
+Version 3 itself adds no clipboard or selection ownership, paste, compose/IME,
 arbitrary Unicode guarantee, forced focus, held key, unbounded input, macro,
 automatic repetition, element identity, workflow recording, application
 acceptance, physical-activity observation, or physical-user priority.
+
+Wire revision 9 has a separate text-transfer profile and grant. Implementing
+that profile does not change this profile's direct-XKB behavior or make
+`input_keyboard` authorize selection transfer.
 
 ## Additional conformance fixtures
 

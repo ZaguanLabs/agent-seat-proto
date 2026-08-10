@@ -7,8 +7,8 @@ enough for independent implementation and black-box review, but has not yet
 met the pre-RFC maturity requirement for provisional status.
 
 Owning specification: the Agent Seat repository pre-RFC. Supported binding:
-local JSON wire revisions 5, 6, and 7. Backend atom: `x11_ewmh`. Assurance atom:
-`tier0`.
+local JSON wire revisions 5 through 9. Backend atom: `x11_ewmh`. Assurance
+atom: `tier0`.
 
 ## 1. Claim
 
@@ -25,7 +25,7 @@ same-user X11 client.
 
 ## 2. Supported revision and surface
 
-Revision 5, 6, or 7 sessions claiming this profile advertise exactly:
+Revision 5 through 9 sessions claiming this profile advertise exactly:
 
 - backend `x11_ewmh`;
 - assurance `tier0`; and

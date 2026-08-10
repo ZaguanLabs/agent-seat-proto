@@ -204,7 +204,7 @@ impl Observer {
         Ok(())
     }
 
-    fn type_key(&self, stroke: &KeyStroke) -> Result<(), Failure> {
+    pub(super) fn type_key(&self, stroke: &KeyStroke) -> Result<(), Failure> {
         let mut pressed_modifiers = Vec::new();
         for modifier in &stroke.modifiers {
             if let Err(error) = self.fake_input(KEY_PRESS_EVENT, *modifier, 0, 0) {
@@ -273,7 +273,7 @@ impl Observer {
         }
     }
 
-    fn require_focus_owned_by(&self, target: u32) -> Result<(), Failure> {
+    pub(super) fn require_focus_owned_by(&self, target: u32) -> Result<(), Failure> {
         let focus = self
             .connection
             .get_input_focus()

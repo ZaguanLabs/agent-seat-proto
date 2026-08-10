@@ -1,8 +1,9 @@
 # Tier 0.5 volatile seat gate
 
 Status: experimental provider profile, 2026-08-09. This is a working local
-operator gate and the runtime prerequisite for the revision-8 X11 input
-surface, not a new wire assurance value or a physical-user priority claim.
+operator gate and the runtime prerequisite for the revision-9 X11 input and
+text-transfer surfaces, not a new wire assurance value or a physical-user
+priority claim.
 
 ## Purpose
 
@@ -60,6 +61,12 @@ character actions and may report a partial count. A `keyboard.key` request is
 one independently reportable action with balanced main-key and modifier
 press/release pairs.
 
+A `text.insert` request also rechecks the generation before clipboard
+ownership, before the paste command, and while serving selection requests.
+Disable, focus/target loss, or selection loss produces a zero-delivery
+`interrupted` result. It does not cancel an application after the complete
+selection property was already delivered.
+
 The gate does not replace target validation and is not evidence of an unlocked
 session or physical-user inactivity. Ordinary X11 cannot reliably distinguish
 XTEST from physical input, so a physical event can overlap an agent action. An
@@ -107,7 +114,7 @@ similar startup conventions do not prove identical lifetime behavior.
 
 ## Settings integration
 
-`agent-seat-settings` 0.1.9 shows the selected provider's volatile status in a
+`agent-seat-settings` 0.1.10 shows the selected provider's volatile status in a
 fourth `RUNTIME SEAT` state-rail node and in a dedicated Overview panel. The
 panel provides manual Refresh, **Enable for this instance**, and immediate
 **Disable now** controls. Enable requires a confirmation that names the current
@@ -120,8 +127,9 @@ derivation, bounded I/O, and provider peer authentication as the command. It
 does not duplicate the fixed control protocol, invoke a shell, or spawn
 `agent-seat-x11`.
 
-The Access page separately grants `input_pointer` and `input_keyboard`; neither
-grant enables the runtime seat. Saved policy, active-policy evidence, and
+The Access page separately grants `input_pointer`, `input_keyboard`, and
+`text_transfer`; no grant enables the runtime seat. Saved policy,
+active-policy evidence, and
 volatile seat state remain separate facts. Opening Settings performs only a
 status request. Opening, saving,
 reloading, restoring, logging in, and unlocking never send Enable. The

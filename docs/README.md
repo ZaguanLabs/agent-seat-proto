@@ -14,14 +14,16 @@ overview. These guides cover normal configuration and operation:
 - [Obscured-client capture](protocol/profiles/x11-obscured-capture-v2.md) —
   separately granted, bounded full or target-region PNG capture and its
   limitations.
+- [Exact text transfer](protocol/profiles/x11-text-transfer-v1.md) — separately
+  granted focused UTF-8 delivery, clipboard effects, and qualified results.
 - [Compatibility](compatibility.md) — released and experimental combinations,
   evidence, and known limitations.
 
 Technical material is grouped by purpose:
 
 - [Design](design/README.md) — architecture, roadmap, UI design, and optional
-  profile decisions, including the unimplemented
-  [Unicode text-transfer candidate](design/text-transfer.md).
+  profile decisions, including the approved
+  [Unicode text-transfer decision](design/text-transfer.md).
 - [Protocol](protocol/README.md) — wire contract, information model, registries,
   profiles, conformance formats, and pre-RFC work.
 - [Security](security/README.md) — trust boundaries, threat models, and gated
@@ -29,6 +31,8 @@ Technical material is grouped by purpose:
 - [Verification](verification/README.md) — milestone evidence and full-system
   participation contracts, including dual-era MCP compatibility and the
   [revision 8 input-diagnostics record](verification/revision8-input-diagnostics-verification.md).
+  Revision 9 exact-text evidence is in the
+  [text-transfer record](verification/revision9-text-transfer-verification.md).
 
 Documents describe only their stated assurance level. Experimental material is
 not a promise that the corresponding capability is safe or available.

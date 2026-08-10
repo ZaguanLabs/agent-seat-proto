@@ -1,7 +1,7 @@
 # Standalone X11 provider
 
-Status: T3 Tier 0 core plus experimental obscured-capture and Tier 0.5 input profiles.
-`agent-seat-x11` 0.1.29 owns lifecycle, policy, local
+Status: T3 Tier 0 core plus experimental obscured-capture, Tier 0.5 input, and
+target-scoped text-transfer profiles. `agent-seat-x11` 0.1.30 owns lifecycle, policy, local
 authentication, X11 discovery, bounded EWMH observation, supported management,
 and controlled desktop-entry launch without moving authority into the MCP
 companion. The current implementation target is Linux X11 and its `SO_PEERCRED`
@@ -33,6 +33,8 @@ contract.
   generation on disable.
 - Realize bounded target-aware pointer and keyboard input through the existing
   X11 session only while that volatile seat remains enabled.
+- Offer exact bounded UTF-8 to one focused target under a separate grant,
+  without reading the displaced clipboard selection.
 - Capture only a freshly scoped client's Composite-owned pixels under a
   separate grant, fixed image bounds, and explicit format conversion.
 
@@ -194,6 +196,7 @@ capabilities = [
   "launch_execute",
   # "input_pointer",   # Target-aware move and click.
   # "input_keyboard",  # Focus-bound bounded text.
+  # "text_transfer",   # Exact UTF-8; displaces clipboard ownership.
   # "capture_obscured", # Target-owned PNG, including later-obscured pixels.
 ]
 
@@ -217,7 +220,8 @@ directory enforces the same-user boundary and the accepted socket's
 `SO_PEERCRED` UID selects the grant; `hello.peer` remains descriptive.
 Capabilities must be unique and are intersected with the peer's canonically
 ordered request. `observe_titles`, `observe_events`, every management
-capability, `input_pointer`, `input_keyboard`, and `capture_obscured` require
+capability, `input_pointer`, `input_keyboard`, `text_transfer`, and
+`capture_obscured` require
 `observe_structure`; `launch_execute` requires `launch_list`. Calls recheck
 those dependencies in the live session. An omitted grant denies every peer.
 
@@ -226,7 +230,7 @@ those dependencies in the live session. An omitted grant denies every peer.
 | `max_sessions` | 4 | 1..32 |
 | `max_requests_per_session` | 1024 | 1..4096 |
 | `io_timeout_ms` | 2000 | 50..10000 |
-| grant capabilities | empty | at most 13 unique atoms |
+| grant capabilities | empty | at most 14 unique atoms |
 | `observation.clients` | `none` | `none`, `current_workspace`, `all_workspaces` |
 | `observation.titles` | `false` | boolean |
 | `launch.mode` | `deny` | `deny`, `allow_listed`, `allow_installed` |
@@ -259,7 +263,7 @@ before releasing the grab. Thus two conforming providers cannot both observe
 an empty selection and overwrite one another.
 
 The selected root and the dedicated owner window receive byte-identical
-revision-8 `_AGENT_SEAT` advertisements only after ownership succeeds. A
+revision-9 `_AGENT_SEAT` advertisements only after ownership succeeds. A
 second provider refuses to compete. Losing the selection terminates the
 provider. Missing or mismatched properties remain undiscoverable rather than
 falling back to a conventional filename.
@@ -277,7 +281,7 @@ Each admitted connection has fixed read/write deadlines and one sequential
 request stream; there is no per-session request queue. The provider refuses
 capacity beyond `max_sessions`, evicts a peer that does not complete framing
 before its deadline, and ends a session at its request bound. Frames retain
-the revision-8 direction limits: 65,536 request bytes and 12,582,912 response
+the revision-9 direction limits: 65,536 request bytes and 12,582,912 response
 bytes.
 
 The provider advertises `ewmh_observation`, `ewmh_management`, and
@@ -288,7 +292,7 @@ Every request is checked against the grant first; missing authority returns
 `refused`.
 
 When either input capability is granted, the provider additionally advertises
-`input_injection` and accepts revision-8 `pointer.move`, `pointer.click`,
+`input_injection` and accepts revision-9 `pointer.move`, `pointer.click`,
 `keyboard.type`, `keyboard.write`, or `keyboard.key`. No broker, root service, evdev permission,
 uinput permission, or `input`-group membership is required. Each independently
 reportable action
@@ -317,6 +321,21 @@ Control/Alt/Shift/Super modifiers from the same live XKB evidence. It is the
 preferred path for standard focused commands such as Page Down or Control+L
 because it avoids fragile pointer coordinates. It cannot force focus, accept a
 raw keycode, hold a key, or execute a sequence.
+
+When `text_transfer` is granted, the provider advertises the distinct
+`text_transfer` feature and accepts `text.insert` for a freshly observed target
+that already owns focus. One request may contain at most 32 KiB and 16,384
+Unicode scalars. The provider temporarily replaces `CLIPBOARD`, sends one
+balanced Control+V command, and serves only finite UTF-8 selection targets to a
+requestor proven by X-Resource 1.2 to belong to the scoped X11 client. It never
+reads or restores the old selection. A clipboard manager may retain the text.
+
+The result distinguishes complete selection delivery, an offer that was never
+requested, and interruption. Even complete delivery does not prove the
+application inserted or retained anything. Selection loss, focus/target/seat
+loss, missing client-identity evidence, or the two-second deadline stops the
+request; cleanup never clears a later clipboard owner. See the
+[text-transfer profile](protocol/profiles/x11-text-transfer-v1.md).
 
 This simple profile does not advertise `human_activity` and cannot prevent a
 physical event from overlapping an agent action. The runtime seat is an

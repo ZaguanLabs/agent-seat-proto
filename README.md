@@ -6,7 +6,7 @@ is owned from its first commit by
 [`ZaguanLabs`](https://github.com/ZaguanLabs).
 
 E1 and the T0--T3 Tier 0 core are complete. Current source implements strict
-Agent Seat wire revision 8, a dual-era MCP `2026-07-28` and `2025-11-25`
+Agent Seat wire revision 9, a dual-era MCP `2026-07-28` and `2025-11-25`
 companion, and a standalone provider with bounded EWMH observation,
 freshness-checked management, and policy-controlled desktop-entry launch. The
 five deliverables are:
@@ -46,9 +46,13 @@ run compose/IME sequences, or use clipboard paste.
 When direct resolution fails, the diagnostic names the first unavailable
 one-based character position and Unicode code point. Agents must not respond by
 changing the user's XKB layout or mapping or by routing text through an
-ungranted shell/browser clipboard path. Layout-independent Unicode transfer is
-an [explicitly separate candidate authority](docs/design/text-transfer.md), not
-part of revision 8.
+ungranted shell/browser clipboard path.
+
+Revision 9 adds separately granted, target-scoped exact Unicode transfer. It
+temporarily replaces X11 clipboard ownership, may expose the text to a
+clipboard manager, and reports verified selection delivery rather than
+application insertion. It never reads or restores the old clipboard. See the
+[text-transfer profile](docs/protocol/profiles/x11-text-transfer-v1.md).
 
 Revision 8 adds an explicit long-form text operation for up to 4,096
 preflighted scalar actions and 16 KiB, plus target-relative capture regions of
@@ -93,6 +97,13 @@ For desktop input, grant `observe_structure` plus `input_pointer` and/or
 `input_keyboard` in the policy (or on Settings → Access), restart the provider
 after saving, then enable the current runtime seat. No device-group or root
 setup is part of this path.
+
+For exact accented, multilingual, or long text independent of the keyboard
+layout, separately grant `observe_structure` plus `text_transfer`. Restart the
+provider and enable the current seat. This grant replaces the current X11
+clipboard owner during each request, cannot restore prior contents, and may
+allow a clipboard manager to retain the transferred text. Use it only when
+that visible side effect is acceptable.
 
 For target-owned screenshots, grant `observe_structure` plus
 `capture_obscured`, restart the provider, and observe the client before calling
@@ -153,9 +164,10 @@ The standalone provider answers
 authenticated `seat_status`, bounded desktop snapshots, filtered event
 subscriptions, supported EWMH management, and controlled XDG application
 discovery and launch. Separately granted `pointer_move`, `pointer_click`,
-`keyboard_type`, `keyboard_write`, and `keyboard_key` tools are available only while the volatile
-Tier 0.5 seat is
-enabled; they are not part of the supported Tier 0 core.
+`keyboard_type`, `keyboard_write`, `keyboard_key`, and `text_insert` tools are
+available only while the volatile Tier 0.5 seat is enabled; they are not part
+of the supported Tier 0 core. `text_insert` has its own grant and clipboard
+warning.
 
 The [documentation index](docs/README.md) separates user guides from technical
 reference material. Portable pre-RFC semantics are in the
@@ -174,6 +186,8 @@ standalone
 [`agent-seat.x11-ewmh-core.v1`](docs/protocol/profiles/x11-ewmh-core-v1.md)
 backend profile, the optional
 [`agent-seat.x11-tier0.5-input.v3`](docs/protocol/profiles/x11-tier0.5-input-v3.md)
+profile, the
+[`agent-seat.x11-text-transfer.v1`](docs/protocol/profiles/x11-text-transfer-v1.md)
 profile, and portable
 [`agent-seat.conformance-report/1`](docs/protocol/conformance-report.md) evidence
 format.

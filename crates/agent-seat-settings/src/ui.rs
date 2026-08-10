@@ -1499,6 +1499,13 @@ fn capability_groups() -> [(&'static str, &'static str, Vec<CapabilitySpec>); 5]
                     description: "Type short or long-form bounded text, or send one key command, only while the target owns keyboard focus.",
                     dependency: "Window structure and an enabled runtime seat",
                 },
+                CapabilitySpec {
+                    capability: Capability::TextTransfer,
+                    title: "Exact Unicode text transfer",
+                    atom: "text_transfer",
+                    description: "Offer bounded exact UTF-8 to one focused target without reading the old clipboard. This replaces X11 clipboard ownership, and a clipboard manager may retain the transferred text.",
+                    dependency: "Window structure and an enabled runtime seat",
+                },
             ],
         ),
         (
@@ -1679,7 +1686,7 @@ mod tests {
             .iter()
             .find(|(name, _, _)| *name == "Input")
             .expect("Input capability group");
-        assert_eq!(input.2.len(), 2);
+        assert_eq!(input.2.len(), 3);
         assert!(
             input
                 .2
@@ -1692,6 +1699,13 @@ mod tests {
                 .iter()
                 .any(|spec| spec.capability == Capability::InputKeyboard)
         );
+        let transfer = input
+            .2
+            .iter()
+            .find(|spec| spec.capability == Capability::TextTransfer)
+            .expect("text-transfer capability");
+        assert!(transfer.description.contains("replaces X11 clipboard"));
+        assert!(transfer.description.contains("may retain"));
         assert!(
             input
                 .2

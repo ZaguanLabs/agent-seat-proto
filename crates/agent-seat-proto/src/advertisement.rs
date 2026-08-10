@@ -6,8 +6,8 @@ use std::fmt::Write as _;
 use crate::{MAX_ADVERTISEMENT_BYTES, PROTOCOL_NAME, PROTOCOL_REVISION};
 
 const SEPARATOR: char = '\0';
-const REVISION_TEXT: &str = "8";
-const _: () = assert!(PROTOCOL_REVISION == 8);
+const REVISION_TEXT: &str = "9";
+const _: () = assert!(PROTOCOL_REVISION == 9);
 
 /// A validated Agent Seat advertisement borrowed from its source value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -16,7 +16,7 @@ pub struct Advertisement<'a> {
 }
 
 impl<'a> Advertisement<'a> {
-    /// Parses the exact revision-8 advertisement grammar without allocation.
+    /// Parses the exact revision-9 advertisement grammar without allocation.
     ///
     /// # Errors
     ///

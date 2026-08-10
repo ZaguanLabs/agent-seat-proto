@@ -72,6 +72,7 @@ impl Seat {
             Capability::LaunchExecute,
             Capability::InputPointer,
             Capability::InputKeyboard,
+            Capability::TextTransfer,
             Capability::CaptureObscured,
         ])
         .map_err(|error| internal(error.to_string()))?;

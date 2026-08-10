@@ -32,13 +32,14 @@ contains:
 - protocol identity and historical wire-revision allocations;
 - portable conformance-report format allocations;
 - the repository-reserved core namespace;
-- exact revision-8 message, capability, feature, backend, assurance, call,
+- exact revision-9 message, capability, feature, backend, assurance, call,
   reply, event, state, action, result, error, and retry atoms; and
 - separately allocated profile and extension records. The current profiles are
   `agent-seat.x11-ewmh-core.v1` and
   `agent-seat.x11-tier0.5-input.v1`,
   `agent-seat.x11-tier0.5-input.v2`,
   `agent-seat.x11-tier0.5-input.v3`,
+  `agent-seat.x11-text-transfer.v1`,
   `agent-seat.x11-obscured-capture.v1`, and
   `agent-seat.x11-obscured-capture.v2`; no extensions are allocated.
 

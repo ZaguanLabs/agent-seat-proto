@@ -4,6 +4,7 @@ mod capture;
 mod input;
 mod keyboard;
 mod manager;
+mod text_transfer;
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -1000,6 +1001,10 @@ struct Atoms {
     client_leader: u32,
     startup_id: u32,
     utf8: u32,
+    clipboard: u32,
+    targets: u32,
+    text_plain_utf8: u32,
+    text_plain: u32,
     state_above: u32,
     state_below: u32,
     state_fullscreen: u32,
@@ -1055,6 +1060,10 @@ impl Atoms {
             client_leader: atom(b"WM_CLIENT_LEADER")?,
             startup_id: atom(b"_NET_STARTUP_ID")?,
             utf8: atom(b"UTF8_STRING")?,
+            clipboard: atom(b"CLIPBOARD")?,
+            targets: atom(b"TARGETS")?,
+            text_plain_utf8: atom(b"text/plain;charset=utf-8")?,
+            text_plain: atom(b"text/plain")?,
             state_above: atom(b"_NET_WM_STATE_ABOVE")?,
             state_below: atom(b"_NET_WM_STATE_BELOW")?,
             state_fullscreen: atom(b"_NET_WM_STATE_FULLSCREEN")?,

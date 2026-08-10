@@ -2,7 +2,7 @@
 
 Status: repository draft, 2026-08-09. This document has no IETF, freedesktop.org,
 or other external standards status. The normative contract implemented by the
-current product remains [wire revision 8](specification.md).
+current product remains [wire revision 9](specification.md).
 
 ## Abstract
 
@@ -40,7 +40,7 @@ Conformance to this draft does not imply wire compatibility with revisions 3,
 4, 5, or any future revision.
 
 The current repository wire specification takes precedence if this draft and
-revision 8 differ. Resolving such a difference requires an explicit future wire
+revision 9 differ. Resolving such a difference requires an explicit future wire
 revision; it MUST NOT silently change a released revision.
 
 ## 2. Goals and non-goals
@@ -489,11 +489,12 @@ Normative terminology:
 
 Repository contracts and evidence:
 
-- [Agent Seat wire revision 8](specification.md)
+- [Agent Seat wire revision 9](specification.md)
 - [Architecture](../design/architecture.md)
 - [Security model](../security/security-model.md)
 - [Optional-profile decisions](../design/optional-profiles.md)
 - [Standalone X11 Tier 0.5 input profile](profiles/x11-tier0.5-input-v3.md)
+- [X11 target-scoped text-transfer profile](profiles/x11-text-transfer-v1.md)
 - [X11 obscured-client capture profile](profiles/x11-obscured-capture-v2.md)
 - [T5 input reconsideration](../security/t5-input-reconsideration.md)
 - [T5 broker deployment](../security/t5-broker-deployment.md)

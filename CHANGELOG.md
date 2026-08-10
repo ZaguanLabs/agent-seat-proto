@@ -26,6 +26,22 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added experimental wire revision 9 and
+  `agent-seat.x11-text-transfer.v1`. The separately granted `text.insert`
+  operation offers at most 32 KiB and 16,384 Unicode scalars to one freshly
+  scoped focused target, using request-local write-only X11 selection
+  ownership. It displaces but never reads or pretends to restore the old
+  clipboard, refuses different-X-client requestors with X-Resource 1.2
+  identity evidence, and reports only delivered, offered, or interrupted
+  selection state—not application insertion. First-run policy, Settings, and
+  both MCP eras disclose clipboard displacement and possible manager
+  retention. Isolated Openbox/Xvfb tests cover exact accented multiline bytes
+  after `TARGETS` negotiation, a competing prior owner, hostile requestor
+  substitution, focus refusal, selection loss, preservation of a later owner,
+  timeout, cleanup, and strict bounds. This milestone is `agent-seat-proto`
+  0.1.7, `agent-seat-mcp` 0.1.10, `agent-seat-x11` 0.1.30, and Settings
+  0.1.10.
+
 - Added experimental wire revision 8 with bounded `keyboard.write` and
   `capture.region` operations. Long-form input accepts at most 4,096 Unicode
   scalar actions and 16 KiB, preflights the complete live-XKB text before
