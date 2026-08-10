@@ -35,6 +35,8 @@ Technical material is grouped by purpose:
   [text-transfer record](verification/revision9-text-transfer-verification.md),
   with the real-browser follow-up in the
   [Brave/Suno record](verification/x11-text-transfer-browser-verification.md).
+  Provider-session failure recovery is covered by the
+  [MCP recovery record](verification/mcp-provider-session-recovery.md).
 
 Documents describe only their stated assurance level. Experimental material is
 not a promise that the corresponding capability is safe or available.

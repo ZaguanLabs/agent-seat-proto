@@ -560,3 +560,13 @@ contract already cited above. It adds no implementation, wire operation,
 capability, dependency, clipboard access, or provider authority. No Nobox or
 other product source, schema, test, fixture, comment, or prose was consulted or
 adapted.
+
+## MCP provider-session recovery
+
+The `agent-seat-mcp` 0.1.11 provider-session failure classification,
+non-replay rule, recovery instructions, and process fixtures are original work
+from independently observed companion behavior after a provider restart and
+this repository's session-scoped client-identity contract. They add no wire
+operation, tool, dependency, provider authority, automatic retry, or external
+implementation input. No Nobox or third-party source, schema, test, fixture,
+comment, or prose was consulted or adapted.

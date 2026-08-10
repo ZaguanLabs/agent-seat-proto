@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::io::{BufRead as _, BufReader, Write as _};
+use std::net::Shutdown;
 use std::num::NonZeroU64;
 use std::os::unix::net::UnixListener;
 use std::process::{Command, Stdio};
@@ -54,6 +55,228 @@ fn modern_meta() -> Value {
     })
 }
 
+fn serve_one_status_then_close(listener: UnixListener) {
+    let (mut stream, _) = listener.accept().expect("accept companion");
+    assert!(matches!(
+        read_frame(&mut stream, MAX_REQUEST_FRAME_BYTES).expect("read hello"),
+        ReadFrame::Message(ClientMessage::Hello(_))
+    ));
+    write_frame(
+        &mut stream,
+        &ServerMessage::Welcome(Welcome {
+            protocol: BoundedText::new(PROTOCOL_NAME).expect("protocol text"),
+            revision: PROTOCOL_REVISION,
+            session: SessionId::new(NonZeroU64::MIN),
+            provider: ProviderInfo {
+                name: BoundedText::new("ended-session-fixture").expect("provider name"),
+                version: BoundedText::new("1").expect("provider version"),
+            },
+            backend: Backend::X11Ewmh,
+            assurance: Assurance::Tier0,
+            features: BoundedList::new(vec![Feature::EwmhObservation, Feature::ObscuredCapture])
+                .expect("provider features"),
+            granted: BoundedList::new(vec![
+                Capability::ObserveStructure,
+                Capability::CaptureObscured,
+            ])
+            .expect("provider grants"),
+            limits: Limits {
+                request_frame_bytes: MAX_REQUEST_FRAME_BYTES as u32,
+                response_frame_bytes: MAX_RESPONSE_FRAME_BYTES as u32,
+                events_per_poll: MAX_EVENTS as u16,
+                poll_wait_ms: MAX_POLL_WAIT_MS,
+            },
+        }),
+        MAX_RESPONSE_FRAME_BYTES,
+    )
+    .expect("write welcome");
+    let request =
+        match read_frame(&mut stream, MAX_REQUEST_FRAME_BYTES).expect("read status request") {
+            ReadFrame::Message(ClientMessage::Request(request)) => request,
+            other => panic!("unexpected provider frame: {other:?}"),
+        };
+    assert!(matches!(
+        request.call,
+        agent_seat_proto::Call::SeatStatus(_)
+    ));
+    write_frame(
+        &mut stream,
+        &ServerMessage::Response(Response {
+            id: request.id,
+            outcome: Outcome::Error(ProtocolError {
+                code: ErrorCode::Unsupported,
+                retry: Retry::Never,
+                field: None,
+                message: None,
+                current_generation: None,
+                current_sequence: Some(Sequence::new(0)),
+            }),
+        }),
+        MAX_RESPONSE_FRAME_BYTES,
+    )
+    .expect("write status response");
+    stream
+        .shutdown(Shutdown::Both)
+        .expect("close provider session");
+}
+
+#[test]
+fn modern_dead_provider_context_requires_status_and_fresh_observation() {
+    let path = std::env::temp_dir().join(format!(
+        "agent-seat-modern-ended-session-{}.sock",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&path);
+    let listener = UnixListener::bind(&path).expect("bind ended-session provider");
+    let provider = thread::spawn(move || serve_one_status_then_close(listener));
+    let requests = [
+        json!({
+            "jsonrpc":"2.0",
+            "id":1,
+            "method":"tools/call",
+            "params":{"name":"seat_status","arguments":{},"_meta":modern_meta()}
+        }),
+        json!({
+            "jsonrpc":"2.0",
+            "id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"capture_obscured",
+                "arguments":{"context":1,"client":4,"generation":0},
+                "_meta":modern_meta()
+            }
+        }),
+        json!({
+            "jsonrpc":"2.0",
+            "id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"desktop_snapshot",
+                "arguments":{"context":1},
+                "_meta":modern_meta()
+            }
+        }),
+    ]
+    .into_iter()
+    .map(|request| request.to_string())
+    .collect::<Vec<_>>()
+    .join("\n")
+        + "\n";
+    let responses = lines(&run(
+        &requests,
+        &["--socket", path.to_str().expect("UTF-8 socket")],
+    ));
+    provider.join().expect("ended-session provider");
+    assert_eq!(responses[0]["result"]["structuredContent"]["context"], 1);
+    for (index, expected_id) in [(1, 2), (2, 3)] {
+        let response = &responses[index];
+        assert_eq!(response["id"], expected_id);
+        assert_eq!(
+            response["result"]["structuredContent"]["body"]["code"],
+            "stale_context"
+        );
+        assert_eq!(
+            response["result"]["structuredContent"]["body"]["retry"],
+            "reconnect"
+        );
+        let message = response["result"]["structuredContent"]["body"]["message"]
+            .as_str()
+            .expect("context failure message");
+        if expected_id == 2 {
+            assert!(message.contains("client IDs are invalid"));
+            assert!(message.contains("outcome may be unknown"));
+        } else {
+            assert!(message.contains("unknown or expired"));
+        }
+    }
+    fs::remove_file(path).expect("remove ended-session socket");
+}
+
+#[test]
+fn legacy_dead_provider_session_is_not_replayed() {
+    let path = std::env::temp_dir().join(format!(
+        "agent-seat-legacy-ended-session-{}.sock",
+        std::process::id()
+    ));
+    let _ = fs::remove_file(&path);
+    let listener = UnixListener::bind(&path).expect("bind ended-session provider");
+    let provider = thread::spawn(move || serve_one_status_then_close(listener));
+    let requests = [
+        json!({
+            "jsonrpc":"2.0",
+            "id":1,
+            "method":"initialize",
+            "params":{
+                "protocolVersion":"2025-11-25",
+                "capabilities":{},
+                "clientInfo":{"name":"test","version":"1"}
+            }
+        }),
+        json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+        json!({
+            "jsonrpc":"2.0",
+            "id":2,
+            "method":"tools/call",
+            "params":{"name":"seat_status","arguments":{}}
+        }),
+        json!({
+            "jsonrpc":"2.0",
+            "id":3,
+            "method":"tools/call",
+            "params":{
+                "name":"capture_obscured",
+                "arguments":{"client":4,"generation":0}
+            }
+        }),
+        json!({
+            "jsonrpc":"2.0",
+            "id":4,
+            "method":"tools/call",
+            "params":{
+                "name":"capture_obscured",
+                "arguments":{"client":4,"generation":0}
+            }
+        }),
+    ]
+    .into_iter()
+    .map(|request| request.to_string())
+    .collect::<Vec<_>>()
+    .join("\n")
+        + "\n";
+    let responses = lines(&run(
+        &requests,
+        &["--socket", path.to_str().expect("UTF-8 socket")],
+    ));
+    provider.join().expect("ended-session provider");
+    let response = &responses[2];
+    assert_eq!(response["id"], 3);
+    assert_eq!(
+        response["result"]["structuredContent"]["body"]["code"],
+        "unavailable"
+    );
+    assert_eq!(
+        response["result"]["structuredContent"]["body"]["retry"],
+        "reconnect"
+    );
+    let message = response["result"]["structuredContent"]["body"]["message"]
+        .as_str()
+        .expect("legacy failure message");
+    assert!(message.contains("call seat_status and reobserve"));
+    assert!(message.contains("outcome may be unknown"));
+    let refused = &responses[3];
+    assert_eq!(refused["id"], 4);
+    assert_eq!(
+        refused["result"]["structuredContent"]["body"]["code"],
+        "unavailable"
+    );
+    assert!(
+        refused["result"]["structuredContent"]["body"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("before using any client ID"))
+    );
+    fs::remove_file(path).expect("remove ended-session socket");
+}
+
 #[test]
 fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
     let requests = [
@@ -84,7 +307,7 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
     assert!(
         responses[0]["result"]["instructions"]
             .as_str()
-            .is_some_and(|instructions| instructions.contains("Never mutate XKB"))
+            .is_some_and(|instructions| instructions.contains("never replay an old client ID"))
     );
     assert!(responses[0]["result"]["resultType"].is_null());
     assert_eq!(
@@ -180,7 +403,7 @@ fn modern_discovery_and_tool_listing_are_stateless_cacheable_and_desktop_free() 
     assert!(
         discovery["instructions"]
             .as_str()
-            .is_some_and(|instructions| instructions.contains("Never mutate XKB"))
+            .is_some_and(|instructions| instructions.contains("never replay an old client ID"))
     );
     assert_eq!(
         discovery["_meta"]["io.modelcontextprotocol/serverInfo"]["name"],

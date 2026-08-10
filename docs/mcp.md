@@ -1,6 +1,6 @@
 # Generic MCP companion
 
-`agent-seat-mcp` 0.1.10 implements both MCP `2026-07-28` and `2025-11-25` over
+`agent-seat-mcp` 0.1.11 implements both MCP `2026-07-28` and `2025-11-25` over
 newline-delimited JSON-RPC stdio. A modern host should use `server/discover`;
 an existing host can continue using the legacy `initialize` lifecycle without
 registration changes or changes to any pre-existing tool schema.
@@ -156,14 +156,22 @@ the exact source precedence and opens the local socket. The companion requests
 capabilities but grants none: the provider authenticates peer credentials,
 selects the grant, reports features and assurance, and rechecks every call.
 
-A dead legacy connection is discarded and the next call resolves a provider
-again. A modern provider failure discards its context and a new `seat_status`
-call is required. The companion does not retain a stale automatically
-discovered path. Read and write operations have a fixed ten-second transport
-deadline in addition to provider operation deadlines. Only `keyboard_write`
-extends the response-read deadline to a bounded 120 seconds; `text_insert`
-uses the ordinary ten-second deadline around its provider-bounded two-second
-selection wait. The ordinary deadline is restored after a long write.
+A dead legacy connection is discarded, and only `seat_status` may resolve a
+provider again; other legacy tools are refused locally until status succeeds.
+A modern provider failure discards its context and a new `seat_status` call is
+required. Modern tools report `stale_context`; legacy tools retain
+`unavailable` with `retry: reconnect`. In either era, a failed call may have
+reached the old provider before its connection ended. The companion therefore
+does not replay it. Call `seat_status`, take a fresh snapshot, and decide from
+current state whether another action is appropriate; never reuse an old client
+ID or assume a failed mutation did not occur.
+
+The companion does not retain a stale automatically discovered path. Read and
+write operations have a fixed ten-second transport deadline in addition to
+provider operation deadlines. Only `keyboard_write` extends the response-read
+deadline to a bounded 120 seconds; `text_insert` uses the ordinary ten-second
+deadline around its provider-bounded two-second selection wait. The ordinary
+deadline is restored after a long write.
 
 Register it with an MCP host using the equivalent of:
 

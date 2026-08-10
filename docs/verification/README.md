@@ -11,6 +11,7 @@
 - [Revision 9 text-transfer verification](revision9-text-transfer-verification.md)
 - [X11 text-transfer Brave/Suno verification](x11-text-transfer-browser-verification.md)
 - [MCP 2026-07-28 compatibility verification](mcp-2026-07-28-verification.md)
+- [MCP provider-session recovery verification](mcp-provider-session-recovery.md)
 - [T5 participant and full-system runner contract](t5-participation-contract.md)
 
 Verification records name their exact subject, environment, observations, and

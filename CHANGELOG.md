@@ -6,6 +6,14 @@ All notable changes to this project are documented here.
 
 ### Fixed
 
+- `agent-seat-mcp` 0.1.11 no longer exposes a raw broken-pipe diagnostic when
+  an established provider session ends. A modern failure invalidates its
+  context and client IDs as `stale_context`; legacy retains its compatible
+  `unavailable/reconnect` result. Both eras state that the failed call's
+  outcome may be unknown, require `seat_status` plus fresh observation, and
+  never replay a call across provider sessions. Process tests cover both
+  boundaries after the provider closes a real authenticated wire session.
+
 - `agent-seat-x11` 0.1.31 keeps its request-local selection owner alive for a
   bounded 250 ms quiet period after the first complete text response. This
   lets X11 consumers finish owner-change prefetch and process the already

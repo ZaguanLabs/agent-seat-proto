@@ -9,8 +9,8 @@ use agent_seat_proto::{
     ApplicationLaunchRequest, ApplicationListRequest, Call, CaptureRegionRequest,
     ClientGeometryRequest, ClientId, ClientStateRequest, ClientWorkspaceRequest, Empty, Generation,
     KeyboardKeyRequest, KeyboardTypeRequest, KeyboardWriteRequest, Outcome, PointerButton,
-    PointerClickRequest, PointerMoveRequest, PollRequest, Reply, SubscribeRequest, TargetRequest,
-    TextInsertRequest, Validate as _, WorkspaceRequest,
+    PointerClickRequest, PointerMoveRequest, PollRequest, Reply, Retry, SubscribeRequest,
+    TargetRequest, TextInsertRequest, Validate as _, WorkspaceRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -159,6 +159,7 @@ struct Server {
     socket: Option<PathBuf>,
     inherited_seat: Option<Seat>,
     legacy_session: Option<ProviderSession>,
+    legacy_recovery_required: bool,
     legacy_negotiated: bool,
     legacy_initialized: bool,
     modern_contexts: Contexts<ProviderSession>,
@@ -170,6 +171,7 @@ impl Server {
             socket,
             inherited_seat: seat,
             legacy_session: None,
+            legacy_recovery_required: false,
             legacy_negotiated: false,
             legacy_initialized: false,
             modern_contexts: Contexts::new(MAX_MODERN_CONTEXTS),
@@ -246,7 +248,7 @@ impl Server {
                     "title": "Agent Seat",
                     "version": env!("CARGO_PKG_VERSION")
                 },
-                "instructions": "Use seat_status first. Observe before mutation; prefer focused key commands, titles, and small capture regions. Use text_insert for exact multilingual or long text; it replaces X11 clipboard ownership and reports delivery, not application insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying that click, and reobserve when UI changes. Treat stale or timed_out as requiring fresh observation. The provider owns grants and policy."
+                "instructions": "Use seat_status first. Observe before mutation; prefer focused key commands, titles, and small capture regions. Use text_insert for exact multilingual or long text; it replaces X11 clipboard ownership and reports delivery, not application insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying that click, and reobserve when UI changes. On unavailable/reconnect, stale_context, stale, or timed_out, call seat_status and reobserve; never replay an old client ID or assume a failed mutation did not occur. The provider owns grants and policy."
             }),
         )
     }
@@ -296,7 +298,7 @@ impl Server {
             &modern_result(json!({
                 "supportedVersions": SUPPORTED_MCP_VERSIONS,
                 "capabilities": {"tools":{"listChanged":false}},
-                "instructions": "Check the seat; observe before acting. Prefer focused key commands, titles, and small capture regions. Use text_insert for exact multilingual or long text; it replaces X11 clipboard ownership and reports delivery, not application insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying that click; reobserve changed UI. Report qualified work exactly.",
+                "instructions": "Check the seat; observe before acting. Prefer focused key commands, titles, and small capture regions. Use text_insert for exact multilingual or long text; it replaces X11 clipboard ownership and reports delivery, not application insertion. Never mutate XKB or bypass Agent Seat through a shell/browser clipboard. Save a pointer slot only after verifying that click; reobserve changed UI. On unavailable/reconnect, stale_context, stale, or timed_out, call seat_status and reobserve; never replay an old client ID or assume a failed mutation did not occur. Report qualified work exactly.",
                 "ttlMs": STATIC_RESULT_TTL_MS,
                 "cacheScope": "public"
             })),
@@ -534,13 +536,25 @@ impl Server {
                 });
             }
         };
-        if result.is_err() {
-            self.modern_contexts.remove(context);
+        match result {
+            Ok(outcome) => {
+                if outcome_requires_reconnect(&outcome) {
+                    self.modern_contexts.remove(context);
+                }
+                Ok(outcome)
+            }
+            Err(_) => {
+                self.modern_contexts.remove(context);
+                Err(ended_modern_provider_session())
+            }
         }
-        result
     }
 
     fn provider_call_legacy(&mut self, call: Call) -> Result<Outcome, ProviderFailure> {
+        let is_status = matches!(call, Call::SeatStatus(_));
+        if self.legacy_recovery_required && !is_status {
+            return Err(legacy_status_required());
+        }
         if self.legacy_session.is_none() {
             self.legacy_session = Some(ProviderSession::new(self.connect_seat()?));
         }
@@ -553,10 +567,19 @@ impl Server {
             call,
         );
         match result {
-            Ok(outcome) => Ok(outcome),
-            Err(error) => {
+            Ok(outcome) => {
+                if outcome_requires_reconnect(&outcome) {
+                    self.legacy_session = None;
+                    self.legacy_recovery_required = true;
+                } else if is_status && matches!(outcome, Outcome::Ok(_)) {
+                    self.legacy_recovery_required = false;
+                }
+                Ok(outcome)
+            }
+            Err(_) => {
                 self.legacy_session = None;
-                Err(error)
+                self.legacy_recovery_required = true;
+                Err(ended_legacy_provider_session())
             }
         }
     }
@@ -577,10 +600,18 @@ impl Server {
                 });
             }
         };
-        if result.is_err() {
-            self.modern_contexts.remove(context);
+        match result {
+            Ok(outcome) => {
+                if outcome.requires_provider_reconnect() {
+                    self.modern_contexts.remove(context);
+                }
+                Ok(outcome)
+            }
+            Err(_) => {
+                self.modern_contexts.remove(context);
+                Err(ended_modern_provider_session())
+            }
         }
-        result
     }
 
     fn pointer_slot_legacy(
@@ -588,6 +619,9 @@ impl Server {
         name: &str,
         arguments: Option<Value>,
     ) -> Result<ToolResult, ProviderFailure> {
+        if self.legacy_recovery_required {
+            return Err(legacy_status_required());
+        }
         if self.legacy_session.is_none() {
             self.legacy_session = Some(ProviderSession::new(self.connect_seat()?));
         }
@@ -598,10 +632,20 @@ impl Server {
             name,
             arguments,
         );
-        if result.is_err() {
-            self.legacy_session = None;
+        match result {
+            Ok(outcome) => {
+                if outcome.requires_provider_reconnect() {
+                    self.legacy_session = None;
+                    self.legacy_recovery_required = true;
+                }
+                Ok(outcome)
+            }
+            Err(_) => {
+                self.legacy_session = None;
+                self.legacy_recovery_required = true;
+                Err(ended_legacy_provider_session())
+            }
         }
-        result
     }
 
     fn connect_seat(&mut self) -> Result<Seat, ProviderFailure> {
@@ -623,6 +667,10 @@ fn call_seat(seat: &mut Seat, call: Call) -> Result<Outcome, ProviderFailure> {
     seat.call(call)
         .map(|response| response.outcome)
         .map_err(provider_failure)
+}
+
+fn outcome_requires_reconnect(outcome: &Outcome) -> bool {
+    matches!(outcome, Outcome::Error(error) if error.retry == Retry::Reconnect)
 }
 
 fn provider_failure(error: impl ProviderError) -> ProviderFailure {
@@ -663,6 +711,30 @@ fn unavailable_provider_session() -> ProviderFailure {
         code: "unavailable",
         retry: "reconnect",
         message: "provider session is unavailable".to_owned(),
+    }
+}
+
+fn ended_modern_provider_session() -> ProviderFailure {
+    ProviderFailure {
+        code: "stale_context",
+        retry: "reconnect",
+        message: "provider session ended; this context and its client IDs are invalid. Call seat_status, reobserve, and decide whether to retry; the previous call's outcome may be unknown".to_owned(),
+    }
+}
+
+fn ended_legacy_provider_session() -> ProviderFailure {
+    ProviderFailure {
+        code: "unavailable",
+        retry: "reconnect",
+        message: "provider session ended; call seat_status and reobserve before deciding whether to retry; the previous call's outcome may be unknown".to_owned(),
+    }
+}
+
+fn legacy_status_required() -> ProviderFailure {
+    ProviderFailure {
+        code: "unavailable",
+        retry: "reconnect",
+        message: "the previous provider session ended; call seat_status and reobserve before using any client ID".to_owned(),
     }
 }
 
@@ -1547,6 +1619,10 @@ impl ToolResult {
         }
         self
     }
+
+    fn requires_provider_reconnect(&self) -> bool {
+        self.structured_content["body"]["retry"] == "reconnect"
+    }
 }
 
 #[derive(Serialize)]
@@ -1651,7 +1727,7 @@ mod tests {
 
     use agent_seat_proto::{
         CaptureData, CaptureFormat, CaptureRegion, CaptureRegionReply, CaptureReply, ClientId,
-        Generation, Validate as _,
+        ErrorCode, Generation, ProtocolError, Retry, Validate as _,
     };
 
     use super::*;
@@ -1697,6 +1773,29 @@ mod tests {
         let third = contexts.insert("third").expect("replacement context");
         assert_eq!(third, 3);
         assert_eq!(contexts.get_mut(second), Some(&mut "second"));
+    }
+
+    #[test]
+    fn typed_reconnect_outcomes_end_provider_sessions() {
+        for (retry, expected) in [
+            (Retry::Never, false),
+            (Retry::Reobserve, false),
+            (Retry::Reconnect, true),
+        ] {
+            let outcome = Outcome::Error(ProtocolError {
+                code: ErrorCode::Revoked,
+                retry,
+                field: None,
+                message: None,
+                current_generation: None,
+                current_sequence: None,
+            });
+            assert_eq!(outcome_requires_reconnect(&outcome), expected);
+            assert_eq!(
+                tool_outcome(outcome).requires_provider_reconnect(),
+                expected
+            );
+        }
     }
 
     #[test]
