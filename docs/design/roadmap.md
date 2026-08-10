@@ -3,9 +3,9 @@
 Status: E0, E1, T0--T3, the T4--T6 first-release decisions, C0, and S0 are
 complete. R0 has an initial repository pre-RFC draft. The Tier 0 core and C0
 shipped in product release v0.1.0; S0 is complete on `main` in
-`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. Revision 6 now has a
-working experimental obscured-client capture profile and retains revision 5's
-Tier 0.5 pointer/click/text slice; the more complex T5R
+`agent-seat-settings` 0.1.3 and `agent-seat-x11` 0.1.12. Revision 8 now has
+working experimental long-form input and target-region capture profiles while
+retaining the earlier bounded Tier 0.5 actions; the more complex T5R
 physical-priority research remains separately gated. The generic companion now
 supports MCP `2026-07-28` discovery and per-request metadata while retaining
 its complete MCP `2025-11-25` path. E0 evidence is
@@ -129,9 +129,9 @@ lifecycle and resource behavior, required public fixtures, and prohibited
 claims. It remains experimental pending genuinely independent evidence.
 
 The separately registered
-[`agent-seat.x11-tier0.5-input.v2`](../protocol/profiles/x11-tier0.5-input-v2.md)
-profile records the weaker revision-5 X11 input claim, exact action boundary,
-volatile admission lifecycle, public fixtures, and prohibited physical-user
+[`agent-seat.x11-tier0.5-input.v3`](../protocol/profiles/x11-tier0.5-input-v3.md)
+profile records the weaker standalone-X11 input claim through revision 8,
+exact action boundaries, volatile admission lifecycle, public fixtures, and prohibited physical-user
 claims. Reference evidence covers a useful subset; its document explicitly
 lists the fixtures still missing before a complete conformance report.
 

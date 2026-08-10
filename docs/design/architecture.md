@@ -126,7 +126,7 @@ The portable contract is factored further: the
 [serialization-neutral information model](../protocol/information-model.md) defines
 session, authority, identity, freshness, operation, and outcome semantics,
 while [`specification.md`](../protocol/specification.md) remains the concrete local
-Unix-stream/strict-JSON revision-7 binding.
+Unix-stream/strict-JSON revision-8 binding.
 
 An integrated window manager or compositor can satisfy a conformance profile
 using state and ordering it owns directly. The standalone X11 reference may

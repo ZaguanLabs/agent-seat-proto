@@ -502,3 +502,22 @@ Live layout, group, type, modifier-map, and XTEST behavior use the public XKB
 Library and XTEST specifications already cited above. The change uses only the
 existing safe `x11rb` XKB/XTEST bindings and adds no dependency, privileged
 process, raw device access, or machine authority.
+
+## Revision 8 long-form input, region capture, and pointer slots
+
+The revision-8 `keyboard.write` and `capture.region` operations, MCP
+projection, provider realization, profile updates, bounded pointer-slot
+bookkeeping, documentation, and tests are original work derived from the
+maintainer's direct observations of long multiline text and repetitive pointer
+workflows. Nobox remained only the previously recorded black-box prior-art
+target; no Nobox source, schema, test, fixture, comment, prose, or design
+artifact was consulted, copied, translated, or adapted.
+
+Long-form realization reuses this repository's original revision-5 live XKB
+and XTEST implementation plus the revision-7 focus and key-action contract.
+Target-region capture reuses the repository's original revision-6 Composite
+named-pixmap boundary and the public X Composite protocol already cited above.
+Pointer slots are bounded in-memory MCP bookkeeping that forwards an ordinary
+typed pointer call; they use only the Rust standard library and add no
+dependency, persistence, X11 access, privilege, raw device access, or provider
+authority.

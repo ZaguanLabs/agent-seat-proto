@@ -2,7 +2,7 @@
 
 Status: repository draft, 2026-08-09. This document has no IETF, freedesktop.org,
 or other external standards status. The normative contract implemented by the
-current product remains [wire revision 7](specification.md).
+current product remains [wire revision 8](specification.md).
 
 ## Abstract
 
@@ -40,7 +40,7 @@ Conformance to this draft does not imply wire compatibility with revisions 3,
 4, 5, or any future revision.
 
 The current repository wire specification takes precedence if this draft and
-revision 7 differ. Resolving such a difference requires an explicit future wire
+revision 8 differ. Resolving such a difference requires an explicit future wire
 revision; it MUST NOT silently change a released revision.
 
 ## 2. Goals and non-goals
@@ -289,14 +289,14 @@ claims. It remains experimental until independent evidence meets the maturity
 rule below.
 
 The optional
-[`agent-seat.x11-tier0.5-input.v2`](profiles/x11-tier0.5-input-v2.md) profile
+[`agent-seat.x11-tier0.5-input.v3`](profiles/x11-tier0.5-input-v3.md) profile
 separately specifies volatile admission, target-aware XTEST pointer actions,
 focus-bound text and single-key commands, qualified partial results, and the
 absence of a physical-user-priority claim. Implementing it never widens the
 core profile.
 
 The optional
-[`agent-seat.x11-obscured-capture.v1`](profiles/x11-obscured-capture-v1.md)
+[`agent-seat.x11-obscured-capture.v2`](profiles/x11-obscured-capture-v2.md)
 profile separately specifies target enrollment, fresh target-owned Composite
 storage, portable image bounds, cleanup, and the absence of any output or
 human-visible-pixels claim. Implementing it never widens structure observation.
@@ -428,10 +428,12 @@ The following table is descriptive, not a new compatibility promise:
 
 | Profile | Current status | Claim |
 | --- | --- | --- |
-| revision 3 core and the retained revision 4/5/6/7 core | implemented | Strict local lifecycle, bounded observation, qualified EWMH management, and controlled desktop-entry launch. |
+| revision 3 core and the retained revision 4/5/6/7/8 core | implemented | Strict local lifecycle, bounded observation, qualified EWMH management, and controlled desktop-entry launch. |
 | standalone X11/EWMH Tier 0 | implemented for the core | Convergent observation beside a foreign window manager; no atomic WM-state claim. |
 | `agent-seat.x11-tier0.5-input.v2` | experimental, locally implemented subset | Volatile-seat-gated target-relative movement/click, focus-bound bounded text, and one finite key command; no physical-user priority claim. |
+| `agent-seat.x11-tier0.5-input.v3` | experimental, locally implemented subset | Adds bounded preflighted long-form text without clipboard, arbitrary-Unicode, application-acceptance, or physical-user-priority claims. |
 | `agent-seat.x11-obscured-capture.v1` | experimental, locally implemented subset | Separately granted target-owned Composite PNG after enrollment; no output, cursor, decoration, or pre-enrollment reconstruction claim. |
+| `agent-seat.x11-obscured-capture.v2` | experimental, locally implemented subset | Adds a bounded client-relative region from the same separately granted target-owned storage. |
 | output and client-visible capture | unsupported | No approved safe source or wire call. |
 | accessibility semantics | unsupported | No approved wire call or passed profile. |
 | integrated Tier 1 backend | profile not yet specified here | No implementation may claim it from tool compatibility alone. |
@@ -487,12 +489,12 @@ Normative terminology:
 
 Repository contracts and evidence:
 
-- [Agent Seat wire revision 7](specification.md)
+- [Agent Seat wire revision 8](specification.md)
 - [Architecture](../design/architecture.md)
 - [Security model](../security/security-model.md)
 - [Optional-profile decisions](../design/optional-profiles.md)
-- [Standalone X11 Tier 0.5 input profile](profiles/x11-tier0.5-input-v2.md)
-- [X11 obscured-client capture profile](profiles/x11-obscured-capture-v1.md)
+- [Standalone X11 Tier 0.5 input profile](profiles/x11-tier0.5-input-v3.md)
+- [X11 obscured-client capture profile](profiles/x11-obscured-capture-v2.md)
 - [T5 input reconsideration](../security/t5-input-reconsideration.md)
 - [T5 broker deployment](../security/t5-broker-deployment.md)
 - [T5 lock-state study](../security/t5-lock-state-study.md)

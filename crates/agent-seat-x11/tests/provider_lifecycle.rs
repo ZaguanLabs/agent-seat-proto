@@ -16,14 +16,15 @@ use std::time::{Duration, Instant};
 
 use agent_seat_proto::{
     ApplicationId, ApplicationLaunchRequest, ApplicationListRequest, BoundedList, BoundedText,
-    Call, Capability, ClientDescriptor, ClientGeometryRequest, ClientMessage, ClientState,
-    ClientStateRequest, ClientWorkspaceRequest, DesktopSnapshot, Empty, ErrorCode, Event,
-    EventBatch, EventKind, Hello, InputTerminal, KeyboardKey, KeyboardKeyRequest, KeyboardModifier,
-    KeyboardTypeRequest, MAX_REQUEST_FRAME_BYTES, MAX_RESPONSE_FRAME_BYTES, ManagementReply,
-    Observation as ManagementObservation, Outcome, PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo,
-    PointerButton, PointerClickRequest, PointerMoveRequest, PollRequest, ReadFrame, Rect, Reply,
-    Request, RequestId, Sequence, ServerMessage, StateAction, SubscribeRequest, TargetRequest,
-    WorkspaceRequest, read_frame, write_frame,
+    Call, Capability, CaptureRegion, CaptureRegionRequest, ClientDescriptor, ClientGeometryRequest,
+    ClientMessage, ClientState, ClientStateRequest, ClientWorkspaceRequest, DesktopSnapshot, Empty,
+    ErrorCode, Event, EventBatch, EventKind, Hello, InputTerminal, KeyboardKey, KeyboardKeyRequest,
+    KeyboardModifier, KeyboardTypeRequest, KeyboardWriteRequest, MAX_REQUEST_FRAME_BYTES,
+    MAX_RESPONSE_FRAME_BYTES, ManagementReply, Observation as ManagementObservation, Outcome,
+    PROTOCOL_NAME, PROTOCOL_REVISION, PeerInfo, PointerButton, PointerClickRequest,
+    PointerMoveRequest, PollRequest, ReadFrame, Rect, Reply, Request, RequestId, Sequence,
+    ServerMessage, StateAction, SubscribeRequest, TargetRequest, WorkspaceRequest, read_frame,
+    write_frame,
 };
 use agent_seat_x11::{
     ActivePolicyStatus, RuntimeSeatCommand, active_policy_status, control_runtime_seat,
@@ -1990,6 +1991,51 @@ fn obscured_capture_returns_only_fresh_target_owned_pixels() {
     let center = (90 * 320 + 160) * 3;
     assert_eq!(&pixels[center..center + 3], &[255, 0, 0]);
 
+    let region = CaptureRegion {
+        x: 32,
+        y: 24,
+        width: 64,
+        height: 32,
+    };
+    let capture = match wire_call(
+        &mut stream,
+        &mut next_id,
+        Call::CaptureRegion(CaptureRegionRequest {
+            target: target(&observed_target),
+            region,
+        }),
+    ) {
+        Outcome::Ok(Reply::CaptureRegion(capture)) => capture,
+        other => panic!("unexpected region capture outcome: {other:?}"),
+    };
+    assert_eq!(capture.region, region);
+    let bytes = BASE64
+        .decode(capture.data.as_bytes())
+        .expect("region capture base64");
+    let decoder = png::Decoder::new(Cursor::new(bytes));
+    let mut reader = decoder.read_info().expect("region PNG header");
+    let mut pixels = vec![0; reader.output_buffer_size().expect("region PNG size")];
+    let info = reader.next_frame(&mut pixels).expect("region PNG frame");
+    assert_eq!((info.width, info.height), (64, 32));
+    assert_eq!(&pixels[..3], &[255, 0, 0]);
+
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::CaptureRegion(CaptureRegionRequest {
+                target: target(&observed_target),
+                region: CaptureRegion {
+                    x: 300,
+                    y: 170,
+                    width: 64,
+                    height: 32,
+                },
+            }),
+        ),
+        Outcome::Error(error) if error.code == ErrorCode::InvalidArgument
+    ));
+
     drop(stream);
     let cleanup_deadline = Instant::now() + Duration::from_secs(2);
     while can_name_window_pixmap(&xvfb.display, client.window) {
@@ -2296,6 +2342,25 @@ fn keyboard_text_requires_target_focus_and_uses_the_live_x11_keymap() {
     // `A` uses the live map's shifted level, so four scalar actions emit five
     // complete key pairs: `a`, Shift, `a`, Return, and Tab.
     let events = wait_for_input_events(&client.connection, 5, 0);
+    assert_eq!(sorted(events.key_presses), sorted(events.key_releases));
+
+    let long_text = "a\n".repeat(150);
+    assert!(matches!(
+        wire_call(
+            &mut stream,
+            &mut next_id,
+            Call::KeyboardWrite(KeyboardWriteRequest {
+                target: target(&observed_target),
+                text: BoundedText::new(long_text).expect("long-form keyboard text"),
+            }),
+        ),
+        Outcome::Ok(Reply::Input(reply))
+            if reply.completed == 300
+                && reply.requested == 300
+                && reply.terminal == InputTerminal::Queued
+    ));
+    let events = wait_for_input_events(&client.connection, 300, 0);
+    assert_eq!(events.key_presses.len(), 300);
     assert_eq!(sorted(events.key_presses), sorted(events.key_releases));
 
     assert!(matches!(

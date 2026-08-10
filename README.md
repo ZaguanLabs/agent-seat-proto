@@ -6,7 +6,7 @@ is owned from its first commit by
 [`ZaguanLabs`](https://github.com/ZaguanLabs).
 
 E1 and the T0--T3 Tier 0 core are complete. Current source implements strict
-Agent Seat wire revision 7, a dual-era MCP `2026-07-28` and `2025-11-25`
+Agent Seat wire revision 8, a dual-era MCP `2026-07-28` and `2025-11-25`
 companion, and a standalone provider with bounded EWMH observation,
 freshness-checked management, and policy-controlled desktop-entry launch. The
 five deliverables are:
@@ -42,6 +42,12 @@ uses XKB key types and levels, including bounded Shift, Level3, and Level5
 modifiers, and refuses before sending when a scalar cannot be produced exactly.
 It does not guess from compatibility-map columns, change the layout or group,
 run compose/IME sequences, or use clipboard paste.
+
+Revision 8 adds an explicit long-form text operation for up to 4,096
+preflighted scalar actions and 16 KiB, plus target-relative capture regions of
+at most 262,144 pixels. The MCP companion can also remember at most 32 named
+single clicks for one provider session; replay still passes through every live
+provider check and never becomes a macro or element-identity claim.
 
 The repository retains the separately confined activity-broker experiment as
 research for a possible future stronger profile. It is intentionally outside
@@ -83,7 +89,8 @@ setup is part of this path.
 
 For target-owned screenshots, grant `observe_structure` plus
 `capture_obscured`, restart the provider, and observe the client before calling
-`capture_obscured`. The MCP result is an actual `image/png` content block.
+`capture_obscured` or the smaller `capture_region`. The MCP result is an actual
+`image/png` content block.
 
 The provider runs in the foreground and every process starts with a volatile
 disabled seat. Add only `agent-seat-x11 &` to Openbox autostart after
@@ -139,7 +146,7 @@ The standalone provider answers
 authenticated `seat_status`, bounded desktop snapshots, filtered event
 subscriptions, supported EWMH management, and controlled XDG application
 discovery and launch. Separately granted `pointer_move`, `pointer_click`,
-`keyboard_type`, and `keyboard_key` tools are available only while the volatile
+`keyboard_type`, `keyboard_write`, and `keyboard_key` tools are available only while the volatile
 Tier 0.5 seat is
 enabled; they are not part of the supported Tier 0 core.
 
@@ -159,7 +166,7 @@ implementation-independent standards direction is the repository's non-external
 standalone
 [`agent-seat.x11-ewmh-core.v1`](docs/protocol/profiles/x11-ewmh-core-v1.md)
 backend profile, the optional
-[`agent-seat.x11-tier0.5-input.v2`](docs/protocol/profiles/x11-tier0.5-input-v2.md)
+[`agent-seat.x11-tier0.5-input.v3`](docs/protocol/profiles/x11-tier0.5-input-v3.md)
 profile, and portable
 [`agent-seat.conformance-report/1`](docs/protocol/conformance-report.md) evidence
 format.

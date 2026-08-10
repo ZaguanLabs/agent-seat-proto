@@ -1,4 +1,4 @@
-//! Strict revision-7 messages and bounded Tier 0 profile values.
+//! Strict revision-8 messages and bounded Tier 0 profile values.
 
 use serde::{Deserialize, Serialize};
 
@@ -38,6 +38,10 @@ pub const MAX_APPLICATIONS: usize = 256;
 pub const MAX_INPUT_TEXT_BYTES: usize = 1024;
 /// Maximum independently reportable actions in one input request.
 pub const MAX_INPUT_ACTIONS: usize = 256;
+/// Maximum UTF-8 bytes in one long-form text-input request.
+pub const MAX_LONG_INPUT_TEXT_BYTES: usize = 16 * 1024;
+/// Maximum independently reportable actions in one long-form input request.
+pub const MAX_LONG_INPUT_ACTIONS: usize = 4096;
 /// Maximum logical modifiers on one keyboard-key action.
 pub const MAX_KEYBOARD_MODIFIERS: usize = 4;
 /// Maximum width of one obscured-client capture.
@@ -46,6 +50,12 @@ pub const MAX_CAPTURE_WIDTH: u16 = 2048;
 pub const MAX_CAPTURE_HEIGHT: u16 = 2048;
 /// Maximum pixels in one obscured-client capture.
 pub const MAX_CAPTURE_PIXELS: usize = 1920 * 1080;
+/// Maximum width of one target-relative capture region.
+pub const MAX_CAPTURE_REGION_WIDTH: u16 = 1024;
+/// Maximum height of one target-relative capture region.
+pub const MAX_CAPTURE_REGION_HEIGHT: u16 = 1024;
+/// Maximum pixels in one target-relative capture region.
+pub const MAX_CAPTURE_REGION_PIXELS: usize = 512 * 512;
 /// Maximum PNG bytes before base64 wire encoding.
 pub const MAX_CAPTURE_PNG_BYTES: usize = 7 * 1024 * 1024;
 /// Maximum base64 bytes carrying one PNG capture.
@@ -67,6 +77,8 @@ pub type Title = BoundedText<MAX_TITLE_BYTES>;
 pub type ApplicationId = BoundedText<MAX_APPLICATION_ID_BYTES>;
 /// Text to type through the live X11 keyboard map.
 pub type InputText = BoundedText<MAX_INPUT_TEXT_BYTES>;
+/// Long-form text to type through the live keyboard map.
+pub type LongInputText = BoundedText<MAX_LONG_INPUT_TEXT_BYTES>;
 /// Base64-encoded PNG data for one bounded capture.
 pub type CaptureData = BoundedText<MAX_CAPTURE_DATA_BYTES>;
 /// A workspace name.
@@ -439,12 +451,18 @@ pub enum Call {
     /// Type bounded text into the currently focused target.
     #[serde(rename = "keyboard.type")]
     KeyboardType(KeyboardTypeRequest),
+    /// Type bounded long-form text into the currently focused target.
+    #[serde(rename = "keyboard.write")]
+    KeyboardWrite(KeyboardWriteRequest),
     /// Send one bounded key or shortcut to the currently focused target.
     #[serde(rename = "keyboard.key")]
     KeyboardKey(KeyboardKeyRequest),
     /// Capture one freshly scoped client, including obscured pixels.
     #[serde(rename = "capture.obscured")]
     CaptureObscured(TargetRequest),
+    /// Capture one bounded client-relative region from a freshly scoped client.
+    #[serde(rename = "capture.region")]
+    CaptureRegion(CaptureRegionRequest),
 }
 
 impl Call {
@@ -462,8 +480,10 @@ impl Call {
             Self::ApplicationsList(_) => Capability::LaunchList,
             Self::ApplicationLaunch(_) => Capability::LaunchExecute,
             Self::PointerMove(_) | Self::PointerClick(_) => Capability::InputPointer,
-            Self::KeyboardType(_) | Self::KeyboardKey(_) => Capability::InputKeyboard,
-            Self::CaptureObscured(_) => Capability::CaptureObscured,
+            Self::KeyboardType(_) | Self::KeyboardWrite(_) | Self::KeyboardKey(_) => {
+                Capability::InputKeyboard
+            }
+            Self::CaptureObscured(_) | Self::CaptureRegion(_) => Capability::CaptureObscured,
         }
     }
 }
@@ -484,8 +504,10 @@ impl Validate for Call {
             Self::PointerMove(value) => value.validate(),
             Self::PointerClick(value) => value.validate(),
             Self::KeyboardType(value) => value.validate(),
+            Self::KeyboardWrite(value) => value.validate(),
             Self::KeyboardKey(value) => value.validate(),
             Self::CaptureObscured(value) => value.validate(),
+            Self::CaptureRegion(value) => value.validate(),
         }
     }
 }
@@ -800,23 +822,45 @@ pub struct KeyboardTypeRequest {
 impl Validate for KeyboardTypeRequest {
     fn validate(&self) -> Result<(), &'static str> {
         self.target.validate()?;
-        if self.text.is_empty() {
-            return Err("keyboard text is empty");
-        }
-        let mut actions = 0_usize;
-        for character in self.text.chars() {
-            if character.is_control() && !matches!(character, '\n' | '\t') {
-                return Err("keyboard text contains an unsupported control character");
-            }
-            actions = actions
-                .checked_add(1)
-                .ok_or("keyboard action count overflowed")?;
-        }
-        if actions > MAX_INPUT_ACTIONS {
-            return Err("keyboard text exceeds the action bound");
-        }
-        Ok(())
+        validate_keyboard_text(self.text.as_str(), MAX_INPUT_ACTIONS)
     }
+}
+
+/// Bounded long-form text for the current keyboard layout and focused target.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeyboardWriteRequest {
+    /// Fresh target that must own the current X11 input focus throughout.
+    #[serde(flatten)]
+    pub target: TargetRequest,
+    /// Nonempty multiline text; newline and tab are the only accepted controls.
+    pub text: LongInputText,
+}
+
+impl Validate for KeyboardWriteRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()?;
+        validate_keyboard_text(self.text.as_str(), MAX_LONG_INPUT_ACTIONS)
+    }
+}
+
+fn validate_keyboard_text(text: &str, maximum_actions: usize) -> Result<(), &'static str> {
+    if text.is_empty() {
+        return Err("keyboard text is empty");
+    }
+    let mut actions = 0_usize;
+    for character in text.chars() {
+        if character.is_control() && !matches!(character, '\n' | '\t') {
+            return Err("keyboard text contains an unsupported control character");
+        }
+        actions = actions
+            .checked_add(1)
+            .ok_or("keyboard action count overflowed")?;
+    }
+    if actions > maximum_actions {
+        return Err("keyboard text exceeds the action bound");
+    }
+    Ok(())
 }
 
 /// One portable key name independent of backend keycodes and keyboard rows.
@@ -1183,6 +1227,8 @@ pub enum Reply {
     Input(InputReply),
     /// Bounded target-owned client image.
     Capture(CaptureReply),
+    /// Bounded target-owned client-region image.
+    CaptureRegion(CaptureRegionReply),
 }
 
 impl Validate for Reply {
@@ -1197,6 +1243,7 @@ impl Validate for Reply {
             Self::Launched(value) => value.validate(),
             Self::Input(value) => value.validate(),
             Self::Capture(value) => value.validate(),
+            Self::CaptureRegion(value) => value.validate(),
         }
     }
 }
@@ -1223,6 +1270,91 @@ pub struct CaptureReply {
     pub format: CaptureFormat,
     /// Base64-encoded image bytes, without a data-URL prefix.
     pub data: CaptureData,
+}
+
+/// One bounded target-relative rectangle.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureRegion {
+    /// Horizontal offset from the client origin.
+    pub x: u16,
+    /// Vertical offset from the client origin.
+    pub y: u16,
+    /// Region width in pixels.
+    pub width: u16,
+    /// Region height in pixels.
+    pub height: u16,
+}
+
+impl Validate for CaptureRegion {
+    fn validate(&self) -> Result<(), &'static str> {
+        let pixels = usize::from(self.width)
+            .checked_mul(usize::from(self.height))
+            .ok_or("capture region dimensions overflow")?;
+        let right = self
+            .x
+            .checked_add(self.width)
+            .ok_or("capture region horizontal extent overflowed")?;
+        let bottom = self
+            .y
+            .checked_add(self.height)
+            .ok_or("capture region vertical extent overflowed")?;
+        if self.width == 0
+            || self.height == 0
+            || self.width > MAX_CAPTURE_REGION_WIDTH
+            || self.height > MAX_CAPTURE_REGION_HEIGHT
+            || pixels > MAX_CAPTURE_REGION_PIXELS
+            || right > MAX_CAPTURE_WIDTH
+            || bottom > MAX_CAPTURE_HEIGHT
+        {
+            return Err("capture region is outside revision bounds");
+        }
+        Ok(())
+    }
+}
+
+/// Request for one bounded region of a freshly scoped client.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureRegionRequest {
+    /// Fresh capture target.
+    #[serde(flatten)]
+    pub target: TargetRequest,
+    /// Client-relative rectangle to capture.
+    #[serde(flatten)]
+    pub region: CaptureRegion,
+}
+
+impl Validate for CaptureRegionRequest {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()?;
+        self.region.validate()
+    }
+}
+
+/// One bounded image of a client-relative region.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureRegionReply {
+    /// Exact client generation used for the capture.
+    pub target: TargetRequest,
+    /// Exact client-relative rectangle returned.
+    pub region: CaptureRegion,
+    /// Portable image representation.
+    pub format: CaptureFormat,
+    /// Base64-encoded image bytes, without a data-URL prefix.
+    pub data: CaptureData,
+}
+
+impl Validate for CaptureRegionReply {
+    fn validate(&self) -> Result<(), &'static str> {
+        self.target.validate()?;
+        self.region.validate()?;
+        if !valid_png_base64(self.data.as_bytes()) {
+            return Err("capture data is not a canonical base64 PNG");
+        }
+        Ok(())
+    }
 }
 
 impl Validate for CaptureReply {
@@ -1808,6 +1940,50 @@ mod tests {
                 .validate()
                 .is_err()
         );
+
+        let long_request = |value: &str| KeyboardWriteRequest {
+            target,
+            text: LongInputText::new(value).expect("bounded long-form fixture"),
+        };
+        assert!(
+            long_request(&format!("{}\n{}", "line\n".repeat(700), "end"))
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            long_request(&"a".repeat(MAX_LONG_INPUT_ACTIONS + 1))
+                .validate()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn capture_regions_are_bounded_in_area_and_extent() {
+        let valid = CaptureRegion {
+            x: 100,
+            y: 200,
+            width: 512,
+            height: 512,
+        };
+        assert!(valid.validate().is_ok());
+        assert!(
+            CaptureRegion {
+                width: 513,
+                height: 512,
+                ..valid
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            CaptureRegion {
+                x: MAX_CAPTURE_WIDTH,
+                width: 1,
+                ..valid
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     #[test]
@@ -1894,7 +2070,28 @@ mod tests {
             Capability::InputKeyboard
         );
         assert_eq!(
+            Call::KeyboardWrite(KeyboardWriteRequest {
+                target,
+                text: LongInputText::new("line one\nline two").expect("long-form keyboard fixture"),
+            })
+            .required_capability(),
+            Capability::InputKeyboard
+        );
+        assert_eq!(
             Call::CaptureObscured(target).required_capability(),
+            Capability::CaptureObscured
+        );
+        assert_eq!(
+            Call::CaptureRegion(CaptureRegionRequest {
+                target,
+                region: CaptureRegion {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+            })
+            .required_capability(),
             Capability::CaptureObscured
         );
     }

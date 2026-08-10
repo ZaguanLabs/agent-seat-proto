@@ -1,13 +1,13 @@
-# Agent Seat local JSON binding, wire revision 7
+# Agent Seat local JSON binding, wire revision 8
 
 Status: experimental obscured-capture and Tier 0.5 input profiles over the
-released E1 core contract. Revision 7 is intentionally incompatible with Agent
+released E1 core contract. Revision 8 is intentionally incompatible with Agent
 Seat revisions 3, 4, 5, and 6 and Nobox revision 2.
 
 This document is the concrete pathname-Unix-stream and strict-JSON binding for
 the portable semantics in the pre-RFC
 [`information model`](information-model.md). Its JSON field names, framing,
-socket discovery, and byte limits belong to revision 7, not to the abstract
+socket discovery, and byte limits belong to revision 8, not to the abstract
 model. This binding remains the repository's normative implemented wire
 contract if the pre-RFC documents differ.
 
@@ -58,6 +58,13 @@ sequences. Strict revision-6 peers cannot interpret the call, so revision 7
 allocates a new exact language while retaining every revision-6 operation and
 bound.
 
+Revision 8 adds `keyboard.write`, a separately bounded long-form text call,
+and `capture.region`, a smaller target-relative image call. Neither operation
+adds authority: they reuse the existing keyboard and obscured-capture grants
+and retain the existing focus, seat, target, XKB, Composite, and result
+qualification. Strict revision-7 peers cannot interpret either call or the
+region result, so revision 8 allocates a new exact language.
+
 An advertisement and opening message name one exact revision. There is no
 range negotiation. A mismatched pair closes with `incompatible_revision` and
 does not guess from JSON fields.
@@ -87,7 +94,7 @@ exactly that many UTF-8 JSON bytes:
 - The JSON value is one complete object. Trailing bytes, duplicate known
   fields, unknown fields, unknown enum values, and wrong JSON types are
   malformed.
-- Serde's finite JSON recursion limit applies; revision 7 defines no recursive
+- Serde's finite JSON recursion limit applies; revision 8 defines no recursive
   message value.
 
 Lengths constrain encoded bytes, not Unicode scalar counts. Bounded lists stop
@@ -104,10 +111,10 @@ The first client message is `hello`. A provider answers with exactly one
   "type": "hello",
   "body": {
     "protocol": "agent-seat",
-    "revision": 7,
+    "revision": 8,
     "peer": {
       "name": "agent-seat-mcp",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "purpose": "translate MCP desktop tools"
     },
     "requested": ["observe_structure", "observe_titles"]
@@ -124,9 +131,9 @@ unique, canonical list of at most 32 atoms.
   "type": "welcome",
   "body": {
     "protocol": "agent-seat",
-    "revision": 7,
+    "revision": 8,
     "session": 1,
-    "provider": {"name": "agent-seat-x11", "version": "0.1.27"},
+    "provider": {"name": "agent-seat-x11", "version": "0.1.28"},
     "backend": "x11_ewmh",
     "assurance": "tier0",
     "features": ["ewmh_observation"],
@@ -169,7 +176,7 @@ Canonical capability order is:
 13. `capture_obscured`
 
 Core features are `ewmh_observation`, `ewmh_management`, and
-`desktop_launch`. Revision 7 implements the optional `obscured_capture` feature
+`desktop_launch`. Revision 8 implements the optional `obscured_capture` feature
 only when its separate capability is granted. Other reserved optional feature
 names are `client_visible_capture`, `output_capture`, `input_injection`,
 `human_activity`, and `accessibility`; the Tier 0.5 input profile may advertise
@@ -232,7 +239,9 @@ The core call names and arguments are:
 | `pointer.click` | `input_pointer` | fresh client, client-relative unsigned `x`, `y`, and primary/middle/secondary button |
 | `keyboard.type` | `input_keyboard` | fresh client and bounded nonempty `text` |
 | `keyboard.key` | `input_keyboard` | fresh client, typed `key`, and optional canonical `modifiers` |
+| `keyboard.write` | `input_keyboard` | fresh client and bounded nonempty long-form `text` |
 | `capture.obscured` | `capture_obscured` | fresh client |
+| `capture.region` | `capture_obscured` | fresh client and client-relative `x`, `y`, `width`, `height` |
 
 Client IDs are nonzero provider-session handles. They are not XIDs. A
 generation and sequence are provider-local unsigned 64-bit freshness values;
@@ -299,6 +308,15 @@ live XKB state and mapping under the action-local server grab before each
 character. It does not change layouts or groups, synthesize compose/IME
 sequences, or paste through another protocol.
 
+`keyboard.write` has the same target, focus, XKB, seat, per-character action,
+and result contract. Its independent long-form bound is 16,384 UTF-8 bytes and
+4,096 Unicode scalar actions. Newline and tab remain the only accepted control
+characters. The provider preflights the complete string before its first
+action, so one unavailable scalar refuses the request without typing its
+prefix. After that preflight, focus, target, layout evidence, or the volatile
+seat may change between actions and produce an exact partial `interrupted`
+result. The call neither owns a clipboard nor promises arbitrary Unicode.
+
 `keyboard.key` has the same fresh-target, focus, XKB-state, server-grab, seat,
 and qualified-result requirements. One call is exactly one complete main-key
 press/release pair, optionally surrounded by complete modifier pairs. The
@@ -341,6 +359,13 @@ A successful result carries the exact target, nonzero `width` and `height`,
 height are each at most 2,048; their product is at most 2,073,600 pixels. The
 decoded PNG is at most 7,340,032 bytes and contains eight-bit RGB samples. The
 base64 field and complete response remain independently bounded by the wire.
+
+`capture.region` applies the same grant, target freshness, enrollment, source,
+server-grab, visual conversion, PNG, and cleanup contract to one rectangle
+relative to the client origin. Width and height are each at most 1,024, area is
+at most 262,144 pixels, and `x + width` and `y + height` are each at most 2,048
+before the provider checks the stricter current target geometry. Its result
+repeats the exact target and rectangle rather than full-image dimensions.
 
 The provider refreshes scope and generation under an X server grab, names only
 the already redirected target pixmap, reads it, frees the pixmap identity, and
@@ -406,7 +431,7 @@ Retry is one of `never`, `reobserve`, or `reconnect`.
 three NUL-separated UTF-8 fields and no trailing NUL:
 
 ```text
-agent-seat NUL 6 NUL /absolute/pathname/socket
+agent-seat NUL 8 NUL /absolute/pathname/socket
 ```
 
 The revision uses canonical decimal. The socket is nonempty, absolute, has no
@@ -425,9 +450,9 @@ filesystem or product-specific fallback.
 
 ## End result
 
-Revision 6 retains the bounded T0--T3 contract and the explicitly
-operator-gated Tier 0.5 pointer and keyboard surface, then adds one separately
-granted target-owned image operation. It gives the MCP translator no authority
-and keeps every core outcome externally testable. A later incompatible field,
-enum, or semantic change allocates another revision instead of weakening
-strict decoding.
+Revision 8 retains the bounded T0--T3 contract, explicitly operator-gated Tier
+0.5 input, and separately granted target-owned image operation. It adds bounded
+long-form text and smaller target-relative images without adding authority. It
+gives the MCP translator no policy authority and keeps every core outcome
+externally testable. A later incompatible field, enum, or semantic change
+allocates another revision instead of weakening strict decoding.

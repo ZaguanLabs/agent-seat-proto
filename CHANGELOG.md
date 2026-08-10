@@ -17,6 +17,20 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added experimental wire revision 8 with bounded `keyboard.write` and
+  `capture.region` operations. Long-form input accepts at most 4,096 Unicode
+  scalar actions and 16 KiB, preflights the complete live-XKB text before
+  sending, preserves action-local focus/seat/target checks, and reports exact
+  partial progress. Region capture reads at most 262,144 target-owned pixels
+  directly from the scoped Composite pixmap. The authority-free MCP companion
+  also gains 32 bounded provider-session-local single-click slots; replay is
+  one ordinary provider-checked click, not a macro or element identity. Both
+  MCP eras retain every earlier schema and add the new closed tools. Isolated
+  Openbox/Xvfb tests cover multiline text beyond the old limit, exact covered
+  region pixels, out-of-target refusal, and process-boundary slot replay. This
+  milestone is `agent-seat-proto` 0.1.6, `agent-seat-mcp` 0.1.8,
+  `agent-seat-x11` 0.1.28, and Settings 0.1.9.
+
 - Added experimental wire revision 7 and
   `agent-seat.x11-tier0.5-input.v2`. The separately granted `keyboard_key`
   operation sends exactly one finite layout-aware key or shortcut to an

@@ -6,10 +6,11 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use agent_seat_proto::{
-    ApplicationLaunchRequest, ApplicationListRequest, Call, ClientGeometryRequest,
-    ClientStateRequest, ClientWorkspaceRequest, Empty, KeyboardKeyRequest, KeyboardTypeRequest,
-    Outcome, PointerClickRequest, PointerMoveRequest, PollRequest, Reply, SubscribeRequest,
-    TargetRequest, Validate as _, WorkspaceRequest,
+    ApplicationLaunchRequest, ApplicationListRequest, Call, CaptureRegionRequest,
+    ClientGeometryRequest, ClientId, ClientStateRequest, ClientWorkspaceRequest, Empty, Generation,
+    KeyboardKeyRequest, KeyboardTypeRequest, KeyboardWriteRequest, Outcome, PointerButton,
+    PointerClickRequest, PointerMoveRequest, PollRequest, Reply, SubscribeRequest, TargetRequest,
+    Validate as _, WorkspaceRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -25,6 +26,8 @@ const MODERN_CLIENT_INFO: &str = "io.modelcontextprotocol/clientInfo";
 const MODERN_CLIENT_CAPABILITIES: &str = "io.modelcontextprotocol/clientCapabilities";
 const STATIC_RESULT_TTL_MS: u64 = 3_600_000;
 const MAX_MODERN_CONTEXTS: usize = 8;
+const MAX_POINTER_SLOTS: usize = 32;
+const MAX_POINTER_SLOT_NAME_BYTES: usize = 64;
 const MAX_MCP_LINE_BYTES: usize = 1024 * 1024;
 const KEYBOARD_KEYS: [&str; 63] = [
     "backspace",
@@ -155,10 +158,10 @@ pub(crate) fn serve(socket: Option<PathBuf>, seat: Option<Seat>) -> Result<(), S
 struct Server {
     socket: Option<PathBuf>,
     inherited_seat: Option<Seat>,
-    legacy_seat: Option<Seat>,
+    legacy_session: Option<ProviderSession>,
     legacy_negotiated: bool,
     legacy_initialized: bool,
-    modern_contexts: Contexts<Seat>,
+    modern_contexts: Contexts<ProviderSession>,
 }
 
 impl Server {
@@ -166,7 +169,7 @@ impl Server {
         Self {
             socket,
             inherited_seat: seat,
-            legacy_seat: None,
+            legacy_session: None,
             legacy_negotiated: false,
             legacy_initialized: false,
             modern_contexts: Contexts::new(MAX_MODERN_CONTEXTS),
@@ -243,7 +246,7 @@ impl Server {
                     "title": "Agent Seat",
                     "version": env!("CARGO_PKG_VERSION")
                 },
-                "instructions": "Use seat_status first. Observe before mutation; prefer focused standard keyboard commands before coordinate pointer actions and metadata before pixels. Treat stale and timed_out results as requiring a fresh observation. The provider owns every grant and policy decision."
+                "instructions": "Use seat_status first. Observe before mutation; prefer focused key commands, titles, and small capture regions. Use keyboard_write for long multiline text. Save a pointer slot only after verifying that click, and reobserve when UI changes. Treat stale or timed_out as requiring fresh observation. The provider owns grants and policy."
             }),
         )
     }
@@ -293,7 +296,7 @@ impl Server {
             &modern_result(json!({
                 "supportedVersions": SUPPORTED_MCP_VERSIONS,
                 "capabilities": {"tools":{"listChanged":false}},
-                "instructions": "Check the seat, observe before acting, refresh stale targets, prefer focused standard keyboard commands before coordinate pointer actions and metadata before pixels, and report queued work as queued.",
+                "instructions": "Check the seat; observe before acting. Prefer focused key commands, titles, and small capture regions. Use keyboard_write for long multiline text. Save a pointer slot only after verifying that click; reobserve changed UI. Report queued work as queued.",
                 "ttlMs": STATIC_RESULT_TTL_MS,
                 "cacheScope": "public"
             })),
@@ -342,6 +345,13 @@ impl Server {
                 return write_error(output, id, -32602, "invalid tools/call parameters");
             }
         };
+        if is_pointer_slot_tool(&params.name) {
+            let result = match self.pointer_slot_legacy(&params.name, params.arguments) {
+                Ok(result) => result,
+                Err(error) => tool_error(error.code, error.retry, &error.message),
+            };
+            return write_result(output, id, &result);
+        }
         let call = match translate_call(&params.name, params.arguments) {
             Ok(call) => call,
             Err(CallError::UnknownTool) => {
@@ -439,6 +449,24 @@ impl Server {
             };
             return write_result(output, id, &modern_tool_result(result));
         }
+        if is_pointer_slot_tool(&params.name) {
+            let Some(context) = context else {
+                return write_result(
+                    output,
+                    id,
+                    &modern_tool_result(tool_error(
+                        "invalid_argument",
+                        "never",
+                        "context is required",
+                    )),
+                );
+            };
+            let result = match self.pointer_slot_modern(context, &params.name, arguments) {
+                Ok(result) => result,
+                Err(error) => tool_error(error.code, error.retry, &error.message),
+            };
+            return write_result(output, id, &modern_tool_result(result));
+        }
         let call = match translate_call(&params.name, arguments) {
             Ok(call) => call,
             Err(error) => return self.write_modern_call_error(id, error, output),
@@ -485,9 +513,9 @@ impl Server {
                 message: format!("modern Agent Seat context limit {MAX_MODERN_CONTEXTS} reached"),
             });
         }
-        let mut seat = self.connect_seat()?;
-        let outcome = call_seat(&mut seat, call)?;
-        let context = self.modern_contexts.insert(seat)?;
+        let mut session = ProviderSession::new(self.connect_seat()?);
+        let outcome = call_seat(&mut session.seat, call)?;
+        let context = self.modern_contexts.insert(session)?;
         Ok((context, outcome))
     }
 
@@ -497,7 +525,7 @@ impl Server {
         call: Call,
     ) -> Result<Outcome, ProviderFailure> {
         let result = match self.modern_contexts.get_mut(context) {
-            Some(seat) => call_seat(seat, call),
+            Some(session) => call_seat(&mut session.seat, call),
             None => {
                 return Err(ProviderFailure {
                     code: "stale_context",
@@ -513,22 +541,67 @@ impl Server {
     }
 
     fn provider_call_legacy(&mut self, call: Call) -> Result<Outcome, ProviderFailure> {
-        if self.legacy_seat.is_none() {
-            self.legacy_seat = Some(self.connect_seat()?);
+        if self.legacy_session.is_none() {
+            self.legacy_session = Some(ProviderSession::new(self.connect_seat()?));
         }
         let result = call_seat(
-            self.legacy_seat
+            &mut self
+                .legacy_session
                 .as_mut()
-                .ok_or_else(unavailable_provider_session)?,
+                .ok_or_else(unavailable_provider_session)?
+                .seat,
             call,
         );
         match result {
             Ok(outcome) => Ok(outcome),
             Err(error) => {
-                self.legacy_seat = None;
+                self.legacy_session = None;
                 Err(error)
             }
         }
+    }
+
+    fn pointer_slot_modern(
+        &mut self,
+        context: u64,
+        name: &str,
+        arguments: Option<Value>,
+    ) -> Result<ToolResult, ProviderFailure> {
+        let result = match self.modern_contexts.get_mut(context) {
+            Some(session) => pointer_slot_call(session, name, arguments),
+            None => {
+                return Err(ProviderFailure {
+                    code: "stale_context",
+                    retry: "reconnect",
+                    message: "Agent Seat context is unknown or expired".to_owned(),
+                });
+            }
+        };
+        if result.is_err() {
+            self.modern_contexts.remove(context);
+        }
+        result
+    }
+
+    fn pointer_slot_legacy(
+        &mut self,
+        name: &str,
+        arguments: Option<Value>,
+    ) -> Result<ToolResult, ProviderFailure> {
+        if self.legacy_session.is_none() {
+            self.legacy_session = Some(ProviderSession::new(self.connect_seat()?));
+        }
+        let result = pointer_slot_call(
+            self.legacy_session
+                .as_mut()
+                .ok_or_else(unavailable_provider_session)?,
+            name,
+            arguments,
+        );
+        if result.is_err() {
+            self.legacy_session = None;
+        }
+        result
     }
 
     fn connect_seat(&mut self) -> Result<Seat, ProviderFailure> {
@@ -598,6 +671,167 @@ struct ProviderFailure {
     code: &'static str,
     retry: &'static str,
     message: String,
+}
+
+struct ProviderSession {
+    seat: Seat,
+    pointer_slots: BTreeMap<String, PointerClickRequest>,
+}
+
+impl ProviderSession {
+    fn new(seat: Seat) -> Self {
+        Self {
+            seat,
+            pointer_slots: BTreeMap::new(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PointerSlotSaveRequest {
+    name: String,
+    client: ClientId,
+    generation: Generation,
+    x: u32,
+    y: u32,
+    button: PointerButton,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PointerSlotReplayRequest {
+    name: String,
+    generation: Generation,
+}
+
+fn is_pointer_slot_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "pointer_slot_save" | "pointer_slot_replay" | "pointer_slots_list"
+    )
+}
+
+fn pointer_slot_call(
+    session: &mut ProviderSession,
+    name: &str,
+    arguments: Option<Value>,
+) -> Result<ToolResult, ProviderFailure> {
+    let arguments = arguments.unwrap_or_else(|| json!({}));
+    match name {
+        "pointer_slot_save" => {
+            let request = match serde_json::from_value::<PointerSlotSaveRequest>(arguments) {
+                Ok(request) => request,
+                Err(error) => {
+                    return Ok(tool_error("invalid_argument", "never", &error.to_string()));
+                }
+            };
+            if !valid_pointer_slot_name(&request.name) {
+                return Ok(tool_error(
+                    "invalid_argument",
+                    "never",
+                    "slot name must be 1 to 64 bytes of ASCII letters, digits, '.', '_', or '-'",
+                ));
+            }
+            let action = PointerClickRequest {
+                target: TargetRequest {
+                    client: request.client,
+                    generation: request.generation,
+                },
+                x: request.x,
+                y: request.y,
+                button: request.button,
+            };
+            if let Err(error) = action.validate() {
+                return Ok(tool_error("invalid_argument", "never", error));
+            }
+            if session.pointer_slots.len() >= MAX_POINTER_SLOTS
+                && !session.pointer_slots.contains_key(&request.name)
+            {
+                return Ok(tool_error(
+                    "capacity",
+                    "never",
+                    "pointer action slot limit 32 reached",
+                ));
+            }
+            let replaced = session
+                .pointer_slots
+                .insert(request.name.clone(), action)
+                .is_some();
+            Ok(tool_result(
+                json!({
+                    "status":"ok",
+                    "body":{"kind":"pointer_slot_saved","value":{
+                        "name":request.name,
+                        "action":action,
+                        "replaced":replaced
+                    }}
+                }),
+                false,
+            ))
+        }
+        "pointer_slot_replay" => {
+            let request = match serde_json::from_value::<PointerSlotReplayRequest>(arguments) {
+                Ok(request) => request,
+                Err(error) => {
+                    return Ok(tool_error("invalid_argument", "never", &error.to_string()));
+                }
+            };
+            if !valid_pointer_slot_name(&request.name) {
+                return Ok(tool_error(
+                    "invalid_argument",
+                    "never",
+                    "slot name is invalid",
+                ));
+            }
+            let Some(mut action) = session.pointer_slots.get(&request.name).copied() else {
+                return Ok(tool_error(
+                    "not_found",
+                    "refresh",
+                    "pointer action slot is unknown in this provider session",
+                ));
+            };
+            action.target.generation = request.generation;
+            call_seat(&mut session.seat, Call::PointerClick(action)).map(tool_outcome)
+        }
+        "pointer_slots_list" => {
+            if serde_json::from_value::<Empty>(arguments).is_err() {
+                return Ok(tool_error(
+                    "invalid_argument",
+                    "never",
+                    "pointer_slots_list accepts no arguments",
+                ));
+            }
+            let slots = session
+                .pointer_slots
+                .iter()
+                .map(|(name, action)| json!({"name":name,"action":action}))
+                .collect::<Vec<_>>();
+            Ok(tool_result(
+                json!({
+                    "status":"ok",
+                    "body":{"kind":"pointer_slots","value":{
+                        "limit":MAX_POINTER_SLOTS,
+                        "slots":slots
+                    }}
+                }),
+                false,
+            ))
+        }
+        _ => Ok(tool_error(
+            "invalid_argument",
+            "never",
+            "unknown local tool",
+        )),
+    }
+}
+
+fn valid_pointer_slot_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= MAX_POINTER_SLOT_NAME_BYTES
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 struct Contexts<T> {
@@ -1080,6 +1314,45 @@ fn build_tools() -> Box<[Tool]> {
             ),
         },
         Tool {
+            name: "pointer_slot_save",
+            title: "Remember pointer click",
+            description: "Save one previously verified client-relative click in the current provider session. A slot remembers coordinates, not a UI element; saving does not perform the click.",
+            input_schema: object_with_target(
+                json!({
+                    "name":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9._-]+$"},
+                    "x":{"type":"integer","minimum":0,"maximum":4294967295_u64},
+                    "y":{"type":"integer","minimum":0,"maximum":4294967295_u64},
+                    "button":{"enum":["primary","middle","secondary"]}
+                }),
+                &["name", "x", "y", "button"],
+            ),
+        },
+        Tool {
+            name: "pointer_slot_replay",
+            title: "Replay remembered click",
+            description: "Replay one remembered click using the target's freshly observed generation and all current provider geometry, visibility, hit-test, grant, and seat checks. Reobserve before relying on a slot after UI changes.",
+            input_schema: json!({
+                "type":"object",
+                "properties":{
+                    "name":{"type":"string","minLength":1,"maxLength":64,"pattern":"^[A-Za-z0-9._-]+$"},
+                    "generation":{"type":"integer","minimum":0}
+                },
+                "required":["name","generation"],
+                "additionalProperties":false
+            }),
+        },
+        Tool {
+            name: "pointer_slots_list",
+            title: "List remembered clicks",
+            description: "List the at most 32 pointer clicks remembered only in the current provider session.",
+            input_schema: json!({
+                "type":"object",
+                "properties":{},
+                "required":[],
+                "additionalProperties":false
+            }),
+        },
+        Tool {
             name: "keyboard_type",
             title: "Type text into client",
             description: "Type bounded text through the current X11 keyboard layout only when the target already owns keyboard focus.",
@@ -1108,10 +1381,33 @@ fn build_tools() -> Box<[Tool]> {
             ),
         },
         Tool {
+            name: "keyboard_write",
+            title: "Write long-form text into client",
+            description: "Type up to 4,096 characters and 16 KiB of preflighted multiline text through the current X11 keyboard layout. The target must retain keyboard focus; completion is reported exactly and may be interrupted.",
+            input_schema: object_with_target(
+                json!({"text":{"type":"string","minLength":1,"maxLength":4096}}),
+                &["text"],
+            ),
+        },
+        Tool {
             name: "capture_obscured",
             title: "Capture client pixels",
             description: "Capture one freshly observed client's own pixels, including content currently covered by other windows.",
             input_schema: target(),
+        },
+        Tool {
+            name: "capture_region",
+            title: "Capture part of client",
+            description: "Capture a bounded client-relative rectangle, including content covered by other windows. The region may be at most 1,024 pixels on either side and 262,144 pixels total.",
+            input_schema: object_with_target(
+                json!({
+                    "x":{"type":"integer","minimum":0,"maximum":2047},
+                    "y":{"type":"integer","minimum":0,"maximum":2047},
+                    "width":{"type":"integer","minimum":1,"maximum":1024},
+                    "height":{"type":"integer","minimum":1,"maximum":1024}
+                }),
+                &["x", "y", "width", "height"],
+            ),
         },
     ]
     .into_boxed_slice()
@@ -1212,8 +1508,10 @@ fn translate_call(name: &str, arguments: Option<Value>) -> Result<Call, CallErro
         "pointer_move" => arguments!(PointerMoveRequest, PointerMove),
         "pointer_click" => arguments!(PointerClickRequest, PointerClick),
         "keyboard_type" => arguments!(KeyboardTypeRequest, KeyboardType),
+        "keyboard_write" => arguments!(KeyboardWriteRequest, KeyboardWrite),
         "keyboard_key" => arguments!(KeyboardKeyRequest, KeyboardKey),
         "capture_obscured" => arguments!(TargetRequest, CaptureObscured),
+        "capture_region" => arguments!(CaptureRegionRequest, CaptureRegion),
         _ => Err(CallError::UnknownTool),
     }?;
     call.validate()
@@ -1286,6 +1584,28 @@ fn tool_outcome(outcome: Outcome) -> ToolResult {
             is_error: false,
         };
     }
+    if let Outcome::Ok(Reply::CaptureRegion(capture)) = outcome {
+        let structured_content = json!({
+            "status":"ok",
+            "body":{
+                "kind":"capture_region",
+                "value":{
+                    "target":capture.target,
+                    "region":capture.region,
+                    "format":capture.format
+                }
+            }
+        });
+        return ToolResult {
+            content: vec![ToolContent::Image(ImageContent {
+                r#type: "image",
+                data: capture.data.into_string(),
+                mime_type: "image/png",
+            })],
+            structured_content,
+            is_error: false,
+        };
+    }
     let is_error = matches!(outcome, Outcome::Error(_));
     match serde_json::to_value(outcome) {
         Ok(structured_content) => tool_result(structured_content, is_error),
@@ -1320,14 +1640,15 @@ mod tests {
     use std::num::NonZeroU64;
 
     use agent_seat_proto::{
-        CaptureData, CaptureFormat, CaptureReply, ClientId, Generation, Validate as _,
+        CaptureData, CaptureFormat, CaptureRegion, CaptureRegionReply, CaptureReply, ClientId,
+        Generation, Validate as _,
     };
 
     use super::*;
 
     #[test]
     fn every_tool_has_a_closed_object_schema() {
-        assert_eq!(tools(Era::Legacy).len(), 17);
+        assert_eq!(tools(Era::Legacy).len(), 22);
         for tool in tools(Era::Legacy) {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -1337,7 +1658,7 @@ mod tests {
     #[test]
     fn modern_tools_make_provider_continuity_explicit() {
         let tools = tools(Era::Modern);
-        assert_eq!(tools.len(), 18);
+        assert_eq!(tools.len(), 23);
         for tool in tools {
             assert_eq!(tool.input_schema["type"], "object");
             assert_eq!(tool.input_schema["additionalProperties"], false);
@@ -1408,10 +1729,18 @@ mod tests {
                 json!({"client":1,"generation":0,"text":"Agent Seat\n"}),
             ),
             (
+                "keyboard_write",
+                json!({"client":1,"generation":0,"text":"verse one\nverse two\n"}),
+            ),
+            (
                 "keyboard_key",
                 json!({"client":1,"generation":0,"key":"l","modifiers":["control"]}),
             ),
             ("capture_obscured", json!({"client":1,"generation":0})),
+            (
+                "capture_region",
+                json!({"client":1,"generation":0,"x":10,"y":20,"width":64,"height":32}),
+            ),
         ];
         for (name, arguments) in calls {
             let call = translate_call(name, Some(arguments)).expect("valid tool fixture");
@@ -1461,5 +1790,36 @@ mod tests {
         assert_eq!(value["content"][0]["data"], "iVBORw0KGgo=");
         assert_eq!(value["structuredContent"]["body"]["value"]["width"], 1);
         assert!(value["structuredContent"]["body"]["value"]["data"].is_null());
+
+        let result = tool_outcome(Outcome::Ok(Reply::CaptureRegion(CaptureRegionReply {
+            target: TargetRequest {
+                client: ClientId::new(NonZeroU64::MIN),
+                generation: Generation::new(0),
+            },
+            region: CaptureRegion {
+                x: 10,
+                y: 20,
+                width: 1,
+                height: 1,
+            },
+            format: CaptureFormat::Png,
+            data: CaptureData::new("iVBORw0KGgo=").expect("capture fixture"),
+        })));
+        let value = serde_json::to_value(result).expect("MCP region result");
+        assert_eq!(value["content"][0]["type"], "image");
+        assert_eq!(
+            value["structuredContent"]["body"]["value"]["region"]["x"],
+            10
+        );
+        assert!(value["structuredContent"]["body"]["value"]["data"].is_null());
+    }
+
+    #[test]
+    fn pointer_slot_names_are_small_and_portable() {
+        assert!(valid_pointer_slot_name("suno.download"));
+        assert!(valid_pointer_slot_name("menu_to_download-2"));
+        assert!(!valid_pointer_slot_name(""));
+        assert!(!valid_pointer_slot_name("contains space"));
+        assert!(!valid_pointer_slot_name(&"a".repeat(65)));
     }
 }

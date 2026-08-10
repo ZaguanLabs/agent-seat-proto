@@ -1,4 +1,4 @@
-//! Display-server-neutral Agent Seat Protocol revision 7.
+//! Display-server-neutral Agent Seat Protocol revision 8.
 //!
 //! This crate owns bounded wire values, strict JSON serialization, frame
 //! encoding, and advertisement parsing. It owns no transport listener,
@@ -22,7 +22,7 @@ pub use message::*;
 pub const PROTOCOL_NAME: &str = "agent-seat";
 
 /// Independently specified Tier 0 wire revision.
-pub const PROTOCOL_REVISION: u16 = 7;
+pub const PROTOCOL_REVISION: u16 = 8;
 
 /// X11 property carrying the provider advertisement.
 pub const ADVERTISEMENT_PROPERTY: &str = "_AGENT_SEAT";

@@ -91,7 +91,7 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
             .as_array()
             .expect("tool array")
             .len(),
-        17
+        22
     );
     let tool_names = responses[1]["result"]["tools"]
         .as_array()
@@ -102,7 +102,12 @@ fn initialization_and_tools_are_desktop_free_but_calls_resolve_lazily() {
     assert!(tool_names.contains(&"pointer_click"));
     assert!(tool_names.contains(&"keyboard_type"));
     assert!(tool_names.contains(&"keyboard_key"));
+    assert!(tool_names.contains(&"keyboard_write"));
+    assert!(tool_names.contains(&"pointer_slot_save"));
+    assert!(tool_names.contains(&"pointer_slot_replay"));
+    assert!(tool_names.contains(&"pointer_slots_list"));
     assert!(tool_names.contains(&"capture_obscured"));
+    assert!(tool_names.contains(&"capture_region"));
     assert!(responses[1]["result"]["resultType"].is_null());
     assert!(responses[1]["result"]["ttlMs"].is_null());
     assert_eq!(responses[2]["result"]["isError"], true);
@@ -154,7 +159,7 @@ fn modern_discovery_and_tool_listing_are_stateless_cacheable_and_desktop_free() 
     assert_eq!(listing["ttlMs"], 3_600_000);
     assert_eq!(listing["cacheScope"], "public");
     let tools = listing["tools"].as_array().expect("modern tool array");
-    assert_eq!(tools.len(), 18);
+    assert_eq!(tools.len(), 23);
     let status = tools
         .iter()
         .find(|tool| tool["name"] == "seat_status")
@@ -275,6 +280,7 @@ fn modern_provider_continuity_uses_an_explicit_releasable_context() {
                 granted: BoundedList::new(vec![
                     Capability::ObserveStructure,
                     Capability::LaunchList,
+                    Capability::InputPointer,
                 ])
                 .expect("provider grants"),
                 limits: Limits {
@@ -287,7 +293,7 @@ fn modern_provider_continuity_uses_an_explicit_releasable_context() {
             MAX_RESPONSE_FRAME_BYTES,
         )
         .expect("write welcome");
-        for expected in ["seat_status", "applications_list"] {
+        for expected in ["seat_status", "pointer_click", "applications_list"] {
             let request = match read_frame(&mut stream, MAX_REQUEST_FRAME_BYTES)
                 .expect("read provider request")
             {
@@ -297,23 +303,39 @@ fn modern_provider_continuity_uses_an_explicit_releasable_context() {
             assert!(matches!(
                 (&request.call, expected),
                 (agent_seat_proto::Call::SeatStatus(_), "seat_status")
+                    | (agent_seat_proto::Call::PointerClick(_), "pointer_click")
                     | (
                         agent_seat_proto::Call::ApplicationsList(_),
                         "applications_list"
                     )
             ));
+            if let agent_seat_proto::Call::PointerClick(action) = &request.call {
+                assert_eq!(action.target.generation.get(), 5);
+                assert_eq!((action.x, action.y), (120, 80));
+            }
+            let outcome = if expected == "pointer_click" {
+                Outcome::Ok(agent_seat_proto::Reply::Input(
+                    agent_seat_proto::InputReply {
+                        completed: 1,
+                        requested: 1,
+                        terminal: agent_seat_proto::InputTerminal::Queued,
+                    },
+                ))
+            } else {
+                Outcome::Error(ProtocolError {
+                    code: ErrorCode::Unsupported,
+                    retry: Retry::Never,
+                    field: None,
+                    message: None,
+                    current_generation: None,
+                    current_sequence: Some(Sequence::new(0)),
+                })
+            };
             write_frame(
                 &mut stream,
                 &ServerMessage::Response(Response {
                     id: request.id,
-                    outcome: Outcome::Error(ProtocolError {
-                        code: ErrorCode::Unsupported,
-                        retry: Retry::Never,
-                        field: None,
-                        message: None,
-                        current_generation: None,
-                        current_sequence: Some(Sequence::new(0)),
-                    }),
+                    outcome,
                 }),
                 MAX_RESPONSE_FRAME_BYTES,
             )
@@ -354,8 +376,8 @@ fn modern_provider_continuity_uses_an_explicit_releasable_context() {
             "id":2,
             "method":"tools/call",
             "params":{
-                "name":"applications_list",
-                "arguments":{"context":context,"limit":1},
+                "name":"pointer_slot_save",
+                "arguments":{"context":context,"name":"menu.download","client":7,"generation":4,"x":120,"y":80,"button":"primary"},
                 "_meta":modern_meta()
             }
         }),
@@ -364,7 +386,47 @@ fn modern_provider_continuity_uses_an_explicit_releasable_context() {
             "id":3,
             "method":"tools/call",
             "params":{
+                "name":"pointer_slots_list",
+                "arguments":{"context":context},
+                "_meta":modern_meta()
+            }
+        }),
+        json!({
+            "jsonrpc":"2.0",
+            "id":4,
+            "method":"tools/call",
+            "params":{
+                "name":"pointer_slot_replay",
+                "arguments":{"context":context,"name":"menu.download","generation":5},
+                "_meta":modern_meta()
+            }
+        }),
+        json!({
+            "jsonrpc":"2.0",
+            "id":5,
+            "method":"tools/call",
+            "params":{
+                "name":"applications_list",
+                "arguments":{"context":context,"limit":1},
+                "_meta":modern_meta()
+            }
+        }),
+        json!({
+            "jsonrpc":"2.0",
+            "id":6,
+            "method":"tools/call",
+            "params":{
                 "name":"seat_release",
+                "arguments":{"context":context},
+                "_meta":modern_meta()
+            }
+        }),
+        json!({
+            "jsonrpc":"2.0",
+            "id":7,
+            "method":"tools/call",
+            "params":{
+                "name":"pointer_slots_list",
                 "arguments":{"context":context},
                 "_meta":modern_meta()
             }
@@ -373,17 +435,42 @@ fn modern_provider_continuity_uses_an_explicit_releasable_context() {
         writeln!(input, "{request}").expect("write context call");
     }
     input.flush().expect("flush context calls");
-    for expected_id in [2, 3] {
+    for expected_id in [2, 3, 4, 5, 6, 7] {
         line.clear();
         output.read_line(&mut line).expect("read context call");
         let response: Value = serde_json::from_str(&line).expect("context call JSON");
         assert_eq!(response["id"], expected_id);
         assert_eq!(response["result"]["resultType"], "complete");
         assert!(response["result"]["structuredContent"]["context"].is_null());
+        if expected_id == 2 {
+            assert_eq!(
+                response["result"]["structuredContent"]["body"]["kind"],
+                "pointer_slot_saved"
+            );
+        }
         if expected_id == 3 {
+            assert_eq!(
+                response["result"]["structuredContent"]["body"]["value"]["slots"][0]["name"],
+                "menu.download"
+            );
+        }
+        if expected_id == 4 {
+            assert_eq!(
+                response["result"]["structuredContent"]["body"]["kind"],
+                "input"
+            );
+        }
+        if expected_id == 6 {
             assert_eq!(
                 response["result"]["structuredContent"]["body"]["value"]["context"],
                 context
+            );
+        }
+        if expected_id == 7 {
+            assert_eq!(response["result"]["isError"], true);
+            assert_eq!(
+                response["result"]["structuredContent"]["body"]["code"],
+                "stale_context"
             );
         }
     }

@@ -1,8 +1,9 @@
 //! Bounded target-owned capture through the X Composite extension.
 
 use agent_seat_proto::{
-    CaptureData, CaptureFormat, CaptureReply, MAX_CAPTURE_HEIGHT, MAX_CAPTURE_PIXELS,
-    MAX_CAPTURE_PNG_BYTES, MAX_CAPTURE_WIDTH, TargetRequest,
+    CaptureData, CaptureFormat, CaptureRegion, CaptureRegionReply, CaptureRegionRequest,
+    CaptureReply, MAX_CAPTURE_HEIGHT, MAX_CAPTURE_PIXELS, MAX_CAPTURE_PNG_BYTES, MAX_CAPTURE_WIDTH,
+    TargetRequest,
 };
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -36,7 +37,7 @@ impl Observer {
         &mut self,
         request: TargetRequest,
     ) -> Result<CaptureReply, Failure> {
-        let raw = self.under_server_grab(|observer| observer.read_target_pixels(request))?;
+        let raw = self.under_server_grab(|observer| observer.read_target_pixels(request, None))?;
         let rgb = raw.to_rgb()?;
         let data = encode_png(raw.width, raw.height, &rgb)?;
         Ok(CaptureReply {
@@ -48,7 +49,28 @@ impl Observer {
         })
     }
 
-    fn read_target_pixels(&mut self, request: TargetRequest) -> Result<RawCapture, Failure> {
+    pub(crate) fn capture_region(
+        &mut self,
+        request: CaptureRegionRequest,
+    ) -> Result<CaptureRegionReply, Failure> {
+        let raw = self.under_server_grab(|observer| {
+            observer.read_target_pixels(request.target, Some(request.region))
+        })?;
+        let rgb = raw.to_rgb()?;
+        let data = encode_png(raw.width, raw.height, &rgb)?;
+        Ok(CaptureRegionReply {
+            target: request.target,
+            region: request.region,
+            format: CaptureFormat::Png,
+            data,
+        })
+    }
+
+    fn read_target_pixels(
+        &mut self,
+        request: TargetRequest,
+        region: Option<CaptureRegion>,
+    ) -> Result<RawCapture, Failure> {
         self.refresh()?;
         let target = self.target(request)?;
         if !self.redirected_clients.contains(&target.xid) {
@@ -81,7 +103,7 @@ impl Observer {
             ));
         }
 
-        self.read_redirected_pixmap(target.xid, visual)
+        self.read_redirected_pixmap(target.xid, visual, region)
     }
 
     pub(super) fn reconcile_capture_targets(&mut self, clients: &[u32]) -> Result<(), Failure> {
@@ -157,6 +179,7 @@ impl Observer {
         &self,
         window: u32,
         visual: Visualtype,
+        region: Option<CaptureRegion>,
     ) -> Result<RawCapture, Failure> {
         let pixmap = self
             .connection
@@ -168,7 +191,7 @@ impl Observer {
             .check()
             .map_err(|_| Failure::unavailable("cannot name the target pixmap"))?;
 
-        let result = self.read_named_pixmap(pixmap, visual);
+        let result = self.read_named_pixmap(pixmap, visual, region);
         let freed = self
             .connection
             .free_pixmap(pixmap)
@@ -184,14 +207,46 @@ impl Observer {
         }
     }
 
-    fn read_named_pixmap(&self, pixmap: u32, visual: Visualtype) -> Result<RawCapture, Failure> {
+    fn read_named_pixmap(
+        &self,
+        pixmap: u32,
+        visual: Visualtype,
+        region: Option<CaptureRegion>,
+    ) -> Result<RawCapture, Failure> {
         let geometry = self
             .connection
             .get_geometry(pixmap)
             .map_err(|_| Failure::unavailable("cannot inspect the target pixmap"))?
             .reply()
             .map_err(|_| Failure::unavailable("cannot inspect the target pixmap"))?;
-        validate_dimensions(geometry.width, geometry.height)?;
+        let (x, y, width, height) = match region {
+            Some(region) => {
+                let right = region.x.checked_add(region.width).ok_or_else(|| {
+                    Failure::invalid("capture region horizontal extent overflowed")
+                })?;
+                let bottom = region
+                    .y
+                    .checked_add(region.height)
+                    .ok_or_else(|| Failure::invalid("capture region vertical extent overflowed"))?;
+                if right > geometry.width || bottom > geometry.height {
+                    return Err(Failure::invalid(
+                        "capture region extends outside the current target",
+                    ));
+                }
+                (
+                    i16::try_from(region.x)
+                        .map_err(|_| Failure::invalid("capture region x is unsupported"))?,
+                    i16::try_from(region.y)
+                        .map_err(|_| Failure::invalid("capture region y is unsupported"))?,
+                    region.width,
+                    region.height,
+                )
+            }
+            None => {
+                validate_dimensions(geometry.width, geometry.height)?;
+                (0, 0, geometry.width, geometry.height)
+            }
+        };
         let format = self
             .connection
             .setup()
@@ -209,15 +264,7 @@ impl Observer {
         }
         let image = self
             .connection
-            .get_image(
-                ImageFormat::Z_PIXMAP,
-                pixmap,
-                0,
-                0,
-                geometry.width,
-                geometry.height,
-                u32::MAX,
-            )
+            .get_image(ImageFormat::Z_PIXMAP, pixmap, x, y, width, height, u32::MAX)
             .map_err(|_| Failure::unavailable("cannot request capture pixels"))?
             .reply()
             .map_err(|_| Failure::unavailable("cannot read capture pixels"))?;
@@ -225,8 +272,8 @@ impl Observer {
             return Err(Failure::unavailable("capture pixel depth changed"));
         }
         Ok(RawCapture {
-            width: geometry.width,
-            height: geometry.height,
+            width,
+            height,
             depth: image.depth,
             visual,
             bits_per_pixel: format.bits_per_pixel,

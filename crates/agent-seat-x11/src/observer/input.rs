@@ -1,8 +1,8 @@
 //! Provider-local, target-aware XTEST input behind the volatile seat gate.
 
 use agent_seat_proto::{
-    InputReply, InputTerminal, KeyboardKeyRequest, KeyboardTypeRequest, PointerButton,
-    PointerClickRequest, PointerMoveRequest,
+    InputReply, InputTerminal, KeyboardKeyRequest, KeyboardTypeRequest, KeyboardWriteRequest,
+    PointerButton, PointerClickRequest, PointerMoveRequest, TargetRequest,
 };
 use x11rb::CURRENT_TIME;
 use x11rb::protocol::shape::{ConnectionExt as _, SK};
@@ -66,19 +66,38 @@ impl Observer {
         seat: &SeatGate,
         seat_permit: SeatPermit,
     ) -> Result<InputReply, Failure> {
-        let requested = u16::try_from(request.text.chars().count())
+        self.keyboard_text(request.target, request.text.as_str(), seat, seat_permit)
+    }
+
+    pub(crate) fn keyboard_write(
+        &mut self,
+        request: KeyboardWriteRequest,
+        seat: &SeatGate,
+        seat_permit: SeatPermit,
+    ) -> Result<InputReply, Failure> {
+        self.keyboard_text(request.target, request.text.as_str(), seat, seat_permit)
+    }
+
+    fn keyboard_text(
+        &mut self,
+        target_request: TargetRequest,
+        text: &str,
+        seat: &SeatGate,
+        seat_permit: SeatPermit,
+    ) -> Result<InputReply, Failure> {
+        let requested = u16::try_from(text.chars().count())
             .map_err(|_| Failure::invalid("keyboard text exceeds the action bound"))?;
         self.under_server_grab(|observer| {
             observer.refresh()?;
-            let target = observer.target(request.target)?;
+            let target = observer.target(target_request)?;
             observer.require_focus_owned_by(target.xid)?;
-            resolve_text(&observer.connection, request.text.as_str()).map(|_| ())
+            resolve_text(&observer.connection, text).map(|_| ())
         })?;
         let mut completed = 0_u16;
-        for character in request.text.chars() {
+        for character in text.chars() {
             let result = self.under_server_grab(|observer| {
                 observer.refresh()?;
-                let target = observer.target(request.target)?;
+                let target = observer.target(target_request)?;
                 observer.require_focus_owned_by(target.xid)?;
                 if !seat.accepts(seat_permit) {
                     return Ok(false);

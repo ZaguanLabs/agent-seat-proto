@@ -13,6 +13,7 @@ use agent_seat_proto::{
 };
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
+const LONG_INPUT_TIMEOUT: Duration = Duration::from_secs(120);
 
 pub(crate) struct Seat {
     stream: UnixStream,
@@ -106,6 +107,14 @@ impl Seat {
     }
 
     pub(crate) fn call(&mut self, call: Call) -> Result<Response, SeatError> {
+        let long_input = matches!(&call, Call::KeyboardWrite(_));
+        if long_input {
+            self.stream
+                .set_read_timeout(Some(LONG_INPUT_TIMEOUT))
+                .map_err(|error| {
+                    unavailable(format!("cannot extend provider I/O bound: {error}"))
+                })?;
+        }
         let id = RequestId::new(self.next_request);
         self.next_request = self
             .next_request
@@ -113,21 +122,30 @@ impl Seat {
             .ok_or_else(|| internal("provider request identity space is exhausted"))?;
         let message = ClientMessage::Request(Request { id, call });
         write_frame(&mut self.stream, &message, MAX_REQUEST_FRAME_BYTES).map_err(codec_error)?;
-        match read_frame(&mut self.stream, MAX_RESPONSE_FRAME_BYTES).map_err(codec_error)? {
-            ReadFrame::Message(ServerMessage::Response(response)) if response.id == id => {
-                Ok(response)
-            }
-            ReadFrame::Message(ServerMessage::Response(_)) => Err(malformed(
-                "provider response identity does not match the request",
-            )),
-            ReadFrame::Message(ServerMessage::Goodbye(goodbye)) => {
-                Err(goodbye_error("provider closed the session", goodbye))
-            }
-            ReadFrame::Message(ServerMessage::Welcome(_)) => {
-                Err(malformed("provider repeated the opening response"))
-            }
-            ReadFrame::CleanEof => Err(unavailable("provider closed before responding")),
+        let response =
+            match read_frame(&mut self.stream, MAX_RESPONSE_FRAME_BYTES).map_err(codec_error)? {
+                ReadFrame::Message(ServerMessage::Response(response)) if response.id == id => {
+                    Ok(response)
+                }
+                ReadFrame::Message(ServerMessage::Response(_)) => Err(malformed(
+                    "provider response identity does not match the request",
+                )),
+                ReadFrame::Message(ServerMessage::Goodbye(goodbye)) => {
+                    Err(goodbye_error("provider closed the session", goodbye))
+                }
+                ReadFrame::Message(ServerMessage::Welcome(_)) => {
+                    Err(malformed("provider repeated the opening response"))
+                }
+                ReadFrame::CleanEof => Err(unavailable("provider closed before responding")),
+            };
+        if long_input {
+            self.stream
+                .set_read_timeout(Some(IO_TIMEOUT))
+                .map_err(|error| {
+                    unavailable(format!("cannot restore provider I/O bound: {error}"))
+                })?;
         }
+        response
     }
 }
 

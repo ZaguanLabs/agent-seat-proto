@@ -50,7 +50,7 @@ pub(crate) fn run(
         return close(
             &mut stream,
             ErrorCode::IncompatibleRevision,
-            "exact Agent Seat revision 7 is required",
+            "exact Agent Seat revision 8 is required",
         );
     }
     let Some(seat_permit) = seat.permit() else {
@@ -278,8 +278,10 @@ fn authorized(call: &Call, granted: &[agent_seat_proto::Capability]) -> bool {
                 | Call::PointerMove(_)
                 | Call::PointerClick(_)
                 | Call::KeyboardType(_)
+                | Call::KeyboardWrite(_)
                 | Call::KeyboardKey(_)
                 | Call::CaptureObscured(_)
+                | Call::CaptureRegion(_)
         ) || granted.contains(&agent_seat_proto::Capability::ObserveStructure))
         && (!matches!(call, Call::ApplicationLaunch(_))
             || granted.contains(&agent_seat_proto::Capability::LaunchList))
@@ -368,6 +370,12 @@ fn provider_call(
             })
             .map(Reply::Input)
             .map_err(CallFailure::Observation),
+        Call::KeyboardWrite(arguments) => observer_for(observer, context.granted, context.config)
+            .and_then(|observer| {
+                observer.keyboard_write(arguments, context.seat, context.seat_permit)
+            })
+            .map(Reply::Input)
+            .map_err(CallFailure::Observation),
         Call::KeyboardKey(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| {
                 observer.keyboard_key(arguments, context.seat, context.seat_permit)
@@ -377,6 +385,10 @@ fn provider_call(
         Call::CaptureObscured(arguments) => observer_for(observer, context.granted, context.config)
             .and_then(|observer| observer.capture_obscured(arguments))
             .map(Reply::Capture)
+            .map_err(CallFailure::Observation),
+        Call::CaptureRegion(arguments) => observer_for(observer, context.granted, context.config)
+            .and_then(|observer| observer.capture_region(arguments))
+            .map(Reply::CaptureRegion)
             .map_err(CallFailure::Observation),
     };
     match result {
