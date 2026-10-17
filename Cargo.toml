@@ -24,7 +24,7 @@ all = "deny"
 
 [workspace.dependencies]
 agent-seat-activity-broker = { path = "crates/agent-seat-activity-broker", version = "0.2.0", default-features = false }
-base64 = "0.22"
+base64 = "0.23"
 dbus = "0.9.10"
 evdev = "0.13.2"
 png = "0.18"
